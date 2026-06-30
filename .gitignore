@@ -1,0 +1,21 @@
+node_modules/
+dist/
+out/
+*.vsix
+.vscode-test/
+**/.DS_Store
+
+# vscode-extension-tester artifacts
+/core
+.claude/settings.local.json
+tmp/
+test-results/
+
+# https://github.com/obra/superpowers/blob/main/skills/using-git-worktrees/SKILL.md
+.worktrees/
+
+# Lockfiles from non-Bun package managers. This project uses bun.lock;
+# block accidental commits if someone runs npm/yarn/pnpm install.
+package-lock.json
+yarn.lock
+pnpm-lock.yaml

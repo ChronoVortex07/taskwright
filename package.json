@@ -1,0 +1,267 @@
+{
+  "name": "taskwright",
+  "displayName": "Taskwright",
+  "description": "Agentic task board for VS Code — triage work and dispatch isolated Claude Code sessions per task, on a git-native Backlog.md backbone.",
+  "version": "0.0.1",
+  "publisher": "chronovortex07",
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ChronoVortex07/taskwright"
+  },
+  "homepage": "https://github.com/ChronoVortex07/taskwright#readme",
+  "bugs": {
+    "url": "https://github.com/ChronoVortex07/taskwright/issues"
+  },
+  "keywords": [
+    "backlog",
+    "kanban",
+    "tasks",
+    "todo",
+    "project management",
+    "markdown",
+    "ai agents",
+    "claude code",
+    "mcp",
+    "worktrees"
+  ],
+  "engines": {
+    "vscode": "^1.110.0",
+    "node": ">=22"
+  },
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
+  "activationEvents": [
+    "workspaceContains:**/backlog/tasks/*.md",
+    "workspaceContains:**/backlog/config.yml",
+    "workspaceContains:**/backlog/config.yaml",
+    "workspaceContains:**/.backlog/tasks/*.md",
+    "workspaceContains:**/.backlog/config.yml",
+    "workspaceContains:**/.backlog/config.yaml",
+    "workspaceContains:backlog.config.yml"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Taskwright",
+      "properties": {
+        "backlog.taskIdDisplay": {
+          "type": "string",
+          "enum": [
+            "full",
+            "number",
+            "hidden"
+          ],
+          "default": "full",
+          "description": "Controls how task IDs are shown in task cards and list rows: full (TASK-123), number (123), or hidden."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "backlog.init",
+        "title": "Taskwright: Initialize Backlog"
+      },
+      {
+        "command": "backlog.openKanban",
+        "title": "Taskwright: Open Kanban Board"
+      },
+      {
+        "command": "backlog.openTasksInEditor",
+        "title": "Taskwright: Open Board in Editor Tab",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "backlog.openTaskList",
+        "title": "Taskwright: Open Task List"
+      },
+      {
+        "command": "backlog.openDashboard",
+        "title": "Taskwright: Open Dashboard"
+      },
+      {
+        "command": "backlog.refresh",
+        "title": "Taskwright: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "backlog.openTaskDetail",
+        "title": "Taskwright: Open Task Detail"
+      },
+      {
+        "command": "backlog.createTask",
+        "title": "Taskwright: Create Task",
+        "icon": "$(add)"
+      },
+      {
+        "command": "backlog.createMilestone",
+        "title": "Taskwright: Create Milestone",
+        "icon": "$(milestone)"
+      },
+      {
+        "command": "backlog.openMarkdown",
+        "title": "Taskwright: Open Task Markdown"
+      },
+      {
+        "command": "backlog.showListView",
+        "title": "Switch to List View",
+        "icon": "$(list-flat)"
+      },
+      {
+        "command": "backlog.showKanbanView",
+        "title": "Switch to Kanban View",
+        "icon": "$(layout)"
+      },
+      {
+        "command": "backlog.showDraftsView",
+        "title": "Switch to Drafts View",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "backlog.showArchivedView",
+        "title": "Switch to Archived View",
+        "icon": "$(archive)"
+      },
+      {
+        "command": "backlog.showDocsView",
+        "title": "Taskwright: Show Documents"
+      },
+      {
+        "command": "backlog.showDecisionsView",
+        "title": "Taskwright: Show Decisions"
+      },
+      {
+        "command": "backlog.openDocumentDetail",
+        "title": "Taskwright: Open Document Detail"
+      },
+      {
+        "command": "backlog.openDecisionDetail",
+        "title": "Taskwright: Open Decision Detail"
+      },
+      {
+        "command": "backlog.selectBacklog",
+        "title": "Taskwright: Select Active Backlog"
+      },
+      {
+        "command": "backlog.setupAgentIntegration",
+        "title": "Taskwright: Set Up Agent Integration"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "backlog.openTasksInEditor",
+          "when": "view == backlog.kanban",
+          "group": "navigation@1"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "backlog",
+          "title": "Taskwright",
+          "icon": "$(checklist)"
+        }
+      ]
+    },
+    "views": {
+      "backlog": [
+        {
+          "type": "webview",
+          "id": "backlog.kanban",
+          "name": "Tasks",
+          "icon": "images/view-kanban.svg"
+        },
+        {
+          "type": "webview",
+          "id": "backlog.taskPreview",
+          "name": "Details",
+          "icon": "images/view-task-preview.svg",
+          "visibility": "visible"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "bun scripts/build.ts",
+    "compile:webview": "vite build --config vite.webview.config.ts",
+    "watch": "bun scripts/build.ts --watch",
+    "build:css": "tailwindcss -i ./src/webview/styles.css -o ./dist/webview/styles.css",
+    "build": "bun run build:css && bun run compile:webview && bun run compile",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "bun run build && tsc -p tsconfig.e2e.json && bash scripts/run-e2e.sh",
+    "test:cdp": "bun run build && bash scripts/run-cdp-tests.sh",
+    "test:playwright": "playwright test",
+    "test:playwright:ui": "playwright test --ui",
+    "demo:cross-branch-setup": "bash scripts/setup-cross-branch-demo.sh",
+    "webview:serve": "vite",
+    "check:engines": "bun scripts/check-engine-version.ts",
+    "lint": "eslint src e2e",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "package": "vsce package --no-dependencies",
+    "licenses:generate": "bash scripts/generate-licenses.sh",
+    "licenses:check": "bash scripts/check-licenses.sh",
+    "depcheck": "depcheck",
+    "ci": "bun run check:engines && bun run lint && bun run typecheck && bun run depcheck && bun run licenses:check && bun run test && bun run build && bun run test:playwright && bun run test:cdp && bun run test:e2e",
+    "update:actions": "bunx actions-up@v1.12.0 --min-age 7",
+    "screenshots": "bash scripts/screenshots/run.sh",
+    "screenshots:validate": "bun scripts/screenshots/validate.ts",
+    "release": "release-it",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.ts": [
+      "eslint --fix"
+    ],
+    "*.{ts,js,json,md,yml,yaml,css,html}": [
+      "prettier --write"
+    ]
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.60.0",
+    "@release-it/keep-a-changelog": "^7.1.0",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "@tailwindcss/cli": "^4.3.0",
+    "@types/chai": "^5.2.3",
+    "@types/js-yaml": "^4.0.9",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^25.9.3",
+    "@types/vscode": "1.110.0",
+    "chai": "^6.2.2",
+    "depcheck": "^1.4.7",
+    "esbuild": "^0.27.7",
+    "eslint": "^10.4.1",
+    "eslint-config-prettier": "^10.1.8",
+    "generate-license-file": "^4.2.1",
+    "husky": "^9.1.7",
+    "jsdom": "^28.1.0",
+    "lint-staged": "^16.4.0",
+    "oxipng-bin": "^1.0.0",
+    "prettier": "^3.8.4",
+    "release-it": "^20.2.0",
+    "sharp": "^0.34.5",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.61.0",
+    "vite": "^7.3.5",
+    "vitest": "^4.1.8",
+    "vscode-extension-tester": "^8.23.0"
+  },
+  "dependencies": {
+    "github-slugger": "^2.0.0",
+    "gray-matter": "^4.0.3",
+    "js-yaml": "^4.2.0",
+    "marked": "^17.0.6",
+    "mermaid": "^11.15.0",
+    "svelte": "^5.56.3",
+    "tiny-markdown-editor": "^0.2.28"
+  }
+}
