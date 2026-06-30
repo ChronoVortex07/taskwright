@@ -19,6 +19,13 @@ const builds: esbuild.BuildOptions[] = [
     outfile: 'dist/mcp/server.js',
     external: ['vscode'],
   },
+  {
+    // Pre-commit worktree-isolation guard — a tiny standalone Node script the
+    // git hook runs. Reuses the vscode-free worktreeGuard core.
+    entryPoints: ['src/hooks/worktree-guard.ts'],
+    outfile: 'dist/hooks/worktree-guard.js',
+    external: ['vscode'],
+  },
 ];
 
 const common: esbuild.BuildOptions = {
