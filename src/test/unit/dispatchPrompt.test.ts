@@ -85,6 +85,18 @@ describe('dispatchContextFromTask', () => {
     expect(ctx.plan).toBe('_No implementation plan yet._');
     expect(ctx.worktree).toBe('');
   });
+
+  it('carries the handoff file path when provided', () => {
+    const ctx = dispatchContextFromTask(makeTask(), {
+      worktree: 'task-7',
+      handoffFile: '/repo/.taskwright/handoff/TASK-7.md',
+    });
+    expect(ctx.handoffFile).toBe('/repo/.taskwright/handoff/TASK-7.md');
+  });
+
+  it('defaults handoffFile to empty when not provided', () => {
+    expect(dispatchContextFromTask(makeTask()).handoffFile).toBe('');
+  });
 });
 
 describe('renderDispatchPrompt', () => {

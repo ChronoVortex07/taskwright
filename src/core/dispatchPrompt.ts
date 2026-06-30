@@ -23,6 +23,7 @@ export interface DispatchContext {
   labels: string;
   worktree: string;
   filePath: string;
+  handoffFile: string;
 }
 
 /**
@@ -71,7 +72,7 @@ export function dispatchBranchName(task: Pick<Task, 'id' | 'title'>): string {
 /** Flatten a task into render-ready strings, filling empties with placeholders. */
 export function dispatchContextFromTask(
   task: Task,
-  opts: { worktree?: string } = {}
+  opts: { worktree?: string; handoffFile?: string } = {}
 ): DispatchContext {
   const description = task.description?.trim();
   const plan = task.implementationPlan?.trim();
@@ -86,6 +87,7 @@ export function dispatchContextFromTask(
     labels: task.labels.length ? task.labels.join(', ') : 'none',
     worktree: opts.worktree ?? '',
     filePath: task.filePath,
+    handoffFile: opts.handoffFile ?? '',
   };
 }
 
