@@ -120,9 +120,15 @@ task branch is checked out in the primary tree, nudging the agent back.
     guard checker; re-running the installer replaces only the fenced block.
   - If husky is absent, fall back to writing `.git/hooks/pre-commit` (chaining
     any pre-existing hook).
-- The guard checker is a small bundled Node entrypoint (e.g.
-  `dist/hooks/worktree-guard.js`) that gathers git facts and calls
-  `worktreeGuard`; exit non-zero to block.
+- The guard checker is a small bundled Node entrypoint
+  (`dist/hooks/worktree-guard.js`) that gathers git facts and calls
+  `worktreeGuard`; exit non-zero to block. Because that bundle ships with the
+  _extension_ (not the user's repo), activation **copies it into the user repo's
+  gitignored `<primaryRoot>/.taskwright/hooks/worktree-guard.js`** and the fence
+  references that stable in-repo path. The fence is existence-guarded
+  (`if [ -f ".taskwright/hooks/worktree-guard.js" ]; then node … || exit 1; fi`),
+  so a linked worktree — whose cwd has no `.taskwright/hooks/` script — simply
+  skips the check (correct, since the guard only ever acts in the primary tree).
 - Installation runs on extension activation, gated by
   `taskwright.enforceWorktreeIsolation` (default `true`). When the setting is
   `false`, the fenced block is removed.
