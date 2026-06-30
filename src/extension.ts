@@ -18,6 +18,7 @@ import { BacklogHoverProvider } from './language/BacklogHoverProvider';
 import { initializeBacklog, type InitBacklogOptions } from './core/initBacklog';
 import { BacklogWorkspaceManager, type BacklogRoot } from './core/BacklogWorkspaceManager';
 import { detectPackageManager } from './core/AgentIntegrationDetector';
+import { claimTaskForCurrentUser, releaseTaskClaim } from './providers/claimActions';
 
 let fileWatcher: FileWatcher | undefined;
 let crossBranchStatusBarItem: vscode.StatusBarItem | undefined;
@@ -708,6 +709,60 @@ export function activate(context: vscode.ExtensionContext) {
         tasksProvider.refresh();
       } catch (error) {
         vscode.window.showErrorMessage(`Failed to create milestone: ${error}`);
+      }
+    })
+  );
+
+  // Register claim / release commands. Both target an explicit task ID argument
+  // (e.g. from a future context menu) or fall back to the task open in the
+  // detail panel. The file watcher refreshes the board/preview/detail after the
+  // claim file is written; we also refresh eagerly for immediate feedback.
+  const refreshAllViews = (): void => {
+    tasksHosts.forEach((host) => host.refresh());
+    taskPreviewProvider.refresh();
+  };
+  const resolveClaimTarget = (arg: unknown): string | undefined => {
+    if (typeof arg === 'string' && arg.trim()) return arg;
+    if (arg && typeof arg === 'object' && typeof (arg as { taskId?: string }).taskId === 'string') {
+      return (arg as { taskId: string }).taskId;
+    }
+    return TaskDetailProvider.getCurrentTaskId();
+  };
+  context.subscriptions.push(
+    vscode.commands.registerCommand('backlog.claimTask', async (arg?: unknown) => {
+      if (!parser) {
+        vscode.window.showErrorMessage('No backlog folder found in workspace');
+        return;
+      }
+      const taskId = resolveClaimTarget(arg);
+      if (!taskId) {
+        vscode.window.showInformationMessage('Open a task to claim it.');
+        return;
+      }
+      try {
+        const claim = await claimTaskForCurrentUser(taskId, parser);
+        refreshAllViews();
+        vscode.window.showInformationMessage(`Claimed ${taskId} as ${claim.claimedBy}`);
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to claim task: ${error}`);
+      }
+    }),
+    vscode.commands.registerCommand('backlog.releaseTask', async (arg?: unknown) => {
+      if (!parser) {
+        vscode.window.showErrorMessage('No backlog folder found in workspace');
+        return;
+      }
+      const taskId = resolveClaimTarget(arg);
+      if (!taskId) {
+        vscode.window.showInformationMessage('Open a task to release it.');
+        return;
+      }
+      try {
+        await releaseTaskClaim(taskId, parser);
+        refreshAllViews();
+        vscode.window.showInformationMessage(`Released ${taskId}`);
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to release task: ${error}`);
       }
     })
   );

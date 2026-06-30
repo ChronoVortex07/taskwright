@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyClaim, clearClaim, isClaimStale } from '../../core/claims';
+import { applyClaim, clearClaim, isClaimStale, claimTimestamp } from '../../core/claims';
 import { BacklogParser } from '../../core/BacklogParser';
 
 const parser = new BacklogParser('/fake/path');
@@ -95,6 +95,21 @@ describe('claims', () => {
     it('treats a claim older than the max age as stale', () => {
       const now = new Date(2026, 5, 30, 16, 0).getTime();
       expect(isClaimStale(claimedAt, ONE_HOUR, now)).toBe(true);
+    });
+  });
+
+  describe('claimTimestamp', () => {
+    it('formats a local Date as zero-padded YYYY-MM-DD HH:mm', () => {
+      // Local-time construction so the formatted string is what isClaimStale
+      // will later parse back (both treat the bare string as local time).
+      const d = new Date(2026, 0, 5, 9, 7); // 2026-01-05 09:07 local
+      expect(claimTimestamp(d)).toBe('2026-01-05 09:07');
+    });
+
+    it('round-trips through isClaimStale as not stale at the same instant', () => {
+      const d = new Date(2026, 5, 30, 14, 0);
+      const stamp = claimTimestamp(d);
+      expect(isClaimStale(stamp, 60 * 60 * 1000, d.getTime())).toBe(false);
     });
   });
 });

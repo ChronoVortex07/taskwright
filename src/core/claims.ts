@@ -21,6 +21,20 @@ export interface Claim {
 
 const CLAIM_KEY_RE = /^(claimed_by|worktree|claimed_at):/;
 
+/**
+ * Format a `Date` as a `claimed_at` value: `'YYYY-MM-DD HH:mm'` in **local**
+ * time. Local (not UTC) so it round-trips with {@link isClaimStale}, which
+ * parses the bare string as local time — the two must agree or staleness
+ * checks drift by the timezone offset.
+ */
+export function claimTimestamp(date: Date = new Date()): string {
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}`
+  );
+}
+
 interface FrontmatterSplit {
   before: string[]; // up to and including the opening '---'
   fields: string[]; // frontmatter field lines (between the fences)

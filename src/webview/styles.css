@@ -676,6 +676,27 @@ body {
   opacity: 0.75;
 }
 
+.claim-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  max-width: 120px;
+  font-size: 10px;
+  color: var(--vscode-textLink-foreground, #3794ff);
+}
+
+.claim-indicator svg {
+  opacity: 0.9;
+  flex-shrink: 0;
+}
+
+.claim-indicator-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Task card optimistic UI */
 .task-card.saving {
   opacity: 0.7;
@@ -2167,6 +2188,85 @@ body {
 .readonly-banner {
   background: var(--vscode-inputValidation-warningBackground, rgba(245, 158, 11, 0.12));
   border-color: var(--vscode-inputValidation-warningBorder, rgba(245, 158, 11, 0.35));
+}
+
+/* Advisory claim banner (Taskwright) — reuses .draft-banner layout */
+.claim-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  border-radius: 6px;
+  font-size: 12px;
+  background: var(--vscode-editorWidget-background, rgba(127, 127, 127, 0.08));
+  border: 1px dashed var(--vscode-widget-border, rgba(127, 127, 127, 0.35));
+  color: var(--vscode-descriptionForeground, #999999);
+}
+
+.claim-banner svg {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.claim-banner.claimed {
+  background: var(--vscode-inputValidation-infoBackground, rgba(59, 130, 246, 0.1));
+  border-style: solid;
+  border-color: var(--vscode-inputValidation-infoBorder, rgba(59, 130, 246, 0.4));
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.claim-banner .claim-info {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.claim-banner .claim-worktree {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.claim-banner .claim-time {
+  opacity: 0.6;
+}
+
+.claim-banner-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.claim-btn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #ffffff);
+}
+
+.claim-btn:hover {
+  background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.claim-release-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--vscode-button-secondaryBackground, #3a3d41);
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  background: var(--vscode-button-secondaryBackground, #313131);
+  color: var(--vscode-button-secondaryForeground, #cccccc);
+}
+
+.claim-release-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #3c3c3c);
 }
 
 /* Subtask progress indicator on kanban cards */

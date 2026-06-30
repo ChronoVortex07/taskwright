@@ -57,6 +57,11 @@
           ],
           "default": "full",
           "description": "Controls how task IDs are shown in task cards and list rows: full (TASK-123), number (123), or hidden."
+        },
+        "backlog.claimIdentity": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Identity that advisory task claims are attributed to (e.g. `@alice`). When empty, your OS username is used, prefixed with `@`."
         }
       }
     },
@@ -148,6 +153,16 @@
       {
         "command": "backlog.setupAgentIntegration",
         "title": "Taskwright: Set Up Agent Integration"
+      },
+      {
+        "command": "backlog.claimTask",
+        "title": "Taskwright: Claim Task",
+        "icon": "$(lock)"
+      },
+      {
+        "command": "backlog.releaseTask",
+        "title": "Taskwright: Release Task",
+        "icon": "$(unlock)"
       }
     ],
     "menus": {

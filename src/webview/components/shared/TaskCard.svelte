@@ -88,6 +88,12 @@
     hasBlockingDependencies ? `Blocked by: ${task.blockingDependencyIds!.join(', ')}` : ''
   );
   let hasSubtaskProgress = $derived(task.subtaskProgress !== undefined && task.subtaskProgress.total > 0);
+  let isClaimed = $derived(!!task.claimedBy);
+  let claimTitle = $derived(
+    isClaimed
+      ? `Claimed by ${task.claimedBy}${task.worktree ? ` on ${task.worktree}` : ''}${task.claimedAt ? ` (${task.claimedAt})` : ''}`
+      : ''
+  );
   let readOnlyContext = $derived(getReadOnlyTaskContext(task));
   let displayTaskId = $derived(formatTaskIdForDisplay(task.id, taskIdDisplay));
   let showTaskId = $derived(taskIdDisplay !== 'hidden');
@@ -135,6 +141,12 @@
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 3v12"/><path d="M18 9a3 3 0 0 0-3-3H6"/><path d="M6 15h9a3 3 0 1 1 0 6h-3"/></svg>
         {readOnlyContext}
+      </span>
+    {/if}
+    {#if isClaimed}
+      <span class="claim-indicator" data-testid="claim-indicator-{task.id}" title={claimTitle}>
+        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span class="claim-indicator-label">{task.claimedBy}</span>
       </span>
     {/if}
     {#if hasBlockingDependencies}

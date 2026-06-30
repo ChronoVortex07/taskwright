@@ -7,6 +7,7 @@ import { isReadOnlyTask, getReadOnlyTaskContext, type Task, type TaskSource } fr
 import { StatusCallbackRunner } from '../core/StatusCallbackRunner';
 import { openWorkspaceFile, isValidLinkString } from '../core/openWorkspaceFile';
 import { parseMarkdown } from '../core/parseMarkdown';
+import { claimTaskForCurrentUser, releaseTaskClaim, getClaimIdentity } from './claimActions';
 
 /**
  * Task detail data structure sent to the webview
@@ -32,6 +33,8 @@ interface TaskDetailData {
   readOnlyReason?: string;
   parentTask?: { id: string; title: string };
   subtaskSummaries?: Array<{ id: string; title: string; status: string }>;
+  /** Identity the current user's claims are attributed to (for "claimed by you"). */
+  claimIdentity?: string;
 }
 
 interface OpenTaskRequest {
@@ -442,6 +445,7 @@ export class TaskDetailProvider {
           : undefined,
         parentTask,
         subtaskSummaries,
+        claimIdentity: getClaimIdentity(),
       };
 
       webview.postMessage({ type: 'taskData', data });
@@ -714,6 +718,45 @@ export class TaskDetailProvider {
           TaskDetailProvider.currentPanel?.dispose();
         } catch (error) {
           vscode.window.showErrorMessage(`Failed to archive task: ${error}`);
+        }
+        break;
+      }
+
+      case 'claimTask': {
+        if (!TaskDetailProvider.currentTaskId || !this.parser) break;
+        const task = await this.getCurrentTaskFromContext();
+        if (this.blockReadOnlyMutation(task, 'claim this task')) break;
+        try {
+          const claim = await claimTaskForCurrentUser(
+            TaskDetailProvider.currentTaskId,
+            this.parser
+          );
+          await this.openTask(
+            TaskDetailProvider.currentTaskRef ?? { taskId: TaskDetailProvider.currentTaskId },
+            { preserveFocus: true }
+          );
+          vscode.window.showInformationMessage(
+            `Claimed ${TaskDetailProvider.currentTaskId} as ${claim.claimedBy}`
+          );
+        } catch (error) {
+          vscode.window.showErrorMessage(`Failed to claim task: ${error}`);
+        }
+        break;
+      }
+
+      case 'releaseTask': {
+        if (!TaskDetailProvider.currentTaskId || !this.parser) break;
+        const task = await this.getCurrentTaskFromContext();
+        if (this.blockReadOnlyMutation(task, 'release this task')) break;
+        try {
+          await releaseTaskClaim(TaskDetailProvider.currentTaskId, this.parser);
+          await this.openTask(
+            TaskDetailProvider.currentTaskRef ?? { taskId: TaskDetailProvider.currentTaskId },
+            { preserveFocus: true }
+          );
+          vscode.window.showInformationMessage(`Released ${TaskDetailProvider.currentTaskId}`);
+        } catch (error) {
+          vscode.window.showErrorMessage(`Failed to release task: ${error}`);
         }
         break;
       }

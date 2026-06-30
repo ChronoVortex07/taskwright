@@ -34,6 +34,13 @@
   let readOnlyReason = $state('');
   let parentTask: { id: string; title: string } | undefined = $state(undefined);
   let subtaskSummaries: Array<{ id: string; title: string; status: string }> | undefined = $state(undefined);
+  let claimedBy: string | undefined = $state(undefined);
+  let claimWorktree: string | undefined = $state(undefined);
+  let claimedAt: string | undefined = $state(undefined);
+  let claimIdentity: string | undefined = $state(undefined);
+
+  let isClaimed = $derived(!!claimedBy);
+  let claimedByMe = $derived(!!claimedBy && claimedBy === claimIdentity);
 
   // Handle messages from extension
   onMessage((message) => {
@@ -60,6 +67,10 @@
           readOnlyReason = data.readOnlyReason ?? '';
           parentTask = data.parentTask;
           subtaskSummaries = data.subtaskSummaries;
+          claimedBy = data.task.claimedBy;
+          claimWorktree = data.task.worktree;
+          claimedAt = data.task.claimedAt;
+          claimIdentity = data.claimIdentity;
           viewState = 'ready';
         }
         break;
@@ -196,6 +207,18 @@
       vscode.postMessage({ type: 'deleteTask', taskId: task.id });
     }
   }
+
+  function handleClaim() {
+    if (task) {
+      vscode.postMessage({ type: 'claimTask', taskId: task.id });
+    }
+  }
+
+  function handleRelease() {
+    if (task) {
+      vscode.postMessage({ type: 'releaseTask', taskId: task.id });
+    }
+  }
 </script>
 
 {#if viewState === 'loading'}
@@ -241,6 +264,28 @@
         <button class="draft-promote-btn" data-testid="promote-draft-btn" onclick={handlePromoteDraft}>Save as Task</button>
         <button class="draft-discard-btn" data-testid="discard-draft-btn" onclick={handleDiscardDraft}>Discard</button>
       </div>
+    </div>
+  {/if}
+
+  {#if !isDraft && !isReadOnly && !isArchived}
+    <div class="claim-banner" class:claimed={isClaimed} data-testid="claim-banner">
+      {#if isClaimed}
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span class="claim-info">
+          Claimed by <strong>{claimedByMe ? 'you' : claimedBy}</strong>
+          {#if claimWorktree}<span class="claim-worktree" title="Worktree / branch">on {claimWorktree}</span>{/if}
+          {#if claimedAt}<span class="claim-time">· {claimedAt}</span>{/if}
+        </span>
+        <div class="claim-banner-actions">
+          <button class="claim-release-btn" data-testid="release-task-btn" onclick={handleRelease}>Release</button>
+        </div>
+      {:else}
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+        <span class="claim-info">Unclaimed</span>
+        <div class="claim-banner-actions">
+          <button class="claim-btn" data-testid="claim-task-btn" onclick={handleClaim}>Claim</button>
+        </div>
+      {/if}
     </div>
   {/if}
 
