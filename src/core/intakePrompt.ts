@@ -3,7 +3,7 @@ import { substitutePlaceholders } from './templateRender';
 /**
  * Intake / triage = "Categorize with Claude". The user captures a raw dump of
  * bugs and improvements; this renders a paste-ready prompt that tells a Claude
- * Code session to turn the dump into labeled, prioritized Backlog.md tasks via
+ * Code session to turn the dump into labeled, prioritized tasks via
  * the Taskwright MCP. Subscription-safe like dispatch — Taskwright produces a
  * prompt, it never runs the categorization itself.
  */

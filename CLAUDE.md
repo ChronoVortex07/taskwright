@@ -15,8 +15,7 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
 
 ## Architecture (inherited)
 
-- `src/core/` — `BacklogParser`/`BacklogWriter` (read/write task files), `BacklogCli` (shells out to the
-  `backlog` CLI), `CrossBranchTaskLoader` + `GitBranchService` (cross-branch task view), `FileWatcher`,
+- `src/core/` — `BacklogParser`/`BacklogWriter` (read/write task files), `BacklogCli` (shells out to the optional `backlog` CLI — used only for the cross-branch board view), `CrossBranchTaskLoader` + `GitBranchService` (cross-branch task view), `FileWatcher`,
   `AgentIntegrationDetector`.
 - `src/providers/` — webview views (Kanban, task list/detail/preview).
 - `src/language/` — completion, hover, document links.

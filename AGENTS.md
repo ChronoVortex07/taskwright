@@ -19,7 +19,7 @@ readable by the upstream tools if they are installed.
 
 ## Task granularity
 
-**Default: 1 PR = 1 task.** Mid-PR scope growth (reviewer feedback, edge cases, follow-on polish, small bugfixes) belongs in the task already in flight — re-open it via `task_edit` if it's Done, append ACs for the new scope, keep shipping under the same ID. Larger scope changes might need a separate additional PR and task.
+**Default: 1 PR = 1 task.** Mid-PR scope growth (reviewer feedback, edge cases, follow-on polish, small bugfixes) belongs in the task already in flight — re-open it via `edit_task` if it's Done, append ACs for the new scope, keep shipping under the same ID. Larger scope changes might need a separate additional PR and task.
 
 ## Project: vscode-backlog-md
 
@@ -48,7 +48,7 @@ VS Code extension providing a beautiful UI for browsing and managing Backlog.md 
 
 **CRITICAL**: Always run `bun run test && bun run lint && bun run typecheck` before marking a task as Done. Never skip this step.
 
-**CRITICAL**: Always mark backlog tasks as Done (via `task_edit` MCP tool) BEFORE committing work or telling the user the task is complete. Do not defer until after the commit or assume it's enough to just mention it in the commit message.
+**CRITICAL**: Always mark backlog tasks as Done (via `edit_task` MCP tool) BEFORE committing work or telling the user the task is complete. Do not defer until after the commit or assume it's enough to just mention it in the commit message.
 
 **Commit cadence**: Commit each completed task individually before starting the next — don't bundle separate tasks into one commit. A single task can span multiple commits when scope grows mid-branch (see "Task granularity").
 
