@@ -44,7 +44,7 @@ function readSettings(): DispatchSettings {
   const template = getTaskwrightConfig<string>('dispatchTemplate', '').trim();
   return {
     template: template || DEFAULT_DISPATCH_TEMPLATE,
-    createWorktree: getTaskwrightConfig<boolean>('dispatchCreateWorktree', false),
+    createWorktree: getTaskwrightConfig<boolean>('dispatchCreateWorktree', true),
     openTerminal: getTaskwrightConfig<boolean>('dispatchOpenTerminal', false),
   };
 }

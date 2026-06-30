@@ -77,8 +77,8 @@
         },
         "taskwright.dispatchCreateWorktree": {
           "type": "boolean",
-          "default": false,
-          "markdownDescription": "When dispatching a task, create an isolated git worktree at `.worktrees/<branch>` and set the active task there, so parallel sessions don't share state. Falls back to the workspace root when not a git repo."
+          "default": true,
+          "markdownDescription": "Dispatch each task into its own isolated git worktree at `.worktrees/<branch>` (the default), so parallel sessions never share a working directory or active task. Set to `false` to dispatch into the workspace root instead. Falls back to the workspace root automatically when the folder is not a git repository."
         },
         "taskwright.dispatchOpenTerminal": {
           "type": "boolean",
