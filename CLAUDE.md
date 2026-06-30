@@ -61,6 +61,12 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   (progress bar, Open/Detach/Attach) wired via `src/providers/planActions.ts`; `backlog.attachPlan` /
   `backlog.detachPlan` commands. Plan paths are repo-root-relative. Note: superpowers 6.x tracks progress via
   checkboxes **inside** the plan file — there is no separate `.superpowers/sdd/progress.md`.
+- **Multi-session polish** ✅ (Phase 5): `src/core/claimResolution.ts` (`resolveClaimAction`) drives
+  claim-conflict surfacing (confirm before overriding a live foreign claim) and stale-claim expiry
+  (claims older than `backlog.claimStalenessHours`, default 12h, are reclaimable without a prompt).
+  Kanban cards show an active-task indicator and a stale-claim badge (amber), enriched in
+  `TasksController` (`isActiveTask`/`claimStale`). Cross-worktree board is inherited (Backlog.md
+  `check_active_branches` via `CrossBranchTaskLoader`). Proof: `e2e/board-indicators.spec.ts`.
 
 ## Conventions
 

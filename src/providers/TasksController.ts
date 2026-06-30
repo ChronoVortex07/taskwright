@@ -11,12 +11,16 @@ import {
   getReadOnlyTaskContext,
 } from '../core/types';
 import * as fs from 'fs';
+import * as path from 'path';
 import { BacklogParser, computeSubtasks } from '../core/BacklogParser';
 import { BacklogWriter } from '../core/BacklogWriter';
 import { TaskDetailProvider } from './TaskDetailProvider';
 import { StatusCallbackRunner } from '../core/StatusCallbackRunner';
 import { detectIntegration } from '../core/AgentIntegrationDetector';
 import { BacklogCli } from '../core/BacklogCli';
+import { readActiveTask } from '../core/activeTask';
+import { isClaimStale } from '../core/claims';
+import { getClaimStalenessMs } from './claimActions';
 
 export type TasksViewMode =
   | 'kanban'
@@ -255,14 +259,28 @@ export class TasksController {
         }
       }
 
+      // Active-task + claim-staleness markers for board indicators. Both are
+      // auxiliary; a lookup failure must not break loading the board.
+      let activeTaskId: string | undefined;
+      try {
+        activeTaskId = readActiveTask(path.dirname(this.parser.getBacklogPath()))?.taskId;
+      } catch {
+        activeTaskId = undefined;
+      }
+      const stalenessMs = getClaimStalenessMs();
+
       const tasksWithBlocks = tasks.map((task) => {
         const enhanced: Task & {
           blocksTaskIds?: string[];
           subtaskProgress?: { total: number; done: number };
           blockingDependencyIds?: string[];
+          isActiveTask?: boolean;
+          claimStale?: boolean;
         } = {
           ...task,
           blocksTaskIds: reverseDeps.get(task.id) || [],
+          isActiveTask: !!activeTaskId && task.id === activeTaskId,
+          claimStale: !!task.claimedBy && isClaimStale(task.claimedAt, stalenessMs),
         };
         const blockingDependencyIds = task.dependencies.filter((depId) => {
           if (completedTaskIds.has(depId) || archivedTaskIds.has(depId)) return false;

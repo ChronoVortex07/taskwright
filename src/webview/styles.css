@@ -697,6 +697,29 @@ body {
   white-space: nowrap;
 }
 
+/* A stale (abandoned) claim is muted/amber so it reads as reclaimable. */
+.claim-indicator.stale {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+.active-task-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--vscode-charts-green, #89d185);
+}
+
+.active-task-indicator svg {
+  opacity: 0.95;
+  flex-shrink: 0;
+}
+
+.active-task-label {
+  white-space: nowrap;
+}
+
 /* Task card optimistic UI */
 .task-card.saving {
   opacity: 0.7;

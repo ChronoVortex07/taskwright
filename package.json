@@ -273,7 +273,7 @@
     "test:cdp": "bun run build && bash scripts/run-cdp-tests.sh",
     "test:playwright": "playwright test",
     "test:playwright:ui": "playwright test --ui",
-    "proof": "bun run build && playwright test dispatch.spec",
+    "proof": "bun run build && playwright test dispatch.spec board-indicators.spec",
     "demo:cross-branch-setup": "bash scripts/setup-cross-branch-demo.sh",
     "webview:serve": "vite",
     "check:engines": "bun scripts/check-engine-version.ts",

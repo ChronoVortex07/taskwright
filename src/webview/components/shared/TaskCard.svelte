@@ -9,7 +9,12 @@
   import PriorityIcon from './PriorityIcon.svelte';
 
   interface Props {
-    task: Task & { blocksTaskIds?: string[]; subtaskProgress?: { total: number; done: number } };
+    task: Task & {
+      blocksTaskIds?: string[];
+      subtaskProgress?: { total: number; done: number };
+      isActiveTask?: boolean;
+      claimStale?: boolean;
+    };
     taskIdDisplay: TaskIdDisplayMode;
     isActiveEdited?: boolean;
     onSelectTask: (taskId: string, taskMeta?: Pick<Task, 'filePath' | 'source' | 'branch'>) => void;
@@ -89,11 +94,13 @@
   );
   let hasSubtaskProgress = $derived(task.subtaskProgress !== undefined && task.subtaskProgress.total > 0);
   let isClaimed = $derived(!!task.claimedBy);
+  let isStaleClaim = $derived(isClaimed && task.claimStale === true);
   let claimTitle = $derived(
     isClaimed
-      ? `Claimed by ${task.claimedBy}${task.worktree ? ` on ${task.worktree}` : ''}${task.claimedAt ? ` (${task.claimedAt})` : ''}`
+      ? `Claimed by ${task.claimedBy}${task.worktree ? ` on ${task.worktree}` : ''}${task.claimedAt ? ` (${task.claimedAt})` : ''}${isStaleClaim ? ' — stale' : ''}`
       : ''
   );
+  let isActiveTask = $derived(task.isActiveTask === true);
   let readOnlyContext = $derived(getReadOnlyTaskContext(task));
   let displayTaskId = $derived(formatTaskIdForDisplay(task.id, taskIdDisplay));
   let showTaskId = $derived(taskIdDisplay !== 'hidden');
@@ -143,10 +150,25 @@
         {readOnlyContext}
       </span>
     {/if}
+    {#if isActiveTask}
+      <span
+        class="active-task-indicator"
+        data-testid="active-indicator-{task.id}"
+        title="Active task — agent sessions calling get_active_task see this one"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+        <span class="active-task-label">active</span>
+      </span>
+    {/if}
     {#if isClaimed}
-      <span class="claim-indicator" data-testid="claim-indicator-{task.id}" title={claimTitle}>
+      <span
+        class="claim-indicator"
+        class:stale={isStaleClaim}
+        data-testid="claim-indicator-{task.id}"
+        title={claimTitle}
+      >
         <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-        <span class="claim-indicator-label">{task.claimedBy}</span>
+        <span class="claim-indicator-label">{task.claimedBy}{#if isStaleClaim} · stale{/if}</span>
       </span>
     {/if}
     {#if hasBlockingDependencies}
