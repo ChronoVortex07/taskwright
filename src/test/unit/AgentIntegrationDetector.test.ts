@@ -14,9 +14,12 @@ vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
 }));
 
-// Mock child_process
+// Mock child_process. `execFile` is needed because the detector imports
+// claudeMcp.ts (for the shared TASKWRIGHT_MCP_NAME), which promisifies it at
+// module load.
 vi.mock('child_process', () => ({
   exec: vi.fn(),
+  execFile: vi.fn(),
 }));
 
 // Mock util.promisify to return a function that calls exec mock
@@ -66,7 +69,21 @@ describe('AgentIntegrationDetector', () => {
   }
 
   describe('detectClaudeCodeIntegration', () => {
-    it('should detect backlog in .mcp.json mcpServers', async () => {
+    it('should detect taskwright in .mcp.json mcpServers', async () => {
+      mockFileContents({
+        '.mcp.json': JSON.stringify({
+          mcpServers: {
+            taskwright: { command: 'node', args: ['dist/mcp/server.js'] },
+          },
+        }),
+      });
+
+      const result = await detectClaudeCodeIntegration('/workspace');
+      expect(result.mcpConfigured).toBe(true);
+      expect(result.guidelinesInjected).toBe(false);
+    });
+
+    it('should detect legacy backlog in .mcp.json mcpServers (back-compat)', async () => {
       mockFileContents({
         '.mcp.json': JSON.stringify({
           mcpServers: {
@@ -80,7 +97,7 @@ describe('AgentIntegrationDetector', () => {
       expect(result.guidelinesInjected).toBe(false);
     });
 
-    it('should not detect backlog when .mcp.json has other servers', async () => {
+    it('should not detect when .mcp.json has other servers', async () => {
       mockFileContents({
         '.mcp.json': JSON.stringify({
           mcpServers: {
@@ -103,6 +120,15 @@ describe('AgentIntegrationDetector', () => {
 
     it('should handle invalid JSON in .mcp.json with fallback string check', async () => {
       mockFileContents({
+        '.mcp.json': '{ "mcpServers": { "taskwright": broken json',
+      });
+
+      const result = await detectClaudeCodeIntegration('/workspace');
+      expect(result.mcpConfigured).toBe(true); // fallback string check finds "taskwright"
+    });
+
+    it('should handle invalid JSON in .mcp.json with legacy backlog fallback (back-compat)', async () => {
+      mockFileContents({
         '.mcp.json': '{ "mcpServers": { "backlog": broken json',
       });
 
@@ -110,7 +136,26 @@ describe('AgentIntegrationDetector', () => {
       expect(result.mcpConfigured).toBe(true); // fallback string check finds "backlog"
     });
 
-    it('should detect guidelines marker in CLAUDE.md', async () => {
+    it('should detect Taskwright guidelines marker in CLAUDE.md', async () => {
+      mockFileContents({
+        'CLAUDE.md':
+          'Some content\n<!-- TASKWRIGHT:BEGIN -->\nGuidelines here\n<!-- TASKWRIGHT:END -->',
+      });
+
+      const result = await detectClaudeCodeIntegration('/workspace');
+      expect(result.guidelinesInjected).toBe(true);
+    });
+
+    it('should detect Taskwright guidelines marker in AGENTS.md', async () => {
+      mockFileContents({
+        'AGENTS.md': '<!-- TASKWRIGHT:BEGIN -->\nAgent guidelines\n<!-- TASKWRIGHT:END -->',
+      });
+
+      const result = await detectClaudeCodeIntegration('/workspace');
+      expect(result.guidelinesInjected).toBe(true);
+    });
+
+    it('should detect legacy BACKLOG.MD guidelines marker in CLAUDE.md (back-compat)', async () => {
       mockFileContents({
         'CLAUDE.md':
           'Some content\n<!-- BACKLOG.MD MCP GUIDELINES START -->\nGuidelines here\n<!-- BACKLOG.MD MCP GUIDELINES END -->',
@@ -120,7 +165,7 @@ describe('AgentIntegrationDetector', () => {
       expect(result.guidelinesInjected).toBe(true);
     });
 
-    it('should detect guidelines marker in AGENTS.md', async () => {
+    it('should detect legacy BACKLOG.MD guidelines marker in AGENTS.md (back-compat)', async () => {
       mockFileContents({
         'AGENTS.md':
           '<!-- BACKLOG.MD MCP GUIDELINES START -->\nAgent guidelines\n<!-- BACKLOG.MD MCP GUIDELINES END -->',
@@ -142,7 +187,16 @@ describe('AgentIntegrationDetector', () => {
   });
 
   describe('detectCodexIntegration', () => {
-    it('should detect mcp_servers.backlog in .codex/config.toml', async () => {
+    it('should detect mcp_servers.taskwright in .codex/config.toml', async () => {
+      mockFileContents({
+        'config.toml': '[mcp_servers.taskwright]\ncommand = "node"\nargs = ["dist/mcp/server.js"]',
+      });
+
+      const result = await detectCodexIntegration('/workspace');
+      expect(result.mcpConfigured).toBe(true);
+    });
+
+    it('should detect legacy mcp_servers.backlog in .codex/config.toml (back-compat)', async () => {
       mockFileContents({
         'config.toml': '[mcp_servers.backlog]\ncommand = "backlog"\nargs = ["mcp"]',
       });
@@ -151,7 +205,7 @@ describe('AgentIntegrationDetector', () => {
       expect(result.mcpConfigured).toBe(true);
     });
 
-    it('should not detect when .codex/config.toml has no backlog entry', async () => {
+    it('should not detect when .codex/config.toml has no taskwright or backlog entry', async () => {
       mockFileContents({
         'config.toml': '[mcp_servers.other]\ncommand = "other"',
       });
@@ -168,7 +222,16 @@ describe('AgentIntegrationDetector', () => {
       expect(result.guidelinesInjected).toBe(false);
     });
 
-    it('should detect guidelines marker in AGENTS.md', async () => {
+    it('should detect Taskwright guidelines marker in AGENTS.md', async () => {
+      mockFileContents({
+        'AGENTS.md': '<!-- TASKWRIGHT:BEGIN -->\nGuidelines\n<!-- TASKWRIGHT:END -->',
+      });
+
+      const result = await detectCodexIntegration('/workspace');
+      expect(result.guidelinesInjected).toBe(true);
+    });
+
+    it('should detect legacy BACKLOG.MD guidelines marker in AGENTS.md (back-compat)', async () => {
       mockFileContents({
         'AGENTS.md':
           '<!-- BACKLOG.MD MCP GUIDELINES START -->\nGuidelines\n<!-- BACKLOG.MD MCP GUIDELINES END -->',
@@ -180,7 +243,16 @@ describe('AgentIntegrationDetector', () => {
   });
 
   describe('detectGuidelinesMarker', () => {
-    it('should detect MCP guidelines marker', async () => {
+    it('should detect Taskwright marker', async () => {
+      mockFileContents({
+        'AGENTS.md': 'stuff\n<!-- TASKWRIGHT:BEGIN -->\nmore stuff',
+      });
+
+      const result = await detectGuidelinesMarker('/workspace');
+      expect(result).toBe(true);
+    });
+
+    it('should detect legacy MCP guidelines marker (back-compat)', async () => {
       mockFileContents({
         'AGENTS.md': 'stuff\n<!-- BACKLOG.MD MCP GUIDELINES START -->\nmore stuff',
       });
@@ -189,7 +261,7 @@ describe('AgentIntegrationDetector', () => {
       expect(result).toBe(true);
     });
 
-    it('should detect CLI guidelines marker', async () => {
+    it('should detect legacy CLI guidelines marker (back-compat)', async () => {
       mockFileContents({
         'AGENTS.md': 'stuff\n<!-- BACKLOG.MD GUIDELINES START -->\nmore stuff',
       });
@@ -216,7 +288,19 @@ describe('AgentIntegrationDetector', () => {
   });
 
   describe('detectIntegration', () => {
-    it('should return hasAnyIntegration true when Claude MCP is configured', async () => {
+    it('should return hasAnyIntegration true when Claude MCP is configured (taskwright)', async () => {
+      mockFileContents({
+        '.mcp.json': JSON.stringify({
+          mcpServers: { taskwright: { command: 'node' } },
+        }),
+      });
+
+      const result = await detectIntegration('/workspace');
+      expect(result.hasAnyIntegration).toBe(true);
+      expect(result.claudeCode.mcpConfigured).toBe(true);
+    });
+
+    it('should return hasAnyIntegration true for legacy backlog MCP (back-compat)', async () => {
       mockFileContents({
         '.mcp.json': JSON.stringify({
           mcpServers: { backlog: { command: 'backlog' } },
@@ -228,7 +312,17 @@ describe('AgentIntegrationDetector', () => {
       expect(result.claudeCode.mcpConfigured).toBe(true);
     });
 
-    it('should return hasAnyIntegration true when guidelines are injected', async () => {
+    it('should return hasAnyIntegration true when Taskwright guidelines are injected', async () => {
+      mockFileContents({
+        'AGENTS.md': '<!-- TASKWRIGHT:BEGIN -->',
+      });
+
+      const result = await detectIntegration('/workspace');
+      expect(result.hasAnyIntegration).toBe(true);
+      expect(result.generalGuidelines).toBe(true);
+    });
+
+    it('should return hasAnyIntegration true for legacy guidelines marker (back-compat)', async () => {
       mockFileContents({
         'AGENTS.md': '<!-- BACKLOG.MD MCP GUIDELINES START -->',
       });

@@ -2,8 +2,16 @@ import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { TASKWRIGHT_MCP_NAME } from './claudeMcp';
+import { TASKWRIGHT_MARKERS } from './markerBlock';
 
 const execAsync = promisify(exec);
+
+/** Legacy MCP server name inherited from Backlog.md, kept for back-compat detection. */
+const LEGACY_MCP_NAME = 'backlog';
+
+/** MCP server names that count as "integrated" — current first, legacy for back-compat. */
+const MCP_SERVER_NAMES = [TASKWRIGHT_MCP_NAME, LEGACY_MCP_NAME];
 
 /**
  * Per-agent integration status
@@ -23,8 +31,13 @@ export interface IntegrationStatus {
   generalGuidelines: boolean;
 }
 
-/** Markers used in instruction files to indicate Backlog.md integration */
+/**
+ * Markers used in instruction files (CLAUDE.md / AGENTS.md) to indicate agent
+ * integration. Taskwright's marker comes first; the legacy Backlog.md markers
+ * are kept so projects set up under the old naming still register as integrated.
+ */
 const GUIDELINES_MARKERS = [
+  TASKWRIGHT_MARKERS.begin,
   '<!-- BACKLOG.MD MCP GUIDELINES START -->',
   '<!-- BACKLOG.MD GUIDELINES START -->',
 ];
@@ -41,7 +54,8 @@ async function safeReadFile(filePath: string): Promise<string | null> {
 }
 
 /**
- * Check whether a file contains a Backlog.md guidelines marker.
+ * Check whether a file contains an agent-integration guidelines marker
+ * (Taskwright's, or a legacy Backlog.md marker for back-compat).
  */
 function hasGuidelinesMarker(content: string): boolean {
   return GUIDELINES_MARKERS.some((marker) => content.includes(marker));
@@ -51,7 +65,7 @@ function hasGuidelinesMarker(content: string): boolean {
  * Detect Claude Code integration in the workspace.
  *
  * Checks:
- * - `.mcp.json` for a `backlog` key in `mcpServers`
+ * - `.mcp.json` for a `taskwright` key in `mcpServers` (legacy `backlog` too)
  * - `CLAUDE.md` or `AGENTS.md` for the guidelines marker
  */
 export async function detectClaudeCodeIntegration(workspaceRoot: string): Promise<AgentStatus> {
@@ -62,12 +76,12 @@ export async function detectClaudeCodeIntegration(workspaceRoot: string): Promis
   if (mcpContent) {
     try {
       const parsed = JSON.parse(mcpContent);
-      if (parsed?.mcpServers?.backlog) {
+      if (MCP_SERVER_NAMES.some((name) => parsed?.mcpServers?.[name])) {
         result.mcpConfigured = true;
       }
     } catch {
       // Invalid JSON — check as raw string fallback
-      if (mcpContent.includes('"backlog"')) {
+      if (MCP_SERVER_NAMES.some((name) => mcpContent.includes(`"${name}"`))) {
         result.mcpConfigured = true;
       }
     }
@@ -89,7 +103,7 @@ export async function detectClaudeCodeIntegration(workspaceRoot: string): Promis
  * Detect Codex integration in the workspace.
  *
  * Checks:
- * - `.codex/config.toml` for `[mcp_servers.backlog]` or `mcp_servers.backlog`
+ * - `.codex/config.toml` for `[mcp_servers.taskwright]` (legacy `mcp_servers.backlog` too)
  * - `AGENTS.md` for the guidelines marker
  */
 export async function detectCodexIntegration(workspaceRoot: string): Promise<AgentStatus> {
@@ -97,7 +111,7 @@ export async function detectCodexIntegration(workspaceRoot: string): Promise<Age
 
   // Check .codex/config.toml (simple string search, no TOML parser)
   const codexConfig = await safeReadFile(join(workspaceRoot, '.codex', 'config.toml'));
-  if (codexConfig && codexConfig.includes('mcp_servers.backlog')) {
+  if (codexConfig && MCP_SERVER_NAMES.some((name) => codexConfig.includes(`mcp_servers.${name}`))) {
     result.mcpConfigured = true;
   }
 
