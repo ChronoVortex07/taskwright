@@ -753,33 +753,34 @@ export class BacklogWriter {
   }
 
   /**
-   * Create a new draft file in the drafts/ directory
-   * @param backlogPath - Path to the backlog directory
-   * @param parser - Optional parser to read config
+   * Create a new draft file in the drafts/ directory. `opts` lets callers seed
+   * the title and description; both default to the empty/"Untitled" form so
+   * existing callers are unaffected.
    */
   async createDraft(
     backlogPath: string,
-    _parser?: BacklogParser
+    _parser?: BacklogParser,
+    opts?: { title?: string; description?: string }
   ): Promise<{ id: string; filePath: string }> {
     const draftsDir = path.join(backlogPath, 'drafts');
-
-    // Ensure drafts directory exists
     if (!fs.existsSync(draftsDir)) {
       fs.mkdirSync(draftsDir, { recursive: true });
     }
 
-    // Generate next draft ID
     const nextId = this.getNextDraftId(draftsDir);
     const draftId = `DRAFT-${nextId}`;
-
-    const fileName = `draft-${nextId} - Untitled.md`;
+    const title = opts?.title?.trim() || 'Untitled';
+    const sanitizedTitle = title
+      .replace(/[^a-zA-Z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .substring(0, 50);
+    const fileName = `draft-${nextId} - ${sanitizedTitle}.md`;
     const filePath = path.join(draftsDir, fileName);
 
-    // Build frontmatter
     const today = nowTimestamp();
     const frontmatter: FrontmatterData = {
       id: draftId,
-      title: 'Untitled',
+      title,
       status: 'Draft',
       labels: [],
       assignee: [],
@@ -788,11 +789,11 @@ export class BacklogWriter {
       updated_date: today,
     };
 
-    // Build body
-    const body =
-      '\n## Description\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\n<!-- SECTION:DESCRIPTION:END -->\n\n## Acceptance Criteria\n<!-- AC:BEGIN -->\n<!-- AC:END -->\n';
+    const descBlock = opts?.description
+      ? `<!-- SECTION:DESCRIPTION:BEGIN -->\n${opts.description}\n<!-- SECTION:DESCRIPTION:END -->`
+      : '<!-- SECTION:DESCRIPTION:BEGIN -->\n<!-- SECTION:DESCRIPTION:END -->';
+    const body = `\n## Description\n\n${descBlock}\n\n## Acceptance Criteria\n<!-- AC:BEGIN -->\n<!-- AC:END -->\n`;
 
-    // Build content
     const content = this.reconstructFile(frontmatter, body);
     fs.writeFileSync(filePath, content, 'utf-8');
 

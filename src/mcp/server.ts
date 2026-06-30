@@ -24,11 +24,27 @@ import {
   claimTaskHandler,
   releaseTaskHandler,
   attachPlanHandler,
+  createTaskHandler,
   type McpHandlerDeps,
 } from './handlers';
 
 function jsonContent(value: unknown): { content: Array<{ type: 'text'; text: string }> } {
   return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
+}
+
+type ToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: boolean };
+
+/** Run a handler and convert success/throw into a uniform MCP tool result. */
+async function runTool(fn: () => Promise<unknown>): Promise<ToolResult> {
+  try {
+    return { content: [{ type: 'text', text: JSON.stringify(await fn(), null, 2) }] };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      content: [{ type: 'text', text: JSON.stringify({ error: { message } }) }],
+      isError: true,
+    };
+  }
 }
 
 async function main(): Promise<void> {
@@ -107,6 +123,26 @@ async function main(): Promise<void> {
       },
     },
     async (args) => jsonContent(await attachPlanHandler(deps, args))
+  );
+
+  server.registerTool(
+    'create_task',
+    {
+      title: 'Create task',
+      description:
+        'Create a new Backlog.md task (or draft) on the board. Returns the created task summary.',
+      inputSchema: {
+        title: z.string().describe('Task title, imperative mood.'),
+        description: z.string().optional(),
+        status: z.string().optional().describe('Defaults to the board default status.'),
+        priority: z.enum(['high', 'medium', 'low']).optional(),
+        labels: z.array(z.string()).optional(),
+        assignee: z.array(z.string()).optional(),
+        milestone: z.string().optional(),
+        draft: z.boolean().optional().describe('Create as a draft (DRAFT-N in drafts/).'),
+      },
+    },
+    async (args) => runTool(() => createTaskHandler(deps, args))
   );
 
   const transport = new StdioServerTransport();

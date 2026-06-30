@@ -5,6 +5,7 @@ import { PlanService } from '../core/PlanService';
 import { readActiveTask } from '../core/activeTask';
 import { loadPlanProgress } from '../core/loadPlanProgress';
 import { ChecklistItem, Task } from '../core/types';
+import { assertValidPriority, assertValidStatus } from './taskWriteHelpers';
 
 /**
  * Pure-ish implementations of the Taskwright MCP tools, decoupled from the MCP
@@ -160,4 +161,59 @@ export async function attachPlanHandler(
 ): Promise<AttachPlanResult> {
   const plan = await deps.planService.attachPlan(args.taskId, args.plan, deps.parser);
   return { attached: true, taskId: args.taskId, plan };
+}
+
+/** Re-read a just-written task and shape it for return; throws if it vanished. */
+async function requireSummary(deps: McpHandlerDeps, taskId: string): Promise<TaskSummary> {
+  const task = await deps.parser.getTask(taskId);
+  if (!task) {
+    throw new Error(`Task ${taskId} was written but could not be read back.`);
+  }
+  return toSummary(task, deps.root);
+}
+
+export interface CreateTaskArgs {
+  title: string;
+  description?: string;
+  status?: string;
+  priority?: 'high' | 'medium' | 'low';
+  labels?: string[];
+  assignee?: string[];
+  milestone?: string;
+  draft?: boolean;
+}
+
+/** Create a task (or draft) and return its summary. */
+export async function createTaskHandler(
+  deps: McpHandlerDeps,
+  args: CreateTaskArgs
+): Promise<TaskSummary> {
+  const title = args.title?.trim();
+  if (!title) throw new Error('A task title is required.');
+  const config = await deps.parser.getConfig();
+  if (args.status) assertValidStatus(args.status, config.statuses ?? []);
+  if (args.priority) assertValidPriority(args.priority);
+
+  if (args.draft) {
+    const { id } = await deps.writer.createDraft(deps.backlogPath, deps.parser, {
+      title,
+      description: args.description,
+    });
+    return requireSummary(deps, id);
+  }
+
+  const { id } = await deps.writer.createTask(
+    deps.backlogPath,
+    {
+      title,
+      description: args.description,
+      status: args.status,
+      priority: args.priority,
+      labels: args.labels,
+      assignee: args.assignee,
+      milestone: args.milestone,
+    },
+    deps.parser
+  );
+  return requireSummary(deps, id);
 }
