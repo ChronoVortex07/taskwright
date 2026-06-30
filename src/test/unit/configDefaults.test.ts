@@ -20,4 +20,10 @@ describe('contributed dispatch config defaults', () => {
   it('keeps dispatchOpenTerminal opt-in (default false)', () => {
     expect(props['taskwright.dispatchOpenTerminal'].default).toBe(false);
   });
+
+  it('contributes dispatchTerminalCommand defaulting to empty string', () => {
+    const setting = props['taskwright.dispatchTerminalCommand'];
+    expect(setting.type).toBe('string');
+    expect(setting.default).toBe('');
+  });
 });

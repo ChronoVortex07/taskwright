@@ -4,12 +4,13 @@ import { BacklogParser } from '../core/BacklogParser';
 import { GitBranchService } from '../core/GitBranchService';
 import { createWorktree } from '../core/WorktreeService';
 import { writeActiveTask } from '../core/activeTask';
-import { writeHandoff } from '../core/handoff';
+import { writeHandoff, handoffPath } from '../core/handoff';
 import {
   DEFAULT_DISPATCH_TEMPLATE,
   dispatchBranchName,
   dispatchContextFromTask,
   renderDispatchPrompt,
+  resolveTerminalLaunch,
 } from '../core/dispatchPrompt';
 import { getTaskwrightConfig } from '../config';
 
@@ -38,6 +39,7 @@ interface DispatchSettings {
   template: string;
   createWorktree: boolean;
   openTerminal: boolean;
+  terminalCommand: string;
 }
 
 function readSettings(): DispatchSettings {
@@ -46,6 +48,7 @@ function readSettings(): DispatchSettings {
     template: template || DEFAULT_DISPATCH_TEMPLATE,
     createWorktree: getTaskwrightConfig<boolean>('dispatchCreateWorktree', true),
     openTerminal: getTaskwrightConfig<boolean>('dispatchOpenTerminal', false),
+    terminalCommand: getTaskwrightConfig<string>('dispatchTerminalCommand', ''),
   };
 }
 
@@ -95,11 +98,10 @@ export async function dispatchTask(
   // Mark the task active for the session root so the MCP get_active_task resolves
   // it, then render + persist the paste-ready prompt.
   writeActiveTask(sessionRoot, taskId);
-  const prompt = renderDispatchPrompt(
-    settings.template,
-    dispatchContextFromTask(task, { worktree: branch })
-  );
-  const handoffFile = writeHandoff(sessionRoot, taskId, prompt);
+  const handoffFile = handoffPath(sessionRoot, taskId);
+  const context = dispatchContextFromTask(task, { worktree: branch, handoffFile });
+  const prompt = renderDispatchPrompt(settings.template, context);
+  writeHandoff(sessionRoot, taskId, prompt);
   await vscode.env.clipboard.writeText(prompt);
 
   if (settings.openTerminal && worktreePath) {
@@ -108,6 +110,13 @@ export async function dispatchTask(
       cwd: worktreePath,
     });
     terminal.show();
+    const launch = resolveTerminalLaunch(settings.terminalCommand, context);
+    if (launch.warning) {
+      vscode.window.showWarningMessage(launch.warning);
+    }
+    if (launch.run && launch.command) {
+      terminal.sendText(launch.command, true);
+    }
   }
 
   return { taskId, prompt, handoffFile, sessionRoot, branch, worktreePath };

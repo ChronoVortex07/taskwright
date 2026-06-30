@@ -85,6 +85,11 @@
           "default": false,
           "markdownDescription": "When dispatching a task creates a worktree, open an integrated terminal in that worktree directory."
         },
+        "taskwright.dispatchTerminalCommand": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "When a dispatch opens a worktree terminal (`taskwright.dispatchOpenTerminal`), run this command in it. Supports the dispatch placeholders, notably `{{handoffFile}}` (path to the saved prompt) plus `{{id}}`, `{{title}}`, `{{worktree}}`. Leave empty to just open the terminal. To auto-start a session, use an **interactive** Claude Code chat seeded from the handoff file — e.g. bash: `claude \"$(cat {{handoffFile}})\"`, PowerShell: `claude (Get-Content -Raw '{{handoffFile}}')`. Commands using `claude -p`/`--print` (headless/metered) are skipped with a warning."
+        },
         "taskwright.intakeTemplate": {
           "type": "string",
           "editPresentation": "multilineText",
