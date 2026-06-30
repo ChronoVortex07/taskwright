@@ -185,7 +185,7 @@
       },
       {
         "command": "taskwright.setupAgentIntegration",
-        "title": "Taskwright: Set Up Agent Integration"
+        "title": "Taskwright: Set Up Backlog.md CLI"
       },
       {
         "command": "taskwright.claimTask",
@@ -227,7 +227,7 @@
       },
       {
         "command": "taskwright.setupClaudeIntegration",
-        "title": "Taskwright: Set Up Claude Code Integration"
+        "title": "Taskwright: Set Up Claude Code Integration (MCP + CLAUDE.md)"
       }
     ],
     "menus": {

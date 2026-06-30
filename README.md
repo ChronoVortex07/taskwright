@@ -43,6 +43,17 @@ Taskwright additions (all implemented):
 - The [Backlog.md](https://github.com/MrLesk/Backlog.md) CLI is **optional** — Taskwright reads and writes tasks itself (the latter via its MCP server). The CLI is only needed for the cross-branch board view, which otherwise degrades to local-branch tasks.
 - On Windows: `git config --global core.longpaths true` (Backlog.md task filenames can exceed `MAX_PATH`)
 
+## Setup commands
+
+Two command-palette commands set up _different_ integrations — run the one that matches what you need:
+
+| Command                                                          | What it does                                                                                                                     | When to run it                                                                                                                                                                                                                  |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Taskwright: Set Up Backlog.md CLI**                            | Installs the optional [Backlog.md](https://github.com/MrLesk/Backlog.md) CLI (if missing) and runs `backlog init`.               | Only if you want the **cross-branch board view**. Taskwright reads and writes tasks without the CLI, so most users can skip this.                                                                                               |
+| **Taskwright: Set Up Claude Code Integration (MCP + CLAUDE.md)** | Registers the bundled **Taskwright MCP server** with Claude Code (user scope) and adds the agent convention to your `CLAUDE.md`. | If you dispatch tasks to **Claude Code** and want a fresh session to pull its task via `get_active_task` / `claim_task` / `release_task`. Taskwright offers this automatically the first time it detects an un-integrated repo. |
+
+In short: **Set Up Backlog.md CLI** is about the optional upstream CLI; **Set Up Claude Code Integration** is about wiring Claude Code to Taskwright's MCP server.
+
 ## Development
 
 ```bash
