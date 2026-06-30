@@ -14,7 +14,7 @@ delegating work to AI agents. Taskwright's workflow:
 
 1. **Capture** bugs / improvements as you find them.
 2. **Categorize** them onto the board (labels, priority) — with help from Claude.
-3. **Dispatch** an isolated session per task. Each task maps to a branch/worktree; the agent claims it,
+3. **Dispatch** an isolated session per task. Each task gets its own git worktree (the default) so parallel sessions never collide; the agent claims it,
    works with only that task's context, and reports progress back onto the board.
 
 Dispatch is **subscription-safe**: Taskwright generates a paste-ready prompt for a Claude Code session
@@ -31,7 +31,7 @@ Taskwright additions (all implemented):
   stale-claim expiry, surfaced as badges on the board.
 - **Active task + Taskwright MCP** (`get_active_task` / `claim_task` / `release_task`) plus a
   `CLAUDE.md` convention, so a fresh session pulls its task context. Auto-registers with Claude Code.
-- **Dispatch** — copies a paste-ready prompt (and an optional git worktree) for a task. Never spawns
+- **Dispatch** — copies a paste-ready prompt and carves an isolated git worktree (the default) for a task. Never spawns
   `claude -p`.
 - **"Categorize with Claude"** intake — turn a raw bug dump into labeled, prioritized tasks.
 - **Superpowers bridge** — attach a plan/spec to a task (`attach_plan`) and see its checkbox progress.
