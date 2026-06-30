@@ -65,7 +65,8 @@ Three components:
 - **B. Merge queue + right-of-way** — an ordered, shared FIFO queue whose _head_
   holds the exclusive right to mutate `main`. Replaces a raw lock.
 - **C. `request_merge` flow + review gate + modes** — one blocking MCP tool that
-  validates, enqueues the task into a new `Reviewing Merge` state, suspends until
+  validates, enqueues the task into a new mode-named review state (`Pending
+Review` / `Awaiting Merge` / `Awaiting PR`), suspends until
   granted (auto-mode head, or human approval), then performs the mode's action
   and cleans up.
 
@@ -176,13 +177,14 @@ and "skip" are explicitly out of scope for v1 (FIFO + Send-back covers the need)
 
 ### 6.1 Modes (`taskwright.mergeMode`)
 
-Mode sets both the gate and the action:
+Mode sets the gate, the action, **and the name of the intermediate status** (so
+the board column reflects what is actually happening — see §7):
 
-| Mode                          | Gate                            | Action when granted                    |
-| ----------------------------- | ------------------------------- | -------------------------------------- |
-| `manual-review` **(default)** | human approval                  | fast-forward merge to `main`           |
-| `auto-merge`                  | none                            | fast-forward merge to `main`           |
-| `auto-pr`                     | none (review happens on GitHub) | push branch + open PR targeting `main` |
+| Mode                          | Intermediate status | Gate                            | Action when granted                    |
+| ----------------------------- | ------------------- | ------------------------------- | -------------------------------------- |
+| `manual-review` **(default)** | `Pending Review`    | human approval                  | fast-forward merge to `main`           |
+| `auto-merge`                  | `Awaiting Merge`    | none                            | fast-forward merge to `main`           |
+| `auto-pr`                     | `Awaiting PR`       | none (review happens on GitHub) | push branch + open PR targeting `main` |
 
 The mode is captured on the queue entry at submission, so changing the setting
 mid-flight does not retroactively re-gate already-queued tasks.
@@ -201,7 +203,8 @@ returns" behaviour.
    `["bun run test", "bun run lint", "bun run typecheck"]`); any failure → abort
    with the failing output. **Aborts here never enqueue** — only green, rebased
    work enters review.
-2. **Enqueue + set status `Reviewing Merge`** (via the writer, surgically).
+2. **Enqueue + set the intermediate status** for the active mode — `Pending
+Review` / `Awaiting Merge` / `Awaiting PR` (via the writer, surgically).
 3. **Wait for the green light.** Return from the wait only when **this task is
    the head** AND **(mode is auto OR `approved` is true)**. Until then the call
    is suspended.
@@ -248,16 +251,25 @@ only add re-call if a transport timeout is observed.
 
 ## 7. Board status & approval UI
 
-- **Status:** insert `Reviewing Merge` →
-  `["To Do", "In Progress", "Reviewing Merge", "Done"]` in `backlog/config.yml`.
-  The kanban column, drag rules, and language providers are config-driven, so the
-  new column appears automatically.
-- **Controls** on cards/detail panel for tasks in `Reviewing Merge`:
-  - `manual-review`: **Approve & merge** (writes `approved:true` → unblocks the
-    agent) and **Send back** (removes the entry, status → `In Progress`; the
-    agent's call returns `{status:"sent_back", reason}`).
-  - `auto-merge` / `auto-pr`: read-only **queued · position N / merging…**
-    indicator.
+- **Mode-dependent intermediate status.** There is exactly one intermediate
+  status between `In Progress` and `Done`, and its name mirrors `mergeMode`:
+  `Pending Review` (manual-review, the default), `Awaiting Merge` (auto-merge),
+  or `Awaiting PR` (auto-pr). Because `mergeMode` is a single global setting,
+  only one such status is ever active. The default board ships as
+  `["To Do", "In Progress", "Pending Review", "Done"]` in `backlog/config.yml`.
+- **Rename + migrate on mode change.** When the user changes `mergeMode`,
+  Taskwright rewrites the intermediate status entry in `backlog/config.yml` to
+  the new name and migrates any in-flight task currently in the old intermediate
+  status to the new one (a rare path, but it keeps the board and frontmatter
+  consistent). The kanban column, drag rules, and language providers are
+  config-driven, so the renamed column appears automatically.
+- **Controls** on cards/detail panel for tasks in the intermediate status:
+  - `manual-review` (`Pending Review`): **Approve & merge** (writes
+    `approved:true` → unblocks the agent) and **Send back** (removes the entry,
+    status → `In Progress`; the agent's call returns `{status:"sent_back",
+reason}`).
+  - `auto-merge` (`Awaiting Merge`) / `auto-pr` (`Awaiting PR`): read-only
+    **queued · position N / merging…** indicator.
 - The extension host writes approvals/send-backs; the MCP `request_merge`
   long-poll reads them. They coordinate purely through the shared queue file —
   no direct IPC.
@@ -271,7 +283,7 @@ agent (inside worktree; pre-commit guard backstops escapes)
   └─ implements, commits in the worktree, runs tests
 request_merge  (one blocking call)
   ├─ validate clean → rebase onto main → verify (test/lint/typecheck)
-  ├─ enqueue, status → Reviewing Merge
+  ├─ enqueue, status → Pending Review | Awaiting Merge | Awaiting PR (per mode)
   ├─ wait: head? AND (auto-mode OR human-approved)
   ├─ on grant: re-rebase + re-verify
   ├─ action: ff-merge to main  | push + open PR
@@ -302,7 +314,8 @@ request_merge  (one blocking call)
 - `taskwright.enforceWorktreeIsolation` (boolean, default `true`) — install/remove
   the git-hook guard.
 - `taskwright.mergeMode` (`"manual-review" | "auto-merge" | "auto-pr"`, default
-  `"manual-review"`).
+  `"manual-review"`). Also names the intermediate board status (`Pending Review`
+  / `Awaiting Merge` / `Awaiting PR`); changing it renames + migrates per §7.
 - `taskwright.mergeVerifyCommands` (string[], default
   `["bun run test", "bun run lint", "bun run typecheck"]`).
 - `taskwright.mergeQueueStaleMinutes` (number, default `30`).
@@ -342,8 +355,9 @@ Config/docs: `backlog/config.yml` status; `DEFAULT_DISPATCH_TEMPLATE` and
     fixture.
 - **MCP handler tests:** `request_merge` returns the right structured outcomes
   (`merged` / `pr_opened` / `waiting` / `sent_back` / abort reasons).
-- **Webview (Playwright):** the `Reviewing Merge` column renders and the
-  Approve/Send-back controls post the correct messages.
+- **Webview (Playwright):** the intermediate-status column renders (and re-labels
+  when `mergeMode` changes) and the Approve/Send-back controls post the correct
+  messages.
 - **CDP (optional):** approving in the board unblocks a simulated queue entry and
   writes `Done` to disk.
 
@@ -355,8 +369,9 @@ Config/docs: `backlog/config.yml` status; `DEFAULT_DISPATCH_TEMPLATE` and
 - **Subtask B — Merge queue + `request_merge`:** `mergeQueue`, `finishTask`,
   `request_merge` MCP tool, all three mode actions, verify/abort handling,
   settings, tests.
-- **Subtask C — Board state + approval UI + modes wiring:** `Reviewing Merge`
-  status, kanban column + controls, approve/send-back commands feeding the queue,
+- **Subtask C — Board state + approval UI + modes wiring:** mode-named
+  intermediate status (default `Pending Review`) with rename + migrate on mode
+  change, kanban column + controls, approve/send-back commands feeding the queue,
   `mergeMode` plumbing, webview tests.
 
 A/B/C are buildable and testable independently; B's queue and C's UI meet only at
