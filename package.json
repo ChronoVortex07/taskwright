@@ -95,6 +95,11 @@
           "editPresentation": "multilineText",
           "default": "",
           "markdownDescription": "Template for the \"Categorize with Claude\" intake prompt. Supports `{{dump}}` (your raw notes), `{{labels}}`, `{{statuses}}`, and `{{priorities}}` (the board's vocabulary). Leave empty to use the built-in template."
+        },
+        "taskwright.enforceWorktreeIsolation": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Install a managed `pre-commit` git hook that blocks committing a dispatched task branch from the primary working tree — the failure mode where a parallel agent escapes its `.worktrees/<branch>` and clobbers a sibling branch. Bypass a single commit with `git commit --no-verify`. Set to `false` to remove the hook."
         }
       }
     },

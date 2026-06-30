@@ -31,11 +31,53 @@ import {
   registerTaskwrightMcp,
 } from './core/claudeMcp';
 import { injectConvention } from './core/agentConvention';
-import { affectsTaskwrightConfig } from './config';
+import { affectsTaskwrightConfig, getTaskwrightConfig } from './config';
+import { installGuard, uninstallGuard, type HookFsDeps } from './core/hookInstaller';
 
 let fileWatcher: FileWatcher | undefined;
 let crossBranchStatusBarItem: vscode.StatusBarItem | undefined;
 let workspaceStatusBarItem: vscode.StatusBarItem | undefined;
+
+const GUARD_REL = '.taskwright/hooks/worktree-guard.js';
+
+const guardFs: HookFsDeps = {
+  exists: fs.existsSync,
+  read: (p) => fs.readFileSync(p, 'utf8'),
+  write: (p, c) => {
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, c);
+  },
+};
+
+/**
+ * Install or remove the worktree-isolation pre-commit guard for `repoRoot`,
+ * per the `taskwright.enforceWorktreeIsolation` setting. When enabling, copy the
+ * extension's bundled guard into the repo's gitignored `.taskwright/hooks/` so
+ * the hook references a stable in-repo path.
+ */
+function syncWorktreeGuard(repoRoot: string, extensionUri: vscode.Uri): void {
+  try {
+    if (!getTaskwrightConfig<boolean>('enforceWorktreeIsolation', true)) {
+      uninstallGuard(repoRoot, guardFs);
+      return;
+    }
+    const bundled = path.join(extensionUri.fsPath, 'dist', 'hooks', 'worktree-guard.js');
+    if (!fs.existsSync(bundled)) return; // dev build without the bundle yet
+    const dest = path.join(repoRoot, GUARD_REL);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(bundled, dest);
+    const manager = installGuard(repoRoot, GUARD_REL, guardFs);
+    if (manager === 'plain') {
+      try {
+        fs.chmodSync(path.join(repoRoot, '.git', 'hooks', 'pre-commit'), 0o755);
+      } catch {
+        /* chmod is a no-op / unsupported on Windows */
+      }
+    }
+  } catch (e) {
+    console.warn('[Taskwright] Worktree guard sync failed:', e);
+  }
+}
 
 /**
  * The cross-cutting surface both Tasks board hosts (sidebar `TasksViewProvider`
@@ -143,6 +185,10 @@ export function activate(context: vscode.ExtensionContext) {
   const workspaceRootPath = activeRoot?.workspaceFolder?.uri.fsPath;
   if (workspaceRootPath) {
     tasksHosts.forEach((host) => host.setWorkspaceRoot(workspaceRootPath));
+  }
+
+  if (workspaceRootPath) {
+    syncWorktreeGuard(workspaceRootPath, context.extensionUri);
   }
 
   const taskPreviewProvider = new TaskPreviewViewProvider(
