@@ -6,7 +6,13 @@ import { BacklogParser } from '../../core/BacklogParser';
 import { BacklogWriter } from '../../core/BacklogWriter';
 import { ClaimService } from '../../core/ClaimService';
 import { PlanService } from '../../core/PlanService';
-import { createTaskHandler, editTaskHandler } from '../../mcp/handlers';
+import {
+  createTaskHandler,
+  editTaskHandler,
+  completeTaskHandler,
+  archiveTaskHandler,
+  restoreTaskHandler,
+} from '../../mcp/handlers';
 import type { McpHandlerDeps } from '../../mcp/handlers';
 
 let root: string;
@@ -110,5 +116,31 @@ describe('editTaskHandler', () => {
     await expect(editTaskHandler(deps(), { taskId: 'TASK-404', title: 'x' })).rejects.toThrow(
       'TASK-404'
     );
+  });
+});
+
+describe('lifecycle moves', () => {
+  it('completes a task into completed/', async () => {
+    await createTaskHandler(deps(), { title: 'Finish me' });
+    const result = await completeTaskHandler(deps(), { taskId: 'TASK-1' });
+    expect(result.outcome).toBe('completed');
+    expect(result.path.replace(/\\/g, '/')).toContain('/completed/');
+    expect(fs.existsSync(result.path)).toBe(true);
+  });
+
+  it('archives then restores a task', async () => {
+    await createTaskHandler(deps(), { title: 'Archive me' });
+    const archived = await archiveTaskHandler(deps(), { taskId: 'TASK-1' });
+    expect(archived.outcome).toBe('archived');
+    expect(archived.path.replace(/\\/g, '/')).toContain('/archive/tasks/');
+
+    const restored = await restoreTaskHandler(deps(), { taskId: 'TASK-1' });
+    expect(restored.outcome).toBe('restored');
+    expect(restored.path.replace(/\\/g, '/')).toContain('/tasks/');
+    expect(fs.existsSync(restored.path)).toBe(true);
+  });
+
+  it('throws completing a missing task', async () => {
+    await expect(completeTaskHandler(deps(), { taskId: 'TASK-404' })).rejects.toThrow('TASK-404');
   });
 });

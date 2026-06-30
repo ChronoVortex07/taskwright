@@ -241,6 +241,39 @@ export interface EditTaskArgs {
   references?: string[];
 }
 
+export interface MoveResult {
+  taskId: string;
+  outcome: 'completed' | 'archived' | 'restored';
+  path: string;
+}
+
+/** Move a task into completed/. */
+export async function completeTaskHandler(
+  deps: McpHandlerDeps,
+  args: { taskId: string }
+): Promise<MoveResult> {
+  const dest = await deps.writer.completeTask(args.taskId, deps.parser);
+  return { taskId: args.taskId, outcome: 'completed', path: dest };
+}
+
+/** Move a task into archive/tasks/. */
+export async function archiveTaskHandler(
+  deps: McpHandlerDeps,
+  args: { taskId: string }
+): Promise<MoveResult> {
+  const dest = await deps.writer.archiveTask(args.taskId, deps.parser);
+  return { taskId: args.taskId, outcome: 'archived', path: dest };
+}
+
+/** Move an archived task back into tasks/ (or drafts/ for DRAFT- ids). */
+export async function restoreTaskHandler(
+  deps: McpHandlerDeps,
+  args: { taskId: string }
+): Promise<MoveResult> {
+  const dest = await deps.writer.restoreArchivedTask(args.taskId, deps.parser);
+  return { taskId: args.taskId, outcome: 'restored', path: dest };
+}
+
 /** Apply partial edits to a task and return the updated summary. */
 export async function editTaskHandler(
   deps: McpHandlerDeps,

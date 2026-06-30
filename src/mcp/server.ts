@@ -26,6 +26,9 @@ import {
   attachPlanHandler,
   createTaskHandler,
   editTaskHandler,
+  completeTaskHandler,
+  archiveTaskHandler,
+  restoreTaskHandler,
   type McpHandlerDeps,
 } from './handlers';
 
@@ -175,6 +178,36 @@ async function main(): Promise<void> {
       },
     },
     async (args) => runTool(() => editTaskHandler(deps, args))
+  );
+
+  server.registerTool(
+    'complete_task',
+    {
+      title: 'Complete task',
+      description: 'Move a task into completed/. Returns { taskId, outcome, path }.',
+      inputSchema: { taskId: z.string().describe('Task ID to complete.') },
+    },
+    async (args) => runTool(() => completeTaskHandler(deps, args))
+  );
+
+  server.registerTool(
+    'archive_task',
+    {
+      title: 'Archive task',
+      description: 'Soft-delete a task into archive/tasks/. Returns { taskId, outcome, path }.',
+      inputSchema: { taskId: z.string().describe('Task ID to archive.') },
+    },
+    async (args) => runTool(() => archiveTaskHandler(deps, args))
+  );
+
+  server.registerTool(
+    'restore_task',
+    {
+      title: 'Restore task',
+      description: 'Restore an archived task back to tasks/. Returns { taskId, outcome, path }.',
+      inputSchema: { taskId: z.string().describe('Task ID to restore.') },
+    },
+    async (args) => runTool(() => restoreTaskHandler(deps, args))
   );
 
   const transport = new StdioServerTransport();
