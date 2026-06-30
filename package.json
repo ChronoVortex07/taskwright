@@ -78,6 +78,12 @@
           "type": "boolean",
           "default": false,
           "markdownDescription": "When dispatching a task creates a worktree, open an integrated terminal in that worktree directory."
+        },
+        "backlog.intakeTemplate": {
+          "type": "string",
+          "editPresentation": "multilineText",
+          "default": "",
+          "markdownDescription": "Template for the \"Categorize with Claude\" intake prompt. Supports `{{dump}}` (your raw notes), `{{labels}}`, `{{statuses}}`, and `{{priorities}}` (the board's vocabulary). Leave empty to use the built-in template."
         }
       }
     },
@@ -193,6 +199,11 @@
         "command": "backlog.dispatchTask",
         "title": "Taskwright: Dispatch Task (copy prompt)",
         "icon": "$(rocket)"
+      },
+      {
+        "command": "backlog.categorizeWithClaude",
+        "title": "Taskwright: Categorize with Claude (copy prompt)",
+        "icon": "$(sparkle)"
       },
       {
         "command": "backlog.setupClaudeIntegration",

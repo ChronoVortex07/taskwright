@@ -1,4 +1,5 @@
 import { ChecklistItem, Task } from './types';
+import { substitutePlaceholders } from './templateRender';
 
 /**
  * Subscription-safe dispatch: Taskwright never spawns `claude -p` (that risks
@@ -88,13 +89,7 @@ export function dispatchContextFromTask(
   };
 }
 
-/**
- * Substitute `{{key}}` placeholders with their context values. Every occurrence
- * of a known key is replaced; unknown placeholders are left intact so template
- * typos stay visible rather than silently vanishing.
- */
+/** Substitute `{{key}}` placeholders with their dispatch-context values. */
 export function renderDispatchPrompt(template: string, ctx: DispatchContext): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>
-    key in ctx ? String(ctx[key as keyof DispatchContext]) : match
-  );
+  return substitutePlaceholders(template, ctx as unknown as Record<string, string>);
 }

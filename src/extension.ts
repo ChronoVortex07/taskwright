@@ -20,6 +20,7 @@ import { BacklogWorkspaceManager, type BacklogRoot } from './core/BacklogWorkspa
 import { detectPackageManager } from './core/AgentIntegrationDetector';
 import { claimTaskForCurrentUser, releaseTaskClaim } from './providers/claimActions';
 import { dispatchTask } from './providers/dispatchActions';
+import { categorizeWithClaude } from './providers/intakeActions';
 import { writeActiveTask, clearActiveTask } from './core/activeTask';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -854,6 +855,32 @@ export function activate(context: vscode.ExtensionContext) {
         }
       } catch (error) {
         vscode.window.showErrorMessage(`Failed to dispatch task: ${error}`);
+      }
+    })
+  );
+
+  // Intake: turn the raw bug/improvement notes in the active editor into a
+  // paste-ready "categorize these into Backlog.md tasks" prompt on the clipboard.
+  // Subscription-safe — never spawns `claude -p`.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('backlog.categorizeWithClaude', async () => {
+      if (!parser) {
+        vscode.window.showErrorMessage('No backlog folder found in workspace');
+        return;
+      }
+      try {
+        const result = await categorizeWithClaude(parser);
+        if (!result) return;
+        const choice = await vscode.window.showInformationMessage(
+          'Categorization prompt copied to clipboard. Paste it into a Claude Code session to create the tasks.',
+          'Open handoff'
+        );
+        if (choice === 'Open handoff') {
+          const doc = await vscode.workspace.openTextDocument(result.handoffFile);
+          await vscode.window.showTextDocument(doc);
+        }
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to build categorization prompt: ${error}`);
       }
     })
   );
