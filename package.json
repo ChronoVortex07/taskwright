@@ -63,6 +63,12 @@
           "default": "",
           "markdownDescription": "Identity that advisory task claims are attributed to (e.g. `@alice`). When empty, your OS username is used, prefixed with `@`."
         },
+        "backlog.claimStalenessHours": {
+          "type": "number",
+          "default": 12,
+          "minimum": 0,
+          "markdownDescription": "Hours after which another session's advisory claim is treated as stale (abandoned): stale claims are shown as such and can be re-claimed without an override prompt. Set to `0` to disable staleness (every live claim by another identity then requires confirmation to override)."
+        },
         "backlog.dispatchTemplate": {
           "type": "string",
           "editPresentation": "multilineText",

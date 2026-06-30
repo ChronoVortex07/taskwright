@@ -6,6 +6,7 @@ import { ClaimService } from '../core/ClaimService';
 import { GitBranchService } from '../core/GitBranchService';
 import { resolveClaimIdentity } from '../core/claimIdentity';
 import { Claim } from '../core/claims';
+import { resolveClaimAction, stalenessMsFromHours } from '../core/claimResolution';
 
 /**
  * Provider-layer glue for advisory claiming. Resolves the claimant identity
@@ -19,6 +20,12 @@ const claimService = new ClaimService();
 export function getClaimIdentity(): string {
   const configured = vscode.workspace.getConfiguration('backlog').get<string>('claimIdentity', '');
   return resolveClaimIdentity(configured, os.userInfo().username);
+}
+
+/** The configured staleness window for advisory claims, in milliseconds (0 = off). */
+export function getClaimStalenessMs(): number {
+  const hours = vscode.workspace.getConfiguration('backlog').get<number>('claimStalenessHours', 12);
+  return stalenessMsFromHours(hours);
 }
 
 /**
@@ -38,13 +45,36 @@ async function currentBranch(parser: BacklogParser): Promise<string | undefined>
   }
 }
 
-/** Claim a task for the current user, recording the active branch as worktree. */
+/**
+ * Claim a task for the current user, recording the active branch as worktree.
+ * If the task already holds a live claim by someone else, the user is asked to
+ * confirm before overriding (claims are advisory). A stale claim — older than
+ * the configured window — is overridden without friction. Returns the written
+ * claim, or undefined if the user declined the override.
+ */
 export async function claimTaskForCurrentUser(
   taskId: string,
   parser: BacklogParser
-): Promise<Claim> {
+): Promise<Claim | undefined> {
+  const identity = getClaimIdentity();
+  const existing = await parser.getTask(taskId);
+  const action = resolveClaimAction(
+    { claimedBy: existing?.claimedBy, claimedAt: existing?.claimedAt },
+    identity,
+    getClaimStalenessMs()
+  );
+  if (action === 'conflict') {
+    const choice = await vscode.window.showWarningMessage(
+      `${taskId} is already claimed by ${existing?.claimedBy}${
+        existing?.worktree ? ` on ${existing.worktree}` : ''
+      }. Override the claim?`,
+      { modal: true },
+      'Override'
+    );
+    if (choice !== 'Override') return undefined;
+  }
   const worktree = await currentBranch(parser);
-  return claimService.claimTask(taskId, getClaimIdentity(), parser, { worktree });
+  return claimService.claimTask(taskId, identity, parser, { worktree });
 }
 
 /** Release any claim on a task. */

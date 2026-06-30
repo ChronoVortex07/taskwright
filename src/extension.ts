@@ -753,6 +753,7 @@ export function activate(context: vscode.ExtensionContext) {
       }
       try {
         const claim = await claimTaskForCurrentUser(taskId, parser);
+        if (!claim) return;
         refreshAllViews();
         vscode.window.showInformationMessage(`Claimed ${taskId} as ${claim.claimedBy}`);
       } catch (error) {

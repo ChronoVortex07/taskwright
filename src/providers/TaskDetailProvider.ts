@@ -770,6 +770,7 @@ export class TaskDetailProvider {
             TaskDetailProvider.currentTaskId,
             this.parser
           );
+          if (!claim) break;
           await this.openTask(
             TaskDetailProvider.currentTaskRef ?? { taskId: TaskDetailProvider.currentTaskId },
             { preserveFocus: true }
