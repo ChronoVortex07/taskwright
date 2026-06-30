@@ -45,7 +45,9 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   template + `{{placeholder}}` substitution; `backlog.dispatchTemplate` setting), `src/core/WorktreeService.ts`
   (optional `.worktrees/<branch>` isolation, `backlog.dispatchCreateWorktree`), `src/core/handoff.ts`
   (`.taskwright/handoff/<id>.md`). Orchestration in `src/providers/dispatchActions.ts` (sets active task on the
-  session root, optional terminal); "Dispatch" control in the detail panel.
+  session root, optional terminal); "Dispatch" control in the detail panel. Visual proof + behavior coverage of
+  the agentic banners (claim / set-active / dispatch) lives in `e2e/dispatch.spec.ts` — `bun run proof` builds
+  and runs it, writing screenshots to `e2e/__screenshots__/dispatch/` (git-ignored).
 - **Intake — "Categorize with Claude"** ✅ (Phase 3): `backlog.categorizeWithClaude` captures the raw notes in
   the active editor (selection, else whole doc), renders a paste-ready prompt constrained by the board's
   labels/statuses/priorities, and copies it to the clipboard for a session to create tasks via the Backlog.md
