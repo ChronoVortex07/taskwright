@@ -23,10 +23,11 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
 
 ## Coupling rules (important)
 
-- **Read** task data by parsing `backlog/tasks/*.md` directly. **Write** via the `backlog` CLI
-  (`BacklogCli.execute`) to keep IDs/frontmatter format valid. Only Taskwright's own new fields
-  (claims) are written directly.
-- Don't reimplement Backlog.md CRUD — the `backlog` MCP server (`.mcp.json`) already exposes it.
+- **Read** task data by parsing `backlog/tasks/*.md` directly. **Write** through Taskwright's own
+  `BacklogWriter` (`src/core/BacklogWriter.ts`), which reproduces Backlog.md's frontmatter
+  byte-for-byte; agents reach it via the Taskwright MCP write tools (`create_task`, `edit_task`,
+  …). The external `backlog` CLI is no longer required for task CRUD.
+- Don't reimplement Backlog.md CRUD — the Taskwright MCP server (`.mcp.json`) already exposes it.
 
 ## Taskwright additions (see the project plan)
 

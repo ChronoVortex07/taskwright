@@ -1,32 +1,21 @@
-<!-- BACKLOG.MD MCP GUIDELINES START -->
-
 <CRITICAL_INSTRUCTION>
 
-## BACKLOG WORKFLOW INSTRUCTIONS
+## Task workflow (Taskwright MCP)
 
-This project uses Backlog.md MCP for all task and project management activities.
+Task and project management runs through the **Taskwright MCP server** (`.mcp.json`), not an
+external CLI. At the start of a task session:
 
-**CRITICAL GUIDANCE**
+1. `get_active_task` — load your assigned task and its full context.
+2. `claim_task` — mark it in progress (advisory; prevents cross-worktree collisions).
+3. Do the work. Use `create_task` / `edit_task` to add or update tasks, `create_subtask` for
+   breakdowns, and `complete_task` when done. Record progress with `edit_task`
+   (implementationNotes / finalSummary).
+4. `release_task` when you finish or hand off.
 
-- If your client supports MCP resources, read `backlog://workflow/overview` to understand when and how to use Backlog for this project.
-- If your client only supports tools or the above request fails, call `backlog.get_workflow_overview()` tool to load the tool-oriented overview (it lists the matching guide tools).
-
-- **First time working here?** Read the overview resource IMMEDIATELY to learn the workflow
-- **Already familiar?** You should have the overview cached ("## Backlog.md Overview (MCP)")
-- **When to read it**: BEFORE creating tasks, or when you're unsure whether to track work
-
-These guides cover:
-
-- Decision framework for when to create tasks
-- Search-first workflow to avoid duplicates
-- Links to detailed guides for task creation, execution, and finalization
-- MCP tools reference
-
-You MUST read the overview resource to understand the complete workflow. The information is NOT summarized here.
+Generated task files stay byte-for-byte compatible with Backlog.md, so the board remains
+readable by the upstream tools if they are installed.
 
 </CRITICAL_INSTRUCTION>
-
-<!-- BACKLOG.MD MCP GUIDELINES END -->
 
 ## Task granularity
 

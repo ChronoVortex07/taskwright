@@ -40,7 +40,7 @@ Taskwright additions (all implemented):
 
 - VS Code `^1.110.0`
 - Node `>=22` and [Bun](https://bun.sh) to build from source
-- The [Backlog.md](https://github.com/MrLesk/Backlog.md) CLI on PATH for writes and cross-branch features
+- The [Backlog.md](https://github.com/MrLesk/Backlog.md) CLI is **optional** — Taskwright reads and writes tasks itself (the latter via its MCP server). The CLI is only needed for the cross-branch board view, which otherwise degrades to local-branch tasks.
 - On Windows: `git config --global core.longpaths true` (Backlog.md task filenames can exceed `MAX_PATH`)
 
 ## Development

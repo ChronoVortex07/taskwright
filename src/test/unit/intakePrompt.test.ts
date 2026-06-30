@@ -34,7 +34,8 @@ describe('renderIntakePrompt', () => {
     });
     const out = renderIntakePrompt(DEFAULT_INTAKE_TEMPLATE, ctx);
     expect(out).toContain('Login button broken on mobile');
-    expect(out).toContain('task_create');
+    expect(out).toContain('create_task');
+    expect(out).not.toContain('Backlog.md MCP');
     expect(out).not.toMatch(/\{\{\w+\}\}/);
   });
 });
