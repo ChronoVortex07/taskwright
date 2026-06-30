@@ -708,8 +708,8 @@ import { DEFAULT_DISPATCH_TEMPLATE } from '../../core/dispatchPrompt';
 describe('DEFAULT_DISPATCH_TEMPLATE worktree isolation', () => {
   it('tells the session to cd into and stay in its worktree', () => {
     expect(DEFAULT_DISPATCH_TEMPLATE).toContain('.worktrees/{{worktree}}');
-    expect(DEFAULT_DISPATCH_TEMPLATE.toLowerCase()).toContain('cd');
-    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('do not');
+    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('cd into it');
+    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('repository root');
   });
 });
 ```
