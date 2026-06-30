@@ -38,6 +38,7 @@
   let claimWorktree: string | undefined = $state(undefined);
   let claimedAt: string | undefined = $state(undefined);
   let claimIdentity: string | undefined = $state(undefined);
+  let isActiveTask = $state(false);
 
   let isClaimed = $derived(!!claimedBy);
   let claimedByMe = $derived(!!claimedBy && claimedBy === claimIdentity);
@@ -71,6 +72,7 @@
           claimWorktree = data.task.worktree;
           claimedAt = data.task.claimedAt;
           claimIdentity = data.claimIdentity;
+          isActiveTask = data.isActiveTask ?? false;
           viewState = 'ready';
         }
         break;
@@ -219,6 +221,18 @@
       vscode.postMessage({ type: 'releaseTask', taskId: task.id });
     }
   }
+
+  function handleSetActive() {
+    if (task) {
+      vscode.postMessage({ type: 'setActiveTask', taskId: task.id });
+    }
+  }
+
+  function handleClearActive() {
+    if (task) {
+      vscode.postMessage({ type: 'clearActiveTask', taskId: task.id });
+    }
+  }
 </script>
 
 {#if viewState === 'loading'}
@@ -284,6 +298,21 @@
         <span class="claim-info">Unclaimed</span>
         <div class="claim-banner-actions">
           <button class="claim-btn" data-testid="claim-task-btn" onclick={handleClaim}>Claim</button>
+        </div>
+      {/if}
+    </div>
+
+    <div class="claim-banner" class:claimed={isActiveTask} data-testid="active-task-banner">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+      {#if isActiveTask}
+        <span class="claim-info">Active task — agents calling <code>get_active_task</code> see this one</span>
+        <div class="claim-banner-actions">
+          <button class="claim-release-btn" data-testid="clear-active-btn" onclick={handleClearActive}>Clear</button>
+        </div>
+      {:else}
+        <span class="claim-info">Not the active task</span>
+        <div class="claim-banner-actions">
+          <button class="claim-btn" data-testid="set-active-btn" onclick={handleSetActive}>Set active</button>
         </div>
       {/if}
     </div>

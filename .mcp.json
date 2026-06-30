@@ -6,6 +6,12 @@
       "args": ["mcp", "start"],
       "env": {}
     },
+    "taskwright": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["dist/mcp/server.js"],
+      "env": {}
+    },
     "svelte": {
       "type": "http",
       "url": "https://mcp.svelte.dev/mcp"

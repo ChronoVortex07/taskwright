@@ -8,6 +8,7 @@ import { StatusCallbackRunner } from '../core/StatusCallbackRunner';
 import { openWorkspaceFile, isValidLinkString } from '../core/openWorkspaceFile';
 import { parseMarkdown } from '../core/parseMarkdown';
 import { claimTaskForCurrentUser, releaseTaskClaim, getClaimIdentity } from './claimActions';
+import { readActiveTask, writeActiveTask, clearActiveTask } from '../core/activeTask';
 
 /**
  * Task detail data structure sent to the webview
@@ -35,6 +36,8 @@ interface TaskDetailData {
   subtaskSummaries?: Array<{ id: string; title: string; status: string }>;
   /** Identity the current user's claims are attributed to (for "claimed by you"). */
   claimIdentity?: string;
+  /** Whether this task is the active (agent-handoff) task. */
+  isActiveTask?: boolean;
 }
 
 interface OpenTaskRequest {
@@ -124,6 +127,15 @@ export class TaskDetailProvider {
 
       provider.openTask(this.currentTaskRef ?? this.currentTaskId, { preserveFocus: true });
     }
+  }
+
+  /**
+   * Re-render the open panel for the current task (e.g. after active-task state
+   * changed out of band). No-op when no panel is open.
+   */
+  public static refreshCurrent(provider: TaskDetailProvider): void {
+    if (!this.currentPanel || !this.currentTaskId) return;
+    provider.openTask(this.currentTaskRef ?? this.currentTaskId, { preserveFocus: true });
   }
 
   /**
@@ -422,6 +434,16 @@ export class TaskDetailProvider {
         }
       }
 
+      // Active-task state is auxiliary metadata; a lookup failure must not break
+      // rendering the task itself.
+      let isActiveTask = false;
+      try {
+        const activeRoot = path.dirname(this.parser.getBacklogPath());
+        isActiveTask = readActiveTask(activeRoot)?.taskId === contextTask.id;
+      } catch {
+        isActiveTask = false;
+      }
+
       const data: TaskDetailData = {
         task: contextTask,
         statuses,
@@ -446,6 +468,7 @@ export class TaskDetailProvider {
         parentTask,
         subtaskSummaries,
         claimIdentity: getClaimIdentity(),
+        isActiveTask,
       };
 
       webview.postMessage({ type: 'taskData', data });
@@ -757,6 +780,41 @@ export class TaskDetailProvider {
           vscode.window.showInformationMessage(`Released ${TaskDetailProvider.currentTaskId}`);
         } catch (error) {
           vscode.window.showErrorMessage(`Failed to release task: ${error}`);
+        }
+        break;
+      }
+
+      case 'setActiveTask': {
+        if (!TaskDetailProvider.currentTaskId || !this.parser) break;
+        try {
+          const root = path.dirname(this.parser.getBacklogPath());
+          writeActiveTask(root, TaskDetailProvider.currentTaskId);
+          await this.openTask(
+            TaskDetailProvider.currentTaskRef ?? { taskId: TaskDetailProvider.currentTaskId },
+            { preserveFocus: true }
+          );
+          vscode.window.showInformationMessage(
+            `${TaskDetailProvider.currentTaskId} is now the active task for agents.`
+          );
+        } catch (error) {
+          vscode.window.showErrorMessage(`Failed to set active task: ${error}`);
+        }
+        break;
+      }
+
+      case 'clearActiveTask': {
+        if (!this.parser) break;
+        try {
+          clearActiveTask(path.dirname(this.parser.getBacklogPath()));
+          if (TaskDetailProvider.currentTaskId) {
+            await this.openTask(
+              TaskDetailProvider.currentTaskRef ?? { taskId: TaskDetailProvider.currentTaskId },
+              { preserveFocus: true }
+            );
+          }
+          vscode.window.showInformationMessage('Cleared the active task.');
+        } catch (error) {
+          vscode.window.showErrorMessage(`Failed to clear active task: ${error}`);
         }
         break;
       }

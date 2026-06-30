@@ -19,6 +19,8 @@ import { initializeBacklog, type InitBacklogOptions } from './core/initBacklog';
 import { BacklogWorkspaceManager, type BacklogRoot } from './core/BacklogWorkspaceManager';
 import { detectPackageManager } from './core/AgentIntegrationDetector';
 import { claimTaskForCurrentUser, releaseTaskClaim } from './providers/claimActions';
+import { writeActiveTask, clearActiveTask } from './core/activeTask';
+import * as path from 'path';
 
 let fileWatcher: FileWatcher | undefined;
 let crossBranchStatusBarItem: vscode.StatusBarItem | undefined;
@@ -763,6 +765,51 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage(`Released ${taskId}`);
       } catch (error) {
         vscode.window.showErrorMessage(`Failed to release task: ${error}`);
+      }
+    })
+  );
+
+  // Register set/clear active-task commands. The active task is Taskwright's
+  // pull-based handoff: it is written to <root>/.taskwright/active-task.json so
+  // the Taskwright MCP server's get_active_task can read it back in a session.
+  const activeRootDir = (): string | undefined => {
+    const backlogPath = manager.getActiveRoot()?.backlogPath;
+    return backlogPath ? path.dirname(backlogPath) : undefined;
+  };
+  context.subscriptions.push(
+    vscode.commands.registerCommand('backlog.setActiveTask', async (arg?: unknown) => {
+      const root = activeRootDir();
+      if (!root) {
+        vscode.window.showErrorMessage('No backlog folder found in workspace');
+        return;
+      }
+      const taskId = resolveClaimTarget(arg);
+      if (!taskId) {
+        vscode.window.showInformationMessage('Open a task to set it active.');
+        return;
+      }
+      try {
+        writeActiveTask(root, taskId);
+        refreshAllViews();
+        TaskDetailProvider.refreshCurrent(taskDetailProvider);
+        vscode.window.showInformationMessage(`${taskId} is now the active task for agents.`);
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to set active task: ${error}`);
+      }
+    }),
+    vscode.commands.registerCommand('backlog.clearActiveTask', () => {
+      const root = activeRootDir();
+      if (!root) {
+        vscode.window.showErrorMessage('No backlog folder found in workspace');
+        return;
+      }
+      try {
+        clearActiveTask(root);
+        refreshAllViews();
+        TaskDetailProvider.refreshCurrent(taskDetailProvider);
+        vscode.window.showInformationMessage('Cleared the active task.');
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to clear active task: ${error}`);
       }
     })
   );

@@ -14,6 +14,9 @@ test-results/
 # https://github.com/obra/superpowers/blob/main/skills/using-git-worktrees/SKILL.md
 .worktrees/
 
+# Taskwright local session state (active task is per-checkout, not shared)
+.taskwright/
+
 # Lockfiles from non-Bun package managers. This project uses bun.lock;
 # block accidental commits if someone runs npm/yarn/pnpm install.
 package-lock.json

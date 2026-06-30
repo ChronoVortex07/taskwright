@@ -163,6 +163,15 @@
         "command": "backlog.releaseTask",
         "title": "Taskwright: Release Task",
         "icon": "$(unlock)"
+      },
+      {
+        "command": "backlog.setActiveTask",
+        "title": "Taskwright: Set Active Task (for agent)",
+        "icon": "$(target)"
+      },
+      {
+        "command": "backlog.clearActiveTask",
+        "title": "Taskwright: Clear Active Task"
       }
     ],
     "menus": {
@@ -271,12 +280,14 @@
     "vscode-extension-tester": "^8.23.0"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "github-slugger": "^2.0.0",
     "gray-matter": "^4.0.3",
     "js-yaml": "^4.2.0",
     "marked": "^17.0.6",
     "mermaid": "^11.15.0",
     "svelte": "^5.56.3",
-    "tiny-markdown-editor": "^0.2.28"
+    "tiny-markdown-editor": "^0.2.28",
+    "zod": "^4.4.3"
   }
 }

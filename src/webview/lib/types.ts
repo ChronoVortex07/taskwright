@@ -78,4 +78,6 @@ export interface TaskDetailData {
   readOnlyReason?: string;
   parentTask?: { id: string; title: string };
   subtaskSummaries?: Array<{ id: string; title: string; status: string }>;
+  claimIdentity?: string;
+  isActiveTask?: boolean;
 }
