@@ -25,6 +25,7 @@ import {
   releaseTaskHandler,
   attachPlanHandler,
   createTaskHandler,
+  editTaskHandler,
   type McpHandlerDeps,
 } from './handlers';
 
@@ -143,6 +144,37 @@ async function main(): Promise<void> {
       },
     },
     async (args) => runTool(() => createTaskHandler(deps, args))
+  );
+
+  server.registerTool(
+    'edit_task',
+    {
+      title: 'Edit task',
+      description:
+        'Apply partial edits to a task (status, priority, fields, description, acceptance criteria, notes). Returns the updated summary.',
+      inputSchema: {
+        taskId: z.string().describe('Task ID to edit, e.g. TASK-7.'),
+        title: z.string().optional(),
+        status: z.string().optional(),
+        priority: z.enum(['high', 'medium', 'low']).optional(),
+        labels: z.array(z.string()).optional(),
+        assignee: z.array(z.string()).optional(),
+        milestone: z.string().optional(),
+        description: z.string().optional(),
+        acceptanceCriteria: z
+          .array(z.object({ text: z.string(), checked: z.boolean().optional() }))
+          .optional(),
+        definitionOfDone: z
+          .array(z.object({ text: z.string(), checked: z.boolean().optional() }))
+          .optional(),
+        implementationPlan: z.string().optional(),
+        implementationNotes: z.string().optional(),
+        finalSummary: z.string().optional(),
+        dependencies: z.array(z.string()).optional(),
+        references: z.array(z.string()).optional(),
+      },
+    },
+    async (args) => runTool(() => editTaskHandler(deps, args))
   );
 
   const transport = new StdioServerTransport();

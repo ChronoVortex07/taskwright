@@ -6,7 +6,7 @@ import { BacklogParser } from '../../core/BacklogParser';
 import { BacklogWriter } from '../../core/BacklogWriter';
 import { ClaimService } from '../../core/ClaimService';
 import { PlanService } from '../../core/PlanService';
-import { createTaskHandler } from '../../mcp/handlers';
+import { createTaskHandler, editTaskHandler } from '../../mcp/handlers';
 import type { McpHandlerDeps } from '../../mcp/handlers';
 
 let root: string;
@@ -66,6 +66,35 @@ describe('createTaskHandler', () => {
     expect(summary.title).toBe('Spike caching');
     expect(fs.existsSync(path.join(backlogPath, 'drafts', 'draft-1 - Spike-caching.md'))).toBe(
       true
+    );
+  });
+});
+
+describe('editTaskHandler', () => {
+  it('updates fields and acceptance criteria', async () => {
+    await createTaskHandler(deps(), { title: 'Edit me' });
+    const summary = await editTaskHandler(deps(), {
+      taskId: 'TASK-1',
+      status: 'In Progress',
+      priority: 'low',
+      acceptanceCriteria: [{ text: 'compiles' }, { text: 'tested', checked: true }],
+    });
+    expect(summary.status).toBe('In Progress');
+    expect(summary.priority).toBe('low');
+    expect(summary.acceptanceCriteria.map((c) => c.text)).toEqual(['compiles', 'tested']);
+    expect(summary.acceptanceCriteria[1].checked).toBe(true);
+  });
+
+  it('rejects an invalid status', async () => {
+    await createTaskHandler(deps(), { title: 'Edit me' });
+    await expect(editTaskHandler(deps(), { taskId: 'TASK-1', status: 'Nope' })).rejects.toThrow(
+      'Invalid status'
+    );
+  });
+
+  it('throws when the task does not exist', async () => {
+    await expect(editTaskHandler(deps(), { taskId: 'TASK-404', title: 'x' })).rejects.toThrow(
+      'TASK-404'
     );
   });
 });

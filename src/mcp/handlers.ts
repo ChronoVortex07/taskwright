@@ -5,7 +5,12 @@ import { PlanService } from '../core/PlanService';
 import { readActiveTask } from '../core/activeTask';
 import { loadPlanProgress } from '../core/loadPlanProgress';
 import { ChecklistItem, Task } from '../core/types';
-import { assertValidPriority, assertValidStatus } from './taskWriteHelpers';
+import {
+  ChecklistInput,
+  assertValidPriority,
+  assertValidStatus,
+  renderChecklist,
+} from './taskWriteHelpers';
 
 /**
  * Pure-ish implementations of the Taskwright MCP tools, decoupled from the MCP
@@ -216,4 +221,54 @@ export async function createTaskHandler(
     deps.parser
   );
   return requireSummary(deps, id);
+}
+
+export interface EditTaskArgs {
+  taskId: string;
+  title?: string;
+  status?: string;
+  priority?: 'high' | 'medium' | 'low';
+  labels?: string[];
+  assignee?: string[];
+  milestone?: string;
+  description?: string;
+  acceptanceCriteria?: ChecklistInput[];
+  definitionOfDone?: ChecklistInput[];
+  implementationPlan?: string;
+  implementationNotes?: string;
+  finalSummary?: string;
+  dependencies?: string[];
+  references?: string[];
+}
+
+/** Apply partial edits to a task and return the updated summary. */
+export async function editTaskHandler(
+  deps: McpHandlerDeps,
+  args: EditTaskArgs
+): Promise<TaskSummary> {
+  const config = await deps.parser.getConfig();
+  if (args.status) assertValidStatus(args.status, config.statuses ?? []);
+  if (args.priority) assertValidPriority(args.priority);
+
+  const updates: Record<string, unknown> = {};
+  if (args.title !== undefined) updates.title = args.title;
+  if (args.status !== undefined) updates.status = args.status;
+  if (args.priority !== undefined) updates.priority = args.priority;
+  if (args.labels !== undefined) updates.labels = args.labels;
+  if (args.assignee !== undefined) updates.assignee = args.assignee;
+  if (args.milestone !== undefined) updates.milestone = args.milestone;
+  if (args.description !== undefined) updates.description = args.description;
+  if (args.acceptanceCriteria !== undefined)
+    updates.acceptanceCriteria = renderChecklist(args.acceptanceCriteria);
+  if (args.definitionOfDone !== undefined)
+    updates.definitionOfDone = renderChecklist(args.definitionOfDone);
+  if (args.implementationPlan !== undefined) updates.implementationPlan = args.implementationPlan;
+  if (args.implementationNotes !== undefined)
+    updates.implementationNotes = args.implementationNotes;
+  if (args.finalSummary !== undefined) updates.finalSummary = args.finalSummary;
+  if (args.dependencies !== undefined) updates.dependencies = args.dependencies;
+  if (args.references !== undefined) updates.references = args.references;
+
+  await deps.writer.updateTask(args.taskId, updates as Partial<Task>, deps.parser);
+  return requireSummary(deps, args.taskId);
 }
