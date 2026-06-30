@@ -57,7 +57,7 @@ your own use of Backlog.md on Windows** — its long descriptive filenames will 
   `cleanup` (auto-move completed by age), `agents` (manage instruction-file nudges), `board`, `browser`.
 
 **Coupling confirmed (as planned):** read task files directly for the board; write via `backlog` CLI to keep
-IDs/format valid; agents talk to `backlog mcp start`. Our todo-chart MCP adds only the missing semantics
+IDs/format valid; agents talk to `backlog mcp start`. Our Taskwright MCP adds only the missing semantics
 (active-task, claim/release, attach plan/spec) — no CRUD reimplementation.
 
 ---
