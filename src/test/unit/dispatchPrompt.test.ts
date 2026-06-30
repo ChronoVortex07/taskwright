@@ -94,6 +94,7 @@ describe('dispatchContextFromTask', () => {
       handoffFile: '/repo/.taskwright/handoff/TASK-7.md',
     });
     expect(ctx.handoffFile).toBe('/repo/.taskwright/handoff/TASK-7.md');
+    expect(ctx.worktree).toBe('task-7');
   });
 
   it('defaults handoffFile to empty when not provided', () => {
@@ -169,5 +170,12 @@ describe('resolveTerminalLaunch', () => {
     expect(d.run).toBe(false);
     expect(d.command).toBeUndefined();
     expect(d.warning).toMatch(/-p/);
+  });
+
+  it('refuses a claude --print command and returns a warning', () => {
+    const d = resolveTerminalLaunch('claude --print "$(cat {{handoffFile}})"', ctx);
+    expect(d.run).toBe(false);
+    expect(d.command).toBeUndefined();
+    expect(d.warning).toMatch(/--print|-p/);
   });
 });

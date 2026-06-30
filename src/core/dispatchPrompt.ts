@@ -135,7 +135,7 @@ export function resolveTerminalLaunch(
     return {
       run: false,
       warning:
-        "Taskwright dispatch skipped the terminal command: it runs 'claude -p' (headless/metered). Use an interactive 'claude' chat to stay on your subscription.",
+        "Taskwright dispatch skipped the terminal command: it runs 'claude -p'/'--print' (headless/metered). Use an interactive 'claude' chat to stay on your subscription.",
     };
   }
   return { run: true, command };

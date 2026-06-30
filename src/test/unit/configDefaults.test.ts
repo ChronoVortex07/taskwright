@@ -3,8 +3,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * The manifest's contributed defaults are the source of truth users see; these
- * assertions guard against the manifest and the code fallbacks drifting apart.
+ * Guards the contributed MANIFEST defaults (package.json contributes.configuration).
+ * The `readSettings` code fallbacks in `dispatchActions.ts` must be kept in sync
+ * manually — this test only reads package.json, not the TypeScript fallbacks.
  */
 const pkg = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'package.json'), 'utf-8'));
 const props = pkg.contributes.configuration.properties as Record<

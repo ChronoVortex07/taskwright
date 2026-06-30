@@ -98,6 +98,7 @@ export async function dispatchTask(
   // Mark the task active for the session root so the MCP get_active_task resolves
   // it, then render + persist the paste-ready prompt.
   writeActiveTask(sessionRoot, taskId);
+  // Invariant: handoffPath must match what writeHandoff writes — both derive from src/core/handoff.ts.
   const handoffFile = handoffPath(sessionRoot, taskId);
   const context = dispatchContextFromTask(task, { worktree: branch, handoffFile });
   const prompt = renderDispatchPrompt(settings.template, context);
