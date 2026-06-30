@@ -45,6 +45,7 @@ interface RawFrontmatter {
   claimed_by?: string;
   worktree?: string;
   claimed_at?: string;
+  plan?: string;
 }
 
 interface RawMilestoneFrontmatter {
@@ -717,6 +718,9 @@ export class BacklogParser {
     }
     if (fm.claimed_at) {
       task.claimedAt = String(fm.claimed_at);
+    }
+    if (fm.plan) {
+      task.plan = String(fm.plan);
     }
   }
 

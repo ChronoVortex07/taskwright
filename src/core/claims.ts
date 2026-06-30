@@ -10,6 +10,8 @@
  * asynchronously, so a claim reduces — but cannot prevent — duplicate work.
  */
 
+import { quoteValue, splitFrontmatter } from './frontmatterEdit';
+
 export interface Claim {
   /** Who/what holds the claim (agent or user id, may be @-prefixed). */
   claimedBy: string;
@@ -33,29 +35,6 @@ export function claimTimestamp(date: Date = new Date()): string {
     `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
     `${pad(date.getHours())}:${pad(date.getMinutes())}`
   );
-}
-
-interface FrontmatterSplit {
-  before: string[]; // up to and including the opening '---'
-  fields: string[]; // frontmatter field lines (between the fences)
-  after: string[]; // the closing '---' and everything after it
-}
-
-function splitFrontmatter(content: string): FrontmatterSplit | null {
-  const lines = content.split('\n');
-  if (lines[0]?.trim() !== '---') return null;
-  for (let i = 1; i < lines.length; i++) {
-    if (lines[i].trim() === '---') {
-      return { before: lines.slice(0, 1), fields: lines.slice(1, i), after: lines.slice(i) };
-    }
-  }
-  return null;
-}
-
-/** Single-quote a value YAML would otherwise mis-parse (@-prefixed, spaces, etc.). */
-function quoteValue(value: string): string {
-  if (/^[A-Za-z0-9._/-]+$/.test(value)) return value;
-  return `'${value.replace(/'/g, "''")}'`;
 }
 
 function claimLines(claim: Claim): string[] {

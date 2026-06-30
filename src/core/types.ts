@@ -79,6 +79,10 @@ export interface Task {
   claimedBy?: string; // Who/what claimed the task (agent or user id, may be @-prefixed)
   worktree?: string; // Branch or worktree the claimant is working in
   claimedAt?: string; // Timestamp when claimed (same 'YYYY-MM-DD HH:mm' format as createdAt)
+
+  // Taskwright superpowers bridge: path (repo-root-relative) to the task's
+  // implementation plan/spec, e.g. docs/superpowers/plans/2026-06-30-foo.md.
+  plan?: string;
 }
 
 /**
