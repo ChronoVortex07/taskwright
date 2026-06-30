@@ -3,7 +3,7 @@
   "displayName": "Taskwright",
   "description": "Agentic task board for VS Code — triage work and dispatch isolated Claude Code sessions per task, on a git-native Backlog.md backbone.",
   "version": "0.0.1",
-  "publisher": "chronovortex07",
+  "publisher": "ChronoVortex07",
   "license": "MIT",
   "icon": "images/icon.png",
   "repository": {

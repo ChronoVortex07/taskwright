@@ -1,9 +1,5 @@
 # Taskwright
 
-> ⚠️ **Early development.** Taskwright is being built on top of an imported fork — most of the
-> agentic features described in the vision are not implemented yet. See
-> [`docs/phase-0-findings.md`](docs/phase-0-findings.md) and the project plan for status.
-
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **An agentic task board for VS Code.** Triage bugs and improvements onto a git-native board, then
@@ -24,18 +20,21 @@ delegating work to AI agents. Taskwright's workflow:
 Dispatch is **subscription-safe**: Taskwright generates a paste-ready prompt for a Claude Code session
 rather than spawning headless `claude -p`, so it never risks switching your usage to API billing.
 
-## Status / roadmap
+## Features
 
-Inherited from the fork (working today): editor-tab Kanban with drag-and-drop, task list, detail
-editor, Markdown/Mermaid rendering, frontmatter autocomplete, cross-branch task loading.
+Inherited from the fork: editor-tab Kanban with drag-and-drop, task list, detail editor,
+Markdown/Mermaid rendering, frontmatter autocomplete, cross-branch task loading.
 
-Planned (the Taskwright additions):
+Taskwright additions (all implemented):
 
-- Advisory **task claiming** (claimant / worktree / staleness) to prevent duplicate agent work.
-- **Active-task** MCP tool + `CLAUDE.md` convention so a session pulls its task context.
-- **Dispatch** panel: optional worktree + paste-ready prompt (no `claude -p`).
-- **Superpowers bridge**: attach specs/plans to tasks; surface the progress ledger.
-- **"Categorize with Claude"** intake for turning a raw bug dump into labeled, prioritized tasks.
+- Advisory **task claiming** — claimant / worktree / staleness, with conflict prompts and
+  stale-claim expiry, surfaced as badges on the board.
+- **Active task + Taskwright MCP** (`get_active_task` / `claim_task` / `release_task`) plus a
+  `CLAUDE.md` convention, so a fresh session pulls its task context. Auto-registers with Claude Code.
+- **Dispatch** — copies a paste-ready prompt (and an optional git worktree) for a task. Never spawns
+  `claude -p`.
+- **"Categorize with Claude"** intake — turn a raw bug dump into labeled, prioritized tasks.
+- **Superpowers bridge** — attach a plan/spec to a task (`attach_plan`) and see its checkbox progress.
 
 ## Requirements
 
@@ -51,6 +50,16 @@ bun install
 bun run build      # build:css + compile:webview + compile
 # then press F5 in VS Code to launch an Extension Development Host
 ```
+
+To install Taskwright into your own VS Code (no dev host), or to publish it:
+
+```bash
+bun run package    # builds, then emits taskwright-<version>.vsix
+code --install-extension taskwright-0.0.1.vsix
+```
+
+See **[`docs/building-and-publishing.md`](docs/building-and-publishing.md)** for the full build,
+install, and Marketplace-publishing guide.
 
 ## Attribution
 
