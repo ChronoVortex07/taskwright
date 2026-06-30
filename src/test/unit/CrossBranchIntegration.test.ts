@@ -130,9 +130,12 @@ status: ${status}
     });
 
     it('should be able to read task from another branch', () => {
-      // Use git show to read file from feature branch
+      // Use git show to read file from feature branch. Double-quote the path
+      // (portable across cmd.exe and POSIX shells) rather than backslash-escaping
+      // the spaces, which only works in POSIX shells. git always uses '/' in
+      // tree paths, so there is no separator concern here.
       const content = execSync(
-        'git show feature/new-feature:backlog/tasks/task-2\\ -\\ Feature-branch-task.md',
+        'git show "feature/new-feature:backlog/tasks/task-2 - Feature-branch-task.md"',
         {
           cwd: tempDir,
           encoding: 'utf-8',

@@ -2,6 +2,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { BacklogParser, computeSubtasks } from '../../core/BacklogParser';
 import type { Task } from '../../core/types';
 import * as fs from 'fs';
+import * as path from 'path';
+import { toPosix } from '../helpers/paths';
 
 vi.mock('fs', async () => {
   const actual = await vi.importActual<typeof import('fs')>('fs');
@@ -317,18 +319,18 @@ labels: ["bug", "feature"]
 
     it('should load milestones from milestone files as source of truth', async () => {
       vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-        const pathStr = String(p);
+        const pathStr = toPosix(String(p));
         return pathStr.includes('/milestones') || pathStr.endsWith('config.yml');
       });
       (fs.readdirSync as ReturnType<typeof vi.fn>).mockImplementation((p: fs.PathLike) => {
-        const pathStr = String(p);
+        const pathStr = toPosix(String(p));
         if (pathStr.endsWith('/milestones')) {
           return ['m-2 - Beta.md', 'README.md', 'm-1 - Launch.md'] as unknown as string[];
         }
         return [] as unknown as string[];
       });
       vi.mocked(fs.readFileSync).mockImplementation((p: fs.PathOrFileDescriptor) => {
-        const pathStr = String(p);
+        const pathStr = toPosix(String(p));
         if (pathStr.includes('/milestones/m-1')) {
           return `---
 id: m-1
@@ -362,11 +364,11 @@ title: Beta
 
     it('should fallback to config string-array milestones when milestone files are absent', async () => {
       vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-        const pathStr = String(p);
+        const pathStr = toPosix(String(p));
         return pathStr.endsWith('config.yml');
       });
       vi.mocked(fs.readFileSync).mockImplementation((p: fs.PathOrFileDescriptor) => {
-        const pathStr = String(p);
+        const pathStr = toPosix(String(p));
         if (pathStr.endsWith('config.yml')) {
           return `milestones: ["v1.0", "v2.0"]`;
         }
@@ -384,11 +386,11 @@ title: Beta
 
     it('should canonicalize task milestone titles to known milestone IDs when unambiguous', async () => {
       vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-        const pathStr = String(p);
+        const pathStr = toPosix(String(p));
         return pathStr.includes('/tasks') || pathStr.includes('/milestones');
       });
       (fs.readdirSync as ReturnType<typeof vi.fn>).mockImplementation((p: fs.PathLike) => {
-        const pathStr = String(p);
+        const pathStr = toPosix(String(p));
         if (pathStr.endsWith('/tasks')) {
           return ['task-1 - Example.md'] as unknown as string[];
         }
@@ -398,7 +400,7 @@ title: Beta
         return [] as unknown as string[];
       });
       vi.mocked(fs.readFileSync).mockImplementation((p: fs.PathOrFileDescriptor) => {
-        const pathStr = String(p);
+        const pathStr = toPosix(String(p));
         if (pathStr.includes('/milestones/m-1')) {
           return `---
 id: m-1
@@ -426,11 +428,11 @@ milestone: Launch
 
     it('should keep raw milestone value when title matches multiple milestone IDs', async () => {
       vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-        const pathStr = String(p);
+        const pathStr = toPosix(String(p));
         return pathStr.includes('/tasks') || pathStr.includes('/milestones');
       });
       (fs.readdirSync as ReturnType<typeof vi.fn>).mockImplementation((p: fs.PathLike) => {
-        const pathStr = String(p);
+        const pathStr = toPosix(String(p));
         if (pathStr.endsWith('/tasks')) {
           return ['task-1 - Example.md'] as unknown as string[];
         }
@@ -440,7 +442,7 @@ milestone: Launch
         return [] as unknown as string[];
       });
       vi.mocked(fs.readFileSync).mockImplementation((p: fs.PathOrFileDescriptor) => {
-        const pathStr = String(p);
+        const pathStr = toPosix(String(p));
         if (pathStr.includes('/milestones/m-1')) {
           return `---
 id: m-1
@@ -1846,7 +1848,7 @@ These are implementation notes.
     it('should return merged labels from config and all tasks, sorted', async () => {
       const configContent = `labels: ["bug", "feature"]`;
       vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
-        const pathStr = String(p);
+        const pathStr = toPosix(String(p));
         return pathStr.includes('config') || pathStr.includes('tasks');
       });
       vi.mocked(fs.readFileSync).mockReturnValue(configContent);
@@ -2726,11 +2728,11 @@ status: Done
 
     it('should set folder to archive (not archive/tasks) when found via getTask', async () => {
       vi.mocked(fs.existsSync).mockImplementation((p) => {
-        const s = String(p);
+        const s = toPosix(String(p));
         return s.includes('archive/tasks') || s === '/fake/backlog';
       });
       (fs.readdirSync as ReturnType<typeof vi.fn>).mockImplementation((p) => {
-        if (String(p).includes('archive/tasks')) {
+        if (toPosix(String(p)).includes('archive/tasks')) {
           return ['task-10 - Archived.md'];
         }
         return [];
@@ -3249,8 +3251,9 @@ status: To Do
       await parser.getTasksFromFolder('tasks');
       expect(fs.readFileSync).toHaveBeenCalledTimes(2);
 
-      // Invalidate only task-1
-      parser.invalidateTaskCache('/fake/backlog/tasks/task-1 - First.md');
+      // Invalidate only task-1. Build the key with path.join so it matches the
+      // platform-native cache key (path.join yields backslashes on Windows).
+      parser.invalidateTaskCache(path.join('/fake/backlog', 'tasks', 'task-1 - First.md'));
       vi.mocked(fs.readFileSync).mockClear();
 
       await parser.getTasksFromFolder('tasks');

@@ -16,6 +16,7 @@ import {
   openWorkspaceFile,
 } from '../../core/openWorkspaceFile';
 import { resetAllMocks } from '../mocks/vscode';
+import { posixPath } from '../helpers/paths';
 
 // `showTextDocument` is not on the shared mock — install it once for this suite.
 const revealRange = vi.fn();
@@ -245,13 +246,13 @@ describe('openWorkspaceFile', () => {
 
     expect(vscode.workspace.fs.stat).toHaveBeenCalledWith(
       expect.objectContaining({
-        fsPath: '/repo/contributing/conventions/report-format.md',
+        fsPath: posixPath('/repo/contributing/conventions/report-format.md'),
       })
     );
     expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
       'vscode.open',
       expect.objectContaining({
-        fsPath: '/repo/contributing/conventions/report-format.md',
+        fsPath: posixPath('/repo/contributing/conventions/report-format.md'),
       })
     );
   });
@@ -279,11 +280,11 @@ describe('openWorkspaceFile', () => {
 
     // First candidate should be resolved against the source file's directory
     expect(vscode.workspace.fs.stat).toHaveBeenCalledWith(
-      expect.objectContaining({ fsPath: '/repo/backlog/tasks/task-041.md' })
+      expect.objectContaining({ fsPath: posixPath('/repo/backlog/tasks/task-041.md') })
     );
     expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
       'vscode.open',
-      expect.objectContaining({ fsPath: '/repo/backlog/tasks/task-041.md' })
+      expect.objectContaining({ fsPath: posixPath('/repo/backlog/tasks/task-041.md') })
     );
   });
 
@@ -492,11 +493,11 @@ describe('openWorkspaceFile', () => {
     await openWorkspaceFile('../src/file.ts', null, '/repo/backlog/tasks/task-153.md');
 
     expect(vscode.workspace.fs.stat).toHaveBeenCalledWith(
-      expect.objectContaining({ fsPath: '/repo/backlog/src/file.ts' })
+      expect.objectContaining({ fsPath: posixPath('/repo/backlog/src/file.ts') })
     );
     expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
       'vscode.open',
-      expect.objectContaining({ fsPath: '/repo/backlog/src/file.ts' })
+      expect.objectContaining({ fsPath: posixPath('/repo/backlog/src/file.ts') })
     );
   });
 

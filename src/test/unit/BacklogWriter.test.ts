@@ -9,7 +9,9 @@ import {
 } from '../../core/BacklogWriter';
 import { BacklogParser } from '../../core/BacklogParser';
 import * as fs from 'fs';
+import * as path from 'path';
 import * as yaml from 'js-yaml';
+import { toPosix, posixPath } from '../helpers/paths';
 
 vi.mock('fs', async () => {
   const actual = await vi.importActual<typeof import('fs')>('fs');
@@ -1412,10 +1414,10 @@ milestone: "v1.0-beta.1"
       const result = await writer.completeTask('TASK-1', mockParser);
 
       expect(fs.renameSync).toHaveBeenCalledWith(
-        '/fake/backlog/tasks/task-1 - Test-Task.md',
-        '/fake/backlog/completed/task-1 - Test-Task.md'
+        posixPath('/fake/backlog/tasks/task-1 - Test-Task.md'),
+        posixPath('/fake/backlog/completed/task-1 - Test-Task.md')
       );
-      expect(result).toBe('/fake/backlog/completed/task-1 - Test-Task.md');
+      expect(result).toEqual(posixPath('/fake/backlog/completed/task-1 - Test-Task.md'));
     });
 
     it('should move task to archive/tasks/ folder', async () => {
@@ -1438,10 +1440,10 @@ milestone: "v1.0-beta.1"
       const result = await writer.archiveTask('TASK-2', mockParser);
 
       expect(fs.renameSync).toHaveBeenCalledWith(
-        '/fake/backlog/tasks/task-2 - Cancelled-Task.md',
-        '/fake/backlog/archive/tasks/task-2 - Cancelled-Task.md'
+        posixPath('/fake/backlog/tasks/task-2 - Cancelled-Task.md'),
+        posixPath('/fake/backlog/archive/tasks/task-2 - Cancelled-Task.md')
       );
-      expect(result).toBe('/fake/backlog/archive/tasks/task-2 - Cancelled-Task.md');
+      expect(result).toEqual(posixPath('/fake/backlog/archive/tasks/task-2 - Cancelled-Task.md'));
     });
 
     it('should create destination folder if it does not exist', async () => {
@@ -1463,7 +1465,9 @@ milestone: "v1.0-beta.1"
 
       await writer.completeTask('TASK-1', mockParser);
 
-      expect(fs.mkdirSync).toHaveBeenCalledWith('/fake/backlog/completed', { recursive: true });
+      expect(fs.mkdirSync).toHaveBeenCalledWith(posixPath('/fake/backlog/completed'), {
+        recursive: true,
+      });
     });
 
     it('should throw error for non-existent task', async () => {
@@ -1496,7 +1500,7 @@ milestone: "v1.0-beta.1"
 
       const newPath = await writer.completeTask('TASK-5', mockParser);
 
-      expect(newPath).toBe('/fake/backlog/completed/task-5 - Feature.md');
+      expect(newPath).toEqual(posixPath('/fake/backlog/completed/task-5 - Feature.md'));
     });
 
     it('should handle task file in nested backlog structure', async () => {
@@ -1519,8 +1523,8 @@ milestone: "v1.0-beta.1"
       await writer.completeTask('TASK-1', mockParser);
 
       expect(fs.renameSync).toHaveBeenCalledWith(
-        '/project/my-backlog/tasks/task-1.md',
-        '/project/my-backlog/completed/task-1.md'
+        posixPath('/project/my-backlog/tasks/task-1.md'),
+        posixPath('/project/my-backlog/completed/task-1.md')
       );
     });
 
@@ -1681,8 +1685,8 @@ status: Draft
       const result = await writer.promoteDraft('DRAFT-1', mockParser);
 
       expect(fs.renameSync).toHaveBeenCalledWith(
-        '/fake/backlog/drafts/draft-1 - My-Draft.md',
-        '/fake/backlog/tasks/task-1 - My-Draft.md'
+        posixPath('/fake/backlog/drafts/draft-1 - My-Draft.md'),
+        posixPath('/fake/backlog/tasks/task-1 - My-Draft.md')
       );
       expect(result).toBe('TASK-1');
     });
@@ -1760,7 +1764,9 @@ status: Draft
 
       await writer.promoteDraft('DRAFT-1', mockParser);
 
-      expect(fs.mkdirSync).toHaveBeenCalledWith('/fake/backlog/tasks', { recursive: true });
+      expect(fs.mkdirSync).toHaveBeenCalledWith(posixPath('/fake/backlog/tasks'), {
+        recursive: true,
+      });
     });
   });
 
@@ -1828,7 +1834,7 @@ status: Draft
         description: 'Milestone: Launch',
       });
       expect(fs.writeFileSync).toHaveBeenCalledWith(
-        '/fake/backlog/milestones/m-0 - launch.md',
+        posixPath('/fake/backlog/milestones/m-0 - launch.md'),
         expect.stringContaining('id: m-0'),
         'utf-8'
       );
@@ -1836,7 +1842,7 @@ status: Draft
 
     it('scans active and archived milestones and uses max id + 1', async () => {
       vi.mocked(fs.readdirSync).mockImplementation((dirPath) => {
-        const dir = String(dirPath);
+        const dir = toPosix(String(dirPath));
         if (dir.endsWith('/fake/backlog/milestones')) {
           return ['m-2 - one.md'] as unknown as ReturnType<typeof fs.readdirSync>;
         }
@@ -1847,7 +1853,7 @@ status: Draft
       });
 
       vi.mocked(fs.readFileSync).mockImplementation((filePath) => {
-        const file = String(filePath);
+        const file = toPosix(String(filePath));
         if (file.endsWith('/fake/backlog/milestones/m-2 - one.md')) {
           return '---\nid: m-2\ntitle: "One"\n---\n';
         }
@@ -1861,7 +1867,7 @@ status: Draft
 
       expect(result.id).toBe('m-11');
       expect(fs.writeFileSync).toHaveBeenCalledWith(
-        '/fake/backlog/milestones/m-11 - release.md',
+        posixPath('/fake/backlog/milestones/m-11 - release.md'),
         expect.stringContaining('id: m-11'),
         'utf-8'
       );
@@ -2100,7 +2106,11 @@ status: To Do
         title: 'Archived Task',
         status: 'Done' as const,
         folder: 'archive' as const,
-        filePath: '/fake/backlog/archive/tasks/task-5 - Archived-Task.md',
+        // Build with path.join so it carries native separators, matching what
+        // BacklogParser produces. moveTaskToFolder detects the archive folder
+        // via filePath.includes(path.join('archive', 'tasks')), which needs
+        // native separators (a forward-slash fixture breaks that check on Windows).
+        filePath: path.join('/fake/backlog/archive/tasks', 'task-5 - Archived-Task.md'),
         labels: [],
         assignee: [],
         dependencies: [],
@@ -2111,10 +2121,10 @@ status: To Do
       const result = await writer.restoreArchivedTask('TASK-5', mockParser);
 
       expect(fs.renameSync).toHaveBeenCalledWith(
-        '/fake/backlog/archive/tasks/task-5 - Archived-Task.md',
-        '/fake/backlog/tasks/task-5 - Archived-Task.md'
+        posixPath('/fake/backlog/archive/tasks/task-5 - Archived-Task.md'),
+        posixPath('/fake/backlog/tasks/task-5 - Archived-Task.md')
       );
-      expect(result).toBe('/fake/backlog/tasks/task-5 - Archived-Task.md');
+      expect(result).toEqual(posixPath('/fake/backlog/tasks/task-5 - Archived-Task.md'));
     });
 
     it('should throw when task is not found', async () => {
@@ -2712,8 +2722,8 @@ status: To Do
 
       await writer.completeTask('TASK-1', mockParser);
 
-      expect(invalidateSpy).toHaveBeenCalledWith('/fake/backlog/tasks/task-1.md');
-      expect(invalidateSpy).toHaveBeenCalledWith('/fake/backlog/completed/task-1.md');
+      expect(invalidateSpy).toHaveBeenCalledWith(posixPath('/fake/backlog/tasks/task-1.md'));
+      expect(invalidateSpy).toHaveBeenCalledWith(posixPath('/fake/backlog/completed/task-1.md'));
     });
 
     it('should invalidate cache for both old and new paths after promoteDraft', async () => {
@@ -2745,8 +2755,12 @@ status: Draft
 
       await writer.promoteDraft('DRAFT-1', mockParser);
 
-      expect(invalidateSpy).toHaveBeenCalledWith('/fake/backlog/drafts/draft-1 - My-Draft.md');
-      expect(invalidateSpy).toHaveBeenCalledWith('/fake/backlog/tasks/task-1 - My-Draft.md');
+      expect(invalidateSpy).toHaveBeenCalledWith(
+        posixPath('/fake/backlog/drafts/draft-1 - My-Draft.md')
+      );
+      expect(invalidateSpy).toHaveBeenCalledWith(
+        posixPath('/fake/backlog/tasks/task-1 - My-Draft.md')
+      );
     });
 
     it('should invalidate cache after toggleChecklistItem', async () => {
