@@ -31,6 +31,7 @@ import {
   restoreTaskHandler,
   promoteDraftHandler,
   demoteTaskHandler,
+  createSubtaskHandler,
   type McpHandlerDeps,
 } from './handlers';
 
@@ -230,6 +231,20 @@ async function main(): Promise<void> {
       inputSchema: { taskId: z.string().describe('Task ID to demote, e.g. TASK-7.') },
     },
     async (args) => runTool(() => demoteTaskHandler(deps, args))
+  );
+
+  server.registerTool(
+    'create_subtask',
+    {
+      title: 'Create subtask',
+      description: 'Create a subtask (dot-notation id, e.g. TASK-7.1) under a parent task.',
+      inputSchema: {
+        parentTaskId: z.string().describe('Parent task ID, e.g. TASK-7.'),
+        title: z.string().optional(),
+        description: z.string().optional(),
+      },
+    },
+    async (args) => runTool(() => createSubtaskHandler(deps, args))
   );
 
   const transport = new StdioServerTransport();

@@ -14,6 +14,7 @@ import {
   restoreTaskHandler,
   promoteDraftHandler,
   demoteTaskHandler,
+  createSubtaskHandler,
 } from '../../mcp/handlers';
 import type { McpHandlerDeps } from '../../mcp/handlers';
 
@@ -161,5 +162,17 @@ describe('draft lifecycle', () => {
     const demoted = await demoteTaskHandler(deps(), { taskId: 'TASK-1' });
     expect(demoted.id).toMatch(/^DRAFT-\d+$/);
     expect(demoted.status).toBe('Draft');
+  });
+});
+
+describe('createSubtaskHandler', () => {
+  it('creates a titled subtask under its parent', async () => {
+    await createTaskHandler(deps(), { title: 'Parent' });
+    const sub = await createSubtaskHandler(deps(), {
+      parentTaskId: 'TASK-1',
+      title: 'Child step',
+    });
+    expect(sub.id).toBe('TASK-1.1');
+    expect(sub.title).toBe('Child step');
   });
 });

@@ -828,7 +828,8 @@ export class BacklogWriter {
   async createSubtask(
     parentTaskId: string,
     backlogPath: string,
-    parser?: BacklogParser
+    parser?: BacklogParser,
+    opts?: { title?: string; description?: string }
   ): Promise<{ id: string; filePath: string }> {
     const tasksDir = path.join(backlogPath, 'tasks');
 
@@ -862,7 +863,12 @@ export class BacklogWriter {
     const nextSubId = maxSubId + 1;
 
     const taskId = `${taskPrefix}-${parentNum}.${nextSubId}`.toUpperCase();
-    const fileName = `${lowerPrefix}-${parentNum}.${nextSubId} - Untitled.md`;
+    const title = opts?.title?.trim() || 'Untitled';
+    const sanitizedTitle = title
+      .replace(/[^a-zA-Z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .substring(0, 50);
+    const fileName = `${lowerPrefix}-${parentNum}.${nextSubId} - ${sanitizedTitle}.md`;
     const filePath = path.join(tasksDir, fileName);
 
     // Get config defaults
@@ -871,7 +877,7 @@ export class BacklogWriter {
     const today = nowTimestamp();
     const frontmatter: FrontmatterData = {
       id: taskId,
-      title: 'Untitled',
+      title,
       status: config.default_status || 'To Do',
       labels: [],
       assignee: config.default_assignee ? [config.default_assignee] : [],
@@ -889,8 +895,10 @@ export class BacklogWriter {
       }
     });
 
-    let body =
-      '\n## Description\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\n<!-- SECTION:DESCRIPTION:END -->\n\n## Acceptance Criteria\n<!-- AC:BEGIN -->\n<!-- AC:END -->\n';
+    const descBlock = opts?.description
+      ? `<!-- SECTION:DESCRIPTION:BEGIN -->\n${opts.description}\n<!-- SECTION:DESCRIPTION:END -->`
+      : '<!-- SECTION:DESCRIPTION:BEGIN -->\n<!-- SECTION:DESCRIPTION:END -->';
+    let body = `\n## Description\n\n${descBlock}\n\n## Acceptance Criteria\n<!-- AC:BEGIN -->\n<!-- AC:END -->\n`;
 
     // Add Definition of Done from config defaults
     if (config.definition_of_done && config.definition_of_done.length > 0) {

@@ -323,3 +323,15 @@ export async function editTaskHandler(
   await deps.writer.updateTask(args.taskId, updates as Partial<Task>, deps.parser);
   return requireSummary(deps, args.taskId);
 }
+
+/** Create a subtask under a parent and return its summary. */
+export async function createSubtaskHandler(
+  deps: McpHandlerDeps,
+  args: { parentTaskId: string; title?: string; description?: string }
+): Promise<TaskSummary> {
+  const { id } = await deps.writer.createSubtask(args.parentTaskId, deps.backlogPath, deps.parser, {
+    title: args.title,
+    description: args.description,
+  });
+  return requireSummary(deps, id);
+}
