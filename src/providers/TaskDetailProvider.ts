@@ -8,6 +8,7 @@ import { StatusCallbackRunner } from '../core/StatusCallbackRunner';
 import { openWorkspaceFile, isValidLinkString } from '../core/openWorkspaceFile';
 import { parseMarkdown } from '../core/parseMarkdown';
 import { claimTaskForCurrentUser, releaseTaskClaim, getClaimIdentity } from './claimActions';
+import { dispatchTask } from './dispatchActions';
 import { readActiveTask, writeActiveTask, clearActiveTask } from '../core/activeTask';
 
 /**
@@ -815,6 +816,34 @@ export class TaskDetailProvider {
           vscode.window.showInformationMessage('Cleared the active task.');
         } catch (error) {
           vscode.window.showErrorMessage(`Failed to clear active task: ${error}`);
+        }
+        break;
+      }
+
+      case 'dispatchTask': {
+        if (!TaskDetailProvider.currentTaskId || !this.parser) break;
+        const task = await this.getCurrentTaskFromContext();
+        if (this.blockReadOnlyMutation(task, 'dispatch this task')) break;
+        try {
+          const result = await dispatchTask(TaskDetailProvider.currentTaskId, this.parser);
+          if (!result) break;
+          await this.openTask(
+            TaskDetailProvider.currentTaskRef ?? { taskId: TaskDetailProvider.currentTaskId },
+            { preserveFocus: true }
+          );
+          const detail = result.worktreePath
+            ? `Prompt copied. Worktree: ${result.worktreePath}`
+            : 'Prompt copied to clipboard. Paste it into a fresh Claude Code session.';
+          const choice = await vscode.window.showInformationMessage(
+            `Dispatched ${result.taskId}. ${detail}`,
+            'Open handoff'
+          );
+          if (choice === 'Open handoff') {
+            const doc = await vscode.workspace.openTextDocument(result.handoffFile);
+            await vscode.window.showTextDocument(doc);
+          }
+        } catch (error) {
+          vscode.window.showErrorMessage(`Failed to dispatch task: ${error}`);
         }
         break;
       }

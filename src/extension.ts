@@ -19,6 +19,7 @@ import { initializeBacklog, type InitBacklogOptions } from './core/initBacklog';
 import { BacklogWorkspaceManager, type BacklogRoot } from './core/BacklogWorkspaceManager';
 import { detectPackageManager } from './core/AgentIntegrationDetector';
 import { claimTaskForCurrentUser, releaseTaskClaim } from './providers/claimActions';
+import { dispatchTask } from './providers/dispatchActions';
 import { writeActiveTask, clearActiveTask } from './core/activeTask';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -817,6 +818,42 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage('Cleared the active task.');
       } catch (error) {
         vscode.window.showErrorMessage(`Failed to clear active task: ${error}`);
+      }
+    })
+  );
+
+  // Subscription-safe dispatch: render a paste-ready prompt for a task (and
+  // optionally an isolated worktree + active-task handoff), copy it to the
+  // clipboard. Never spawns `claude -p` — the user pastes it into a fresh session.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('backlog.dispatchTask', async (arg?: unknown) => {
+      if (!parser) {
+        vscode.window.showErrorMessage('No backlog folder found in workspace');
+        return;
+      }
+      const taskId = resolveClaimTarget(arg);
+      if (!taskId) {
+        vscode.window.showInformationMessage('Open a task to dispatch it.');
+        return;
+      }
+      try {
+        const result = await dispatchTask(taskId, parser);
+        if (!result) return;
+        refreshAllViews();
+        TaskDetailProvider.refreshCurrent(taskDetailProvider);
+        const detail = result.worktreePath
+          ? `Prompt copied to clipboard. Worktree: ${result.worktreePath}`
+          : 'Prompt copied to clipboard. Paste it into a fresh Claude Code session.';
+        const choice = await vscode.window.showInformationMessage(
+          `Dispatched ${taskId}. ${detail}`,
+          'Open handoff'
+        );
+        if (choice === 'Open handoff') {
+          const doc = await vscode.workspace.openTextDocument(result.handoffFile);
+          await vscode.window.showTextDocument(doc);
+        }
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to dispatch task: ${error}`);
       }
     })
   );

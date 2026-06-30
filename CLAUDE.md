@@ -40,7 +40,13 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   handlers in `src/mcp/handlers.ts`. "Set active" control in the detail panel + `backlog.setActiveTask` /
   `backlog.clearActiveTask`. MCP server reuses only vscode-free `src/core` and routes stray `console.log`
   to stderr (stdout is the JSON-RPC channel).
-- **Subscription-safe dispatch** ⏳ (Phase 3): generate a paste-ready prompt; **never** spawn `claude -p`.
+- **Subscription-safe dispatch** ✅ (Phase 3): `backlog.dispatchTask` renders a paste-ready prompt and copies
+  it to the clipboard — **never** spawns `claude -p`. Pure cores: `src/core/dispatchPrompt.ts` (configurable
+  template + `{{placeholder}}` substitution; `backlog.dispatchTemplate` setting), `src/core/WorktreeService.ts`
+  (optional `.worktrees/<branch>` isolation, `backlog.dispatchCreateWorktree`), `src/core/handoff.ts`
+  (`.taskwright/handoff/<id>.md`). Orchestration in `src/providers/dispatchActions.ts` (sets active task on the
+  session root, optional terminal); "Dispatch" control in the detail panel. **Intake** ("Categorize with Claude")
+  is still pending in Phase 3.
 - **Superpowers bridge** ⏳ (Phase 4): attach specs/plans to tasks; surface the progress ledger.
 
 ## Conventions

@@ -62,6 +62,22 @@
           "type": "string",
           "default": "",
           "markdownDescription": "Identity that advisory task claims are attributed to (e.g. `@alice`). When empty, your OS username is used, prefixed with `@`."
+        },
+        "backlog.dispatchTemplate": {
+          "type": "string",
+          "editPresentation": "multilineText",
+          "default": "",
+          "markdownDescription": "Template for the dispatch prompt copied to the clipboard. Supports `{{id}}`, `{{title}}`, `{{status}}`, `{{priority}}`, `{{labels}}`, `{{description}}`, `{{acceptanceCriteria}}`, `{{plan}}`, `{{worktree}}`, and `{{filePath}}`. Leave empty to use the built-in template."
+        },
+        "backlog.dispatchCreateWorktree": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "When dispatching a task, create an isolated git worktree at `.worktrees/<branch>` and set the active task there, so parallel sessions don't share state. Falls back to the workspace root when not a git repo."
+        },
+        "backlog.dispatchOpenTerminal": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "When dispatching a task creates a worktree, open an integrated terminal in that worktree directory."
         }
       }
     },
@@ -172,6 +188,11 @@
       {
         "command": "backlog.clearActiveTask",
         "title": "Taskwright: Clear Active Task"
+      },
+      {
+        "command": "backlog.dispatchTask",
+        "title": "Taskwright: Dispatch Task (copy prompt)",
+        "icon": "$(rocket)"
       },
       {
         "command": "backlog.setupClaudeIntegration",
