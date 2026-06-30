@@ -262,6 +262,7 @@
     }
   },
   "scripts": {
+    "vscode:prepublish": "bun run build",
     "compile": "bun scripts/build.ts",
     "compile:webview": "vite build --config vite.webview.config.ts",
     "watch": "bun scripts/build.ts --watch",
@@ -281,7 +282,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
-    "package": "vsce package --no-dependencies",
+    "package": "bunx @vscode/vsce package --no-dependencies",
     "licenses:generate": "bash scripts/generate-licenses.sh",
     "licenses:check": "bash scripts/check-licenses.sh",
     "depcheck": "depcheck",
