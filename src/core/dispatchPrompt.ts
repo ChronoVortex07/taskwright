@@ -33,6 +33,8 @@ export interface DispatchContext {
  */
 export const DEFAULT_DISPATCH_TEMPLATE = `You are a fresh Claude Code session assigned exactly one task. Work only on this task — do not touch unrelated code or other tasks.
 
+Your isolated worktree is .worktrees/{{worktree}}. cd into it first and run every git, file, and test command there. Do NOT git checkout, commit, or merge in the repository root — that tree is shared with other agents and committing there corrupts their branches.
+
 Task {{id}}: {{title}}
 Status: {{status}} · Priority: {{priority}} · Labels: {{labels}}
 

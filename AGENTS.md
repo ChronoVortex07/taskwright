@@ -6,11 +6,15 @@ Task and project management runs through the **Taskwright MCP server** (`.mcp.js
 external CLI. At the start of a task session:
 
 1. `get_active_task` — load your assigned task and its full context.
-2. `claim_task` — mark it in progress (advisory; prevents cross-worktree collisions).
-3. Do the work. Use `create_task` / `edit_task` to add or update tasks, `create_subtask` for
+2. **Stay in your worktree.** Your task runs in `.worktrees/<branch>`. `cd` there
+   first and run all git/file/test commands inside it. Never `git checkout`,
+   `commit`, or `merge` in the repository root — it is shared with other agents,
+   and a managed `pre-commit` hook will block such commits.
+3. `claim_task` — mark it in progress (advisory; prevents cross-worktree collisions).
+4. Do the work. Use `create_task` / `edit_task` to add or update tasks, `create_subtask` for
    breakdowns, and `complete_task` when done. Record progress with `edit_task`
    (implementationNotes / finalSummary).
-4. `release_task` when you finish or hand off.
+5. `release_task` when you finish or hand off.
 
 Generated task files stay byte-for-byte compatible with Backlog.md, so the board remains
 readable by the upstream tools if they are installed.

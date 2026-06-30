@@ -147,6 +147,14 @@ describe('commandUsesClaudePrintMode', () => {
   });
 });
 
+describe('DEFAULT_DISPATCH_TEMPLATE worktree isolation', () => {
+  it('tells the session to cd into and stay in its worktree', () => {
+    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('.worktrees/{{worktree}}');
+    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('cd into it');
+    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('repository root');
+  });
+});
+
 describe('resolveTerminalLaunch', () => {
   const ctx = dispatchContextFromTask(makeTask(), {
     worktree: 'task-7',
