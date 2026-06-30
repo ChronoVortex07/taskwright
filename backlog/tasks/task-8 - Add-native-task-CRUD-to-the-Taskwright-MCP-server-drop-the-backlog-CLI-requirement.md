@@ -3,9 +3,10 @@ id: TASK-8
 title: >-
   Add native task CRUD to the Taskwright MCP server (drop the backlog CLI
   requirement)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-06-30 11:39'
+updated_date: '2026-06-30 12:07'
 labels:
   - feature
   - mcp
