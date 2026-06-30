@@ -1,6 +1,8 @@
 import { BacklogParser } from '../core/BacklogParser';
 import { ClaimService } from '../core/ClaimService';
+import { PlanService } from '../core/PlanService';
 import { readActiveTask } from '../core/activeTask';
+import { loadPlanProgress } from '../core/loadPlanProgress';
 import { ChecklistItem, Task } from '../core/types';
 
 /**
@@ -12,6 +14,14 @@ export interface McpHandlerDeps {
   root: string;
   parser: BacklogParser;
   claimService: ClaimService;
+  planService: PlanService;
+}
+
+export interface PlanProgressSummary {
+  total: number;
+  done: number;
+  percent: number;
+  exists: boolean;
 }
 
 export interface TaskSummary {
@@ -27,6 +37,10 @@ export interface TaskSummary {
   claimedBy?: string;
   worktree?: string;
   claimedAt?: string;
+  /** Repo-root-relative path to the linked superpowers plan, if attached. */
+  plan?: string;
+  /** Checkbox completion of the linked plan, when one is attached. */
+  planProgress?: PlanProgressSummary;
   filePath: string;
 }
 
@@ -49,7 +63,23 @@ export interface ReleaseResult {
   taskId: string;
 }
 
-function toSummary(task: Task): TaskSummary {
+export interface AttachPlanResult {
+  attached: true;
+  taskId: string;
+  plan: string;
+}
+
+function toSummary(task: Task, root: string): TaskSummary {
+  let planProgress: PlanProgressSummary | undefined;
+  if (task.plan) {
+    const loaded = loadPlanProgress(root, task.plan);
+    planProgress = {
+      total: loaded.progress.total,
+      done: loaded.progress.done,
+      percent: loaded.progress.percent,
+      exists: loaded.exists,
+    };
+  }
   return {
     id: task.id,
     title: task.title,
@@ -63,6 +93,8 @@ function toSummary(task: Task): TaskSummary {
     claimedBy: task.claimedBy,
     worktree: task.worktree,
     claimedAt: task.claimedAt,
+    plan: task.plan,
+    planProgress,
     filePath: task.filePath,
   };
 }
@@ -87,7 +119,7 @@ export async function getActiveTask(deps: McpHandlerDeps): Promise<ActiveTaskRes
       message: `Active task ${active.taskId} was set but no matching task file was found.`,
     };
   }
-  return { active: true, task: toSummary(task) };
+  return { active: true, task: toSummary(task, deps.root) };
 }
 
 /** Place an advisory claim on a task so other sessions can see it is in progress. */
@@ -115,4 +147,13 @@ export async function releaseTaskHandler(
 ): Promise<ReleaseResult> {
   await deps.claimService.releaseTask(args.taskId, deps.parser);
   return { released: true, taskId: args.taskId };
+}
+
+/** Link a task to its implementation plan/spec so the board can track progress. */
+export async function attachPlanHandler(
+  deps: McpHandlerDeps,
+  args: { taskId: string; plan: string }
+): Promise<AttachPlanResult> {
+  const plan = await deps.planService.attachPlan(args.taskId, args.plan, deps.parser);
+  return { attached: true, taskId: args.taskId, plan };
 }

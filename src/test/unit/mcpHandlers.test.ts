@@ -3,10 +3,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { BacklogParser } from '../../core/BacklogParser';
 import { ClaimService } from '../../core/ClaimService';
+import { PlanService } from '../../core/PlanService';
 import {
   getActiveTask,
   claimTaskHandler,
   releaseTaskHandler,
+  attachPlanHandler,
   type McpHandlerDeps,
 } from '../../mcp/handlers';
 
@@ -56,7 +58,12 @@ function routeReads(activeJson: string | null) {
 }
 
 function makeDeps(): McpHandlerDeps {
-  return { root: ROOT, parser: new BacklogParser(BACKLOG), claimService: new ClaimService() };
+  return {
+    root: ROOT,
+    parser: new BacklogParser(BACKLOG),
+    claimService: new ClaimService(),
+    planService: new PlanService(),
+  };
 }
 
 describe('mcp handlers', () => {
@@ -125,6 +132,48 @@ describe('mcp handlers', () => {
       expect(result.released).toBe(true);
       expect(result.taskId).toBe('TASK-7');
       expect(fs.writeFileSync).toHaveBeenCalled();
+    });
+  });
+
+  describe('attachPlanHandler', () => {
+    it('writes a normalized plan link and echoes it back', async () => {
+      routeReads(null);
+      const result = await attachPlanHandler(makeDeps(), {
+        taskId: 'TASK-7',
+        plan: 'docs\\superpowers\\plans\\p.md',
+      });
+      expect(result.attached).toBe(true);
+      expect(result.plan).toBe('docs/superpowers/plans/p.md');
+      const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+      expect(written).toContain('plan: docs/superpowers/plans/p.md');
+    });
+  });
+
+  describe('getActiveTask plan progress', () => {
+    it('includes checkbox progress for a task with an attached plan', async () => {
+      const taskWithPlan = TASK_CONTENT.replace(
+        'dependencies: []',
+        'dependencies: []\nplan: docs/plan.md'
+      );
+      vi.mocked(fs.readFileSync).mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const str = String(p);
+        if (str.includes('active-task.json')) {
+          return JSON.stringify({ taskId: 'TASK-7', setAt: 'x' });
+        }
+        if (str.replace(/\\/g, '/').endsWith('docs/plan.md')) {
+          return '- [x] one\n- [ ] two\n- [ ] three\n';
+        }
+        return taskWithPlan;
+      });
+
+      const result = await getActiveTask(makeDeps());
+      expect(result.task?.plan).toBe('docs/plan.md');
+      expect(result.task?.planProgress).toEqual({
+        total: 3,
+        done: 1,
+        percent: 33,
+        exists: true,
+      });
     });
   });
 });

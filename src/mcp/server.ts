@@ -16,11 +16,13 @@ import { z } from 'zod';
 import * as path from 'path';
 import { BacklogParser } from '../core/BacklogParser';
 import { ClaimService } from '../core/ClaimService';
+import { PlanService } from '../core/PlanService';
 import { resolveBacklogDirectory } from '../core/resolveBacklogDirectory';
 import {
   getActiveTask,
   claimTaskHandler,
   releaseTaskHandler,
+  attachPlanHandler,
   type McpHandlerDeps,
 } from './handlers';
 
@@ -43,6 +45,7 @@ async function main(): Promise<void> {
     root,
     parser: new BacklogParser(backlogPath),
     claimService: new ClaimService(),
+    planService: new PlanService(),
   };
 
   const server = new McpServer({ name: 'taskwright', version: '0.0.1' });
@@ -85,6 +88,22 @@ async function main(): Promise<void> {
       },
     },
     async (args) => jsonContent(await releaseTaskHandler(deps, args))
+  );
+
+  server.registerTool(
+    'attach_plan',
+    {
+      title: 'Attach plan',
+      description:
+        'Link a task to its implementation plan/spec (e.g. docs/superpowers/plans/<date>-<feature>.md) so the board tracks plan progress. Call this after writing the plan. Path is relative to the repository root.',
+      inputSchema: {
+        taskId: z.string().describe('Task ID to attach the plan to, e.g. TASK-7.'),
+        plan: z
+          .string()
+          .describe('Repo-root-relative path to the plan file, e.g. docs/superpowers/plans/x.md.'),
+      },
+    },
+    async (args) => jsonContent(await attachPlanHandler(deps, args))
   );
 
   const transport = new StdioServerTransport();
