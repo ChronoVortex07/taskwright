@@ -3,10 +3,10 @@ id: TASK-8
 title: >-
   Add native task CRUD to the Taskwright MCP server (drop the backlog CLI
   requirement)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-30 11:39'
-updated_date: '2026-06-30 12:07'
+updated_date: '2026-06-30 12:59'
 labels:
   - feature
   - mcp
@@ -30,3 +30,9 @@ Today Taskwright reads task files directly but delegates all writes to the exter
 - [ ] #5 CLAUDE.md coupling rules are updated to reflect Taskwright-owned writes
 - [ ] #6 Unit tests cover the new write paths
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implemented via subagent-driven development (7 tasks). The Taskwright MCP server now exposes create_task, edit_task, complete_task, archive_task, restore_task, promote_draft, demote_task, create_subtask backed by BacklogWriter. Dropped the hard backlog CLI/MCP dependency from .mcp.json and docs. Final review: ready to merge; lint/typecheck clean, all new tests pass, server boots with all 8 tools. Polish items tracked as a follow-up task.
+<!-- SECTION:NOTES:END -->

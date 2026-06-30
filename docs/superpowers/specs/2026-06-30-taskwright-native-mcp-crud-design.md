@@ -1,7 +1,7 @@
 # Native task CRUD in the Taskwright MCP server
 
 - **Date:** 2026-06-30
-- **Status:** Approved (design)
+- **Status:** Implemented
 - **Task:** TASK-8 — Add native task CRUD to the Taskwright MCP server (drop the backlog CLI requirement)
 
 ## Context
