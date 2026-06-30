@@ -2269,6 +2269,47 @@ body {
   background: var(--vscode-button-secondaryHoverBackground, #3c3c3c);
 }
 
+/* Plan progress banner (superpowers bridge) */
+.plan-banner .plan-info {
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+}
+
+.plan-banner .plan-name {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+
+.plan-banner .plan-stats {
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+.plan-banner .plan-bar {
+  flex: 1;
+  min-width: 60px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--vscode-progressBar-background, rgba(127, 127, 127, 0.25));
+  overflow: hidden;
+}
+
+.plan-banner .plan-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--vscode-charts-green, #89d185);
+  transition: width 0.2s ease;
+}
+
+.plan-banner .plan-missing {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
 /* Subtask progress indicator on kanban cards */
 .task-card-subtasks {
   display: flex;

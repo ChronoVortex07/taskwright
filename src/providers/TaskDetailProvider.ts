@@ -9,7 +9,9 @@ import { openWorkspaceFile, isValidLinkString } from '../core/openWorkspaceFile'
 import { parseMarkdown } from '../core/parseMarkdown';
 import { claimTaskForCurrentUser, releaseTaskClaim, getClaimIdentity } from './claimActions';
 import { dispatchTask } from './dispatchActions';
+import { attachPlanForTask, detachPlanForTask, openPlanForTask } from './planActions';
 import { readActiveTask, writeActiveTask, clearActiveTask } from '../core/activeTask';
+import { loadPlanProgress } from '../core/loadPlanProgress';
 
 /**
  * Task detail data structure sent to the webview
@@ -39,6 +41,8 @@ interface TaskDetailData {
   claimIdentity?: string;
   /** Whether this task is the active (agent-handoff) task. */
   isActiveTask?: boolean;
+  /** Checkbox progress of the task's attached superpowers plan, if any. */
+  planProgress?: { total: number; done: number; percent: number; exists: boolean };
 }
 
 interface OpenTaskRequest {
@@ -435,12 +439,22 @@ export class TaskDetailProvider {
         }
       }
 
-      // Active-task state is auxiliary metadata; a lookup failure must not break
-      // rendering the task itself.
+      // Active-task state and plan progress are auxiliary metadata; a lookup
+      // failure must not break rendering the task itself.
       let isActiveTask = false;
+      let planProgress: TaskDetailData['planProgress'];
       try {
-        const activeRoot = path.dirname(this.parser.getBacklogPath());
-        isActiveTask = readActiveTask(activeRoot)?.taskId === contextTask.id;
+        const repoRoot = path.dirname(this.parser.getBacklogPath());
+        isActiveTask = readActiveTask(repoRoot)?.taskId === contextTask.id;
+        if (contextTask.plan) {
+          const loaded = loadPlanProgress(repoRoot, contextTask.plan);
+          planProgress = {
+            total: loaded.progress.total,
+            done: loaded.progress.done,
+            percent: loaded.progress.percent,
+            exists: loaded.exists,
+          };
+        }
       } catch {
         isActiveTask = false;
       }
@@ -470,6 +484,7 @@ export class TaskDetailProvider {
         subtaskSummaries,
         claimIdentity: getClaimIdentity(),
         isActiveTask,
+        planProgress,
       };
 
       webview.postMessage({ type: 'taskData', data });
@@ -844,6 +859,53 @@ export class TaskDetailProvider {
           }
         } catch (error) {
           vscode.window.showErrorMessage(`Failed to dispatch task: ${error}`);
+        }
+        break;
+      }
+
+      case 'attachPlan': {
+        if (!TaskDetailProvider.currentTaskId || !this.parser) break;
+        const task = await this.getCurrentTaskFromContext();
+        if (this.blockReadOnlyMutation(task, 'attach a plan to this task')) break;
+        try {
+          const stored = await attachPlanForTask(TaskDetailProvider.currentTaskId, this.parser);
+          if (!stored) break;
+          await this.openTask(
+            TaskDetailProvider.currentTaskRef ?? { taskId: TaskDetailProvider.currentTaskId },
+            { preserveFocus: true }
+          );
+          vscode.window.showInformationMessage(`Attached plan ${stored}`);
+        } catch (error) {
+          vscode.window.showErrorMessage(`Failed to attach plan: ${error}`);
+        }
+        break;
+      }
+
+      case 'detachPlan': {
+        if (!TaskDetailProvider.currentTaskId || !this.parser) break;
+        const task = await this.getCurrentTaskFromContext();
+        if (this.blockReadOnlyMutation(task, 'detach the plan from this task')) break;
+        try {
+          await detachPlanForTask(TaskDetailProvider.currentTaskId, this.parser);
+          await this.openTask(
+            TaskDetailProvider.currentTaskRef ?? { taskId: TaskDetailProvider.currentTaskId },
+            { preserveFocus: true }
+          );
+          vscode.window.showInformationMessage('Detached the plan.');
+        } catch (error) {
+          vscode.window.showErrorMessage(`Failed to detach plan: ${error}`);
+        }
+        break;
+      }
+
+      case 'openPlan': {
+        if (!this.parser) break;
+        const task = await this.getCurrentTaskFromContext();
+        if (!task?.plan) break;
+        try {
+          await openPlanForTask(task.plan, this.parser);
+        } catch (error) {
+          vscode.window.showErrorMessage(`Failed to open plan: ${error}`);
         }
         break;
       }

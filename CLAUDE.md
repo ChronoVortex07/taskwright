@@ -53,7 +53,14 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   labels/statuses/priorities, and copies it to the clipboard for a session to create tasks via the Backlog.md
   MCP. Pure core `src/core/intakePrompt.ts` (+ shared `src/core/templateRender.ts`); glue in
   `src/providers/intakeActions.ts`; `backlog.intakeTemplate` setting. Subscription-safe — never spawns `claude -p`.
-- **Superpowers bridge** ⏳ (Phase 4): attach specs/plans to tasks; surface the progress ledger.
+- **Superpowers bridge** ✅ (Phase 4): link a task to its implementation plan/spec and surface checkbox
+  progress. Taskwright-only `plan` frontmatter field written surgically (`src/core/PlanService.ts` +
+  generic `src/core/frontmatterEdit.ts`, shared with claims); `src/core/planProgress.ts` parses
+  `- [ ]`/`- [x]` steps (superpowers 6.x format) and `src/core/loadPlanProgress.ts` reads the linked file.
+  MCP `attach_plan` tool + `plan`/`planProgress` in `get_active_task` (`src/mcp/`). Detail-panel plan banner
+  (progress bar, Open/Detach/Attach) wired via `src/providers/planActions.ts`; `backlog.attachPlan` /
+  `backlog.detachPlan` commands. Plan paths are repo-root-relative. Note: superpowers 6.x tracks progress via
+  checkboxes **inside** the plan file — there is no separate `.superpowers/sdd/progress.md`.
 
 ## Conventions
 

@@ -206,6 +206,15 @@
         "icon": "$(sparkle)"
       },
       {
+        "command": "backlog.attachPlan",
+        "title": "Taskwright: Attach Plan to Task",
+        "icon": "$(file-symlink-file)"
+      },
+      {
+        "command": "backlog.detachPlan",
+        "title": "Taskwright: Detach Plan from Task"
+      },
+      {
         "command": "backlog.setupClaudeIntegration",
         "title": "Taskwright: Set Up Claude Code Integration"
       }

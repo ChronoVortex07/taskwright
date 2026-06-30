@@ -135,6 +135,75 @@ test.describe('Agentic controls', () => {
     await page.screenshot({ path: `${SHOTS}/02-claimed-active.png`, fullPage: true });
   });
 
+  test('unattached task offers Attach plan', async ({ page }) => {
+    await postMessageToWebview(page, { type: 'taskData', data: baseData });
+    await page.waitForTimeout(80);
+
+    await expect(page.locator('[data-testid="plan-banner"]')).toContainText('No plan attached');
+    await expect(page.locator('[data-testid="attach-plan-btn"]')).toBeVisible();
+  });
+
+  test('attached plan shows progress bar, Open, and Detach', async ({ page }) => {
+    await postMessageToWebview(page, {
+      type: 'taskData',
+      data: {
+        ...baseData,
+        task: { ...dummyTask, plan: 'docs/superpowers/plans/2026-06-30-login.md' },
+        planProgress: { total: 4, done: 3, percent: 75, exists: true },
+      },
+    });
+    await page.waitForTimeout(80);
+
+    const planBanner = page.locator('[data-testid="plan-banner"]');
+    await expect(planBanner).toContainText('2026-06-30-login.md');
+    await expect(planBanner).toContainText('3/4 steps');
+    await expect(planBanner).toContainText('75%');
+    await expect(page.locator('[data-testid="open-plan-btn"]')).toBeVisible();
+    await expect(page.locator('[data-testid="detach-plan-btn"]')).toBeVisible();
+
+    await page.screenshot({ path: `${SHOTS}/03-plan-progress.png`, fullPage: true });
+  });
+
+  test('plan banner warns when the linked file is missing', async ({ page }) => {
+    await postMessageToWebview(page, {
+      type: 'taskData',
+      data: {
+        ...baseData,
+        task: { ...dummyTask, plan: 'docs/superpowers/plans/gone.md' },
+        planProgress: { total: 0, done: 0, percent: 0, exists: false },
+      },
+    });
+    await page.waitForTimeout(80);
+
+    await expect(page.locator('[data-testid="plan-missing"]')).toContainText('not found');
+  });
+
+  test('Attach / Detach / Open plan buttons post their messages', async ({ page }) => {
+    await postMessageToWebview(page, { type: 'taskData', data: baseData });
+    await page.waitForTimeout(80);
+    await clearPostedMessages(page);
+    await page.locator('[data-testid="attach-plan-btn"]').click();
+    expect(await getLastPostedMessage(page)).toEqual({ type: 'attachPlan', taskId: 'TASK-7' });
+
+    await postMessageToWebview(page, {
+      type: 'taskData',
+      data: {
+        ...baseData,
+        task: { ...dummyTask, plan: 'docs/p.md' },
+        planProgress: { total: 1, done: 0, percent: 0, exists: true },
+      },
+    });
+    await page.waitForTimeout(80);
+
+    await clearPostedMessages(page);
+    await page.locator('[data-testid="open-plan-btn"]').click();
+    expect(await getLastPostedMessage(page)).toEqual({ type: 'openPlan', taskId: 'TASK-7' });
+
+    await clearPostedMessages(page);
+    await page.locator('[data-testid="detach-plan-btn"]').click();
+    expect(await getLastPostedMessage(page)).toEqual({ type: 'detachPlan', taskId: 'TASK-7' });
+  });
+
   test('Release and Clear buttons post their messages', async ({ page }) => {
     await postMessageToWebview(page, {
       type: 'taskData',

@@ -21,6 +21,7 @@ import { detectPackageManager } from './core/AgentIntegrationDetector';
 import { claimTaskForCurrentUser, releaseTaskClaim } from './providers/claimActions';
 import { dispatchTask } from './providers/dispatchActions';
 import { categorizeWithClaude } from './providers/intakeActions';
+import { attachPlanForTask, detachPlanForTask } from './providers/planActions';
 import { writeActiveTask, clearActiveTask } from './core/activeTask';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -855,6 +856,50 @@ export function activate(context: vscode.ExtensionContext) {
         }
       } catch (error) {
         vscode.window.showErrorMessage(`Failed to dispatch task: ${error}`);
+      }
+    })
+  );
+
+  // Superpowers bridge: attach / detach a task's implementation plan so the
+  // board tracks plan progress.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('backlog.attachPlan', async (arg?: unknown) => {
+      if (!parser) {
+        vscode.window.showErrorMessage('No backlog folder found in workspace');
+        return;
+      }
+      const taskId = resolveClaimTarget(arg);
+      if (!taskId) {
+        vscode.window.showInformationMessage('Open a task to attach a plan.');
+        return;
+      }
+      try {
+        const stored = await attachPlanForTask(taskId, parser);
+        if (!stored) return;
+        refreshAllViews();
+        TaskDetailProvider.refreshCurrent(taskDetailProvider);
+        vscode.window.showInformationMessage(`Attached plan ${stored} to ${taskId}`);
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to attach plan: ${error}`);
+      }
+    }),
+    vscode.commands.registerCommand('backlog.detachPlan', async (arg?: unknown) => {
+      if (!parser) {
+        vscode.window.showErrorMessage('No backlog folder found in workspace');
+        return;
+      }
+      const taskId = resolveClaimTarget(arg);
+      if (!taskId) {
+        vscode.window.showInformationMessage('Open a task to detach its plan.');
+        return;
+      }
+      try {
+        await detachPlanForTask(taskId, parser);
+        refreshAllViews();
+        TaskDetailProvider.refreshCurrent(taskDetailProvider);
+        vscode.window.showInformationMessage(`Detached the plan from ${taskId}`);
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to detach plan: ${error}`);
       }
     })
   );

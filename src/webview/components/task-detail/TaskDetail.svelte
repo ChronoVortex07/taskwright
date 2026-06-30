@@ -39,9 +39,14 @@
   let claimedAt: string | undefined = $state(undefined);
   let claimIdentity: string | undefined = $state(undefined);
   let isActiveTask = $state(false);
+  let planPath: string | undefined = $state(undefined);
+  let planProgress:
+    | { total: number; done: number; percent: number; exists: boolean }
+    | undefined = $state(undefined);
 
   let isClaimed = $derived(!!claimedBy);
   let claimedByMe = $derived(!!claimedBy && claimedBy === claimIdentity);
+  let planName = $derived(planPath ? (planPath.split('/').pop() ?? planPath) : '');
 
   // Handle messages from extension
   onMessage((message) => {
@@ -73,6 +78,8 @@
           claimedAt = data.task.claimedAt;
           claimIdentity = data.claimIdentity;
           isActiveTask = data.isActiveTask ?? false;
+          planPath = data.task.plan;
+          planProgress = data.planProgress;
           viewState = 'ready';
         }
         break;
@@ -239,6 +246,24 @@
       vscode.postMessage({ type: 'dispatchTask', taskId: task.id });
     }
   }
+
+  function handleAttachPlan() {
+    if (task) {
+      vscode.postMessage({ type: 'attachPlan', taskId: task.id });
+    }
+  }
+
+  function handleDetachPlan() {
+    if (task) {
+      vscode.postMessage({ type: 'detachPlan', taskId: task.id });
+    }
+  }
+
+  function handleOpenPlan() {
+    if (task) {
+      vscode.postMessage({ type: 'openPlan', taskId: task.id });
+    }
+  }
 </script>
 
 {#if viewState === 'loading'}
@@ -329,6 +354,31 @@
       <div class="claim-banner-actions">
         <button class="claim-btn" data-testid="dispatch-task-btn" onclick={handleDispatch}>Dispatch</button>
       </div>
+    </div>
+
+    <div class="claim-banner plan-banner" class:claimed={!!planPath} data-testid="plan-banner">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m9 15 2 2 4-4"/></svg>
+      {#if planPath}
+        <span class="claim-info plan-info">
+          {#if planProgress && planProgress.exists}
+            <span class="plan-name" title={planPath}>{planName}</span>
+            <span class="plan-stats">{planProgress.done}/{planProgress.total} steps · {planProgress.percent}%</span>
+            <span class="plan-bar" aria-hidden="true"><span class="plan-bar-fill" style="width:{planProgress.percent}%"></span></span>
+          {:else}
+            <span class="plan-name" title={planPath}>{planName}</span>
+            <span class="plan-missing" data-testid="plan-missing">plan file not found</span>
+          {/if}
+        </span>
+        <div class="claim-banner-actions">
+          <button class="claim-btn" data-testid="open-plan-btn" onclick={handleOpenPlan}>Open</button>
+          <button class="claim-release-btn" data-testid="detach-plan-btn" onclick={handleDetachPlan}>Detach</button>
+        </div>
+      {:else}
+        <span class="claim-info">No plan attached</span>
+        <div class="claim-banner-actions">
+          <button class="claim-btn" data-testid="attach-plan-btn" onclick={handleAttachPlan}>Attach plan</button>
+        </div>
+      {/if}
     </div>
   {/if}
 

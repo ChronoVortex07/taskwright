@@ -80,4 +80,5 @@ export interface TaskDetailData {
   subtaskSummaries?: Array<{ id: string; title: string; status: string }>;
   claimIdentity?: string;
   isActiveTask?: boolean;
+  planProgress?: { total: number; done: number; percent: number; exists: boolean };
 }
