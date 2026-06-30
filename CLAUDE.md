@@ -28,13 +28,20 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   (claims) are written directly.
 - Don't reimplement Backlog.md CRUD — the `backlog` MCP server (`.mcp.json`) already exposes it.
 
-## Taskwright additions (in progress — see the project plan)
+## Taskwright additions (see the project plan)
 
-- **Advisory claiming**: `claimedBy` / `worktree` / `claimedAt` frontmatter + staleness; UI badges.
-- **Taskwright MCP**: `get_active_task` / `claim_task` / `release_task` (active-task is pull-based —
-  there is no API to push context into a running agent session).
-- **Subscription-safe dispatch**: generate a paste-ready prompt; **never** spawn `claude -p`.
-- **Superpowers bridge**: attach specs/plans to tasks; surface the progress ledger.
+- **Advisory claiming** ✅ (Phase 2): `claimed_by` / `worktree` / `claimed_at` frontmatter written
+  surgically by `src/core/claims.ts` + `ClaimService` (Backlog.md's canonical frontmatter round-trips
+  untouched). Claim badge on kanban cards; Claim/Release control in the detail panel; `backlog.claimTask`
+  / `backlog.releaseTask` commands. Staleness helper exists (`isClaimStale`); auto-expiry is Phase 5.
+- **Active task + Taskwright MCP** ✅ (Phase 2): pull-based handoff via `<root>/.taskwright/active-task.json`
+  (`src/core/activeTask.ts`, git-ignored, per-worktree). MCP server `src/mcp/server.ts` (stdio, bundled to
+  `dist/mcp/server.js`, registered in `.mcp.json`) exposes `get_active_task` / `claim_task` / `release_task`;
+  handlers in `src/mcp/handlers.ts`. "Set active" control in the detail panel + `backlog.setActiveTask` /
+  `backlog.clearActiveTask`. MCP server reuses only vscode-free `src/core` and routes stray `console.log`
+  to stderr (stdout is the JSON-RPC channel).
+- **Subscription-safe dispatch** ⏳ (Phase 3): generate a paste-ready prompt; **never** spawn `claude -p`.
+- **Superpowers bridge** ⏳ (Phase 4): attach specs/plans to tasks; surface the progress ledger.
 
 ## Conventions
 
