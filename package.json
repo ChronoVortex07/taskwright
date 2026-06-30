@@ -172,6 +172,10 @@
       {
         "command": "backlog.clearActiveTask",
         "title": "Taskwright: Clear Active Task"
+      },
+      {
+        "command": "backlog.setupClaudeIntegration",
+        "title": "Taskwright: Set Up Claude Code Integration"
       }
     ],
     "menus": {

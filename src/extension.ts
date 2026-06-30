@@ -21,6 +21,13 @@ import { detectPackageManager } from './core/AgentIntegrationDetector';
 import { claimTaskForCurrentUser, releaseTaskClaim } from './providers/claimActions';
 import { writeActiveTask, clearActiveTask } from './core/activeTask';
 import * as path from 'path';
+import * as fs from 'fs';
+import {
+  isClaudeCliAvailable,
+  isTaskwrightMcpRegistered,
+  registerTaskwrightMcp,
+} from './core/claudeMcp';
+import { injectConvention } from './core/agentConvention';
 
 let fileWatcher: FileWatcher | undefined;
 let crossBranchStatusBarItem: vscode.StatusBarItem | undefined;
@@ -813,6 +820,97 @@ export function activate(context: vscode.ExtensionContext) {
       }
     })
   );
+
+  // Claude Code integration: register the bundled Taskwright MCP server with
+  // Claude Code (user scope, via its CLI) and offer to add the agent convention
+  // to CLAUDE.md so sessions actually call get_active_task / claim_task.
+  const CLAUDE_SETUP_DISMISSED_KEY = 'taskwright.claudeSetupDismissed';
+  const mcpServerPath = path.join(context.extensionPath, 'dist', 'mcp', 'server.js');
+  const setUpClaudeIntegration = async (): Promise<void> => {
+    const root = activeRootDir();
+    if (!root) {
+      vscode.window.showErrorMessage('No backlog folder found in workspace');
+      return;
+    }
+    if (!fs.existsSync(mcpServerPath)) {
+      vscode.window.showErrorMessage(
+        'The Taskwright MCP server bundle (dist/mcp/server.js) is missing. Reinstall or rebuild the extension.'
+      );
+      return;
+    }
+
+    // 1) Register the MCP server with Claude Code at user scope.
+    if (await isClaudeCliAvailable()) {
+      try {
+        await registerTaskwrightMcp(mcpServerPath);
+        // Stop the activation prompt from re-checking the CLI on every launch.
+        await context.globalState.update(CLAUDE_SETUP_DISMISSED_KEY, true);
+        vscode.window.showInformationMessage(
+          'Registered the Taskwright MCP server with Claude Code (user scope). Restart Claude Code to load it.'
+        );
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to register the Taskwright MCP server: ${error}`);
+      }
+    } else {
+      vscode.window.showWarningMessage(
+        'Claude Code CLI not found on PATH — skipped MCP registration. Install Claude Code, then run "Taskwright: Set Up Claude Code Integration" again.'
+      );
+    }
+
+    // 2) Offer to add the agent convention to CLAUDE.md (idempotent, preserves
+    // existing content — only a marked block is written).
+    const claudeMdPath = path.join(root, 'CLAUDE.md');
+    const existed = fs.existsSync(claudeMdPath);
+    const existing = existed ? fs.readFileSync(claudeMdPath, 'utf-8') : '';
+    const updated = injectConvention(existing);
+    if (updated === existing) {
+      if (existed) {
+        vscode.window.showInformationMessage('CLAUDE.md already has the Taskwright instructions.');
+      }
+      return;
+    }
+    const choice = await vscode.window.showInformationMessage(
+      existed
+        ? 'Add Taskwright agent instructions to your CLAUDE.md? Only a marked block is added — your existing content is preserved.'
+        : 'Create a CLAUDE.md with Taskwright agent instructions so Claude Code uses the MCP server?',
+      { modal: true },
+      'Add'
+    );
+    if (choice === 'Add') {
+      try {
+        fs.writeFileSync(claudeMdPath, updated, 'utf-8');
+        vscode.window.showInformationMessage(
+          `${existed ? 'Updated' : 'Created'} CLAUDE.md with Taskwright agent instructions.`
+        );
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to update CLAUDE.md: ${error}`);
+      }
+    }
+  };
+  context.subscriptions.push(
+    vscode.commands.registerCommand('backlog.setupClaudeIntegration', setUpClaudeIntegration)
+  );
+
+  // One-time prompt: in a backlog repo where Claude Code is installed but the
+  // MCP server isn't registered yet, offer to set it up. Fire-and-forget so it
+  // never blocks activation.
+  void (async () => {
+    if (context.globalState.get<boolean>(CLAUDE_SETUP_DISMISSED_KEY)) return;
+    if (!activeRootDir()) return;
+    if (!(await isClaudeCliAvailable())) return;
+    if (await isTaskwrightMcpRegistered()) return;
+    const choice = await vscode.window.showInformationMessage(
+      'Set up Taskwright for Claude Code? Registers the MCP server (so agents can pull their active task) and adds a usage note to CLAUDE.md.',
+      'Set up',
+      'Not now',
+      "Don't ask again"
+    );
+    if (choice === 'Set up') {
+      await setUpClaudeIntegration();
+    } else if (choice === "Don't ask again") {
+      await context.globalState.update(CLAUDE_SETUP_DISMISSED_KEY, true);
+    }
+  })();
 
   // Listen for file changes (only if we have a file watcher)
   if (fileWatcher) {
