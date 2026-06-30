@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_DISPATCH_TEMPLATE,
+  commandUsesClaudePrintMode,
   dispatchBranchName,
   dispatchContextFromTask,
   formatChecklist,
   renderDispatchPrompt,
+  resolveTerminalLaunch,
 } from '../../core/dispatchPrompt';
 import { Task } from '../../core/types';
 
@@ -121,5 +123,51 @@ describe('renderDispatchPrompt', () => {
   it('leaves unknown placeholders untouched so typos are visible', () => {
     const out = renderDispatchPrompt('{{id}} {{bogus}}', dispatchContextFromTask(makeTask()));
     expect(out).toBe('TASK-7 {{bogus}}');
+  });
+});
+
+describe('commandUsesClaudePrintMode', () => {
+  it('flags claude -p and --print invocations', () => {
+    expect(commandUsesClaudePrintMode('claude -p "do it"')).toBe(true);
+    expect(commandUsesClaudePrintMode('claude --print < file')).toBe(true);
+  });
+
+  it('allows an interactive claude chat seeded from a file', () => {
+    expect(commandUsesClaudePrintMode('claude "$(cat handoff.md)"')).toBe(false);
+    expect(commandUsesClaudePrintMode("claude (Get-Content -Raw 'handoff.md')")).toBe(false);
+  });
+
+  it('does not flag -p that belongs to a different command segment', () => {
+    expect(commandUsesClaudePrintMode('grep -p foo && claude "go"')).toBe(false);
+  });
+
+  it('ignores non-claude commands', () => {
+    expect(commandUsesClaudePrintMode('echo -p hello')).toBe(false);
+  });
+});
+
+describe('resolveTerminalLaunch', () => {
+  const ctx = dispatchContextFromTask(makeTask(), {
+    worktree: 'task-7',
+    handoffFile: '/repo/.taskwright/handoff/TASK-7.md',
+  });
+
+  it('does nothing for an empty or whitespace template', () => {
+    expect(resolveTerminalLaunch('', ctx)).toEqual({ run: false });
+    expect(resolveTerminalLaunch('   ', ctx)).toEqual({ run: false });
+  });
+
+  it('renders placeholders and runs an interactive command', () => {
+    const d = resolveTerminalLaunch('claude "$(cat {{handoffFile}})"', ctx);
+    expect(d.run).toBe(true);
+    expect(d.command).toBe('claude "$(cat /repo/.taskwright/handoff/TASK-7.md)"');
+    expect(d.warning).toBeUndefined();
+  });
+
+  it('refuses a claude -p command and returns a warning', () => {
+    const d = resolveTerminalLaunch('claude -p "$(cat {{handoffFile}})"', ctx);
+    expect(d.run).toBe(false);
+    expect(d.command).toBeUndefined();
+    expect(d.warning).toMatch(/-p/);
   });
 });

@@ -95,3 +95,48 @@ export function dispatchContextFromTask(
 export function renderDispatchPrompt(template: string, ctx: DispatchContext): string {
   return substitutePlaceholders(template, ctx as unknown as Record<string, string>);
 }
+
+/** A resolved decision about whether/what to run in the dispatch terminal. */
+export interface TerminalLaunchDecision {
+  /** True when `command` should be sent to the terminal. */
+  run: boolean;
+  /** The rendered command to run (present only when `run` is true). */
+  command?: string;
+  /** A message to surface to the user (e.g. the `-p` guard tripped). */
+  warning?: string;
+}
+
+/**
+ * Whether a shell command line launches `claude` in print/headless mode
+ * (`-p` / `--print`) in any of its `&&`/`||`/`;`/`|`-separated segments. Dispatch
+ * is subscription-safe, so such a command is refused. Best-effort (not a full
+ * shell parser): it scopes the flag check to the segment that names `claude`.
+ */
+export function commandUsesClaudePrintMode(command: string): boolean {
+  return command
+    .split(/\|\||&&|[;|]/)
+    .some((seg) => /\bclaude\b/.test(seg) && /(?:^|\s)(?:-p|--print)\b/.test(seg));
+}
+
+/**
+ * Decide what to run in the dispatch-opened worktree terminal. An empty template
+ * means "do nothing"; a `claude -p`/`--print` command is refused with a warning
+ * (launch an interactive chat instead); otherwise the template is rendered against
+ * the dispatch context and returned to run.
+ */
+export function resolveTerminalLaunch(
+  commandTemplate: string,
+  ctx: DispatchContext
+): TerminalLaunchDecision {
+  const template = commandTemplate.trim();
+  if (!template) return { run: false };
+  const command = renderDispatchPrompt(template, ctx);
+  if (commandUsesClaudePrintMode(command)) {
+    return {
+      run: false,
+      warning:
+        "Taskwright dispatch skipped the terminal command: it runs 'claude -p' (headless/metered). Use an interactive 'claude' chat to stay on your subscription.",
+    };
+  }
+  return { run: true, command };
+}
