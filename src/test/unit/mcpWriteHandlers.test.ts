@@ -12,6 +12,8 @@ import {
   completeTaskHandler,
   archiveTaskHandler,
   restoreTaskHandler,
+  promoteDraftHandler,
+  demoteTaskHandler,
 } from '../../mcp/handlers';
 import type { McpHandlerDeps } from '../../mcp/handlers';
 
@@ -142,5 +144,22 @@ describe('lifecycle moves', () => {
 
   it('throws completing a missing task', async () => {
     await expect(completeTaskHandler(deps(), { taskId: 'TASK-404' })).rejects.toThrow('TASK-404');
+  });
+});
+
+describe('draft lifecycle', () => {
+  it('promotes a draft to a task', async () => {
+    const draft = await createTaskHandler(deps(), { title: 'Idea', draft: true });
+    expect(draft.id).toBe('DRAFT-1');
+    const promoted = await promoteDraftHandler(deps(), { taskId: 'DRAFT-1' });
+    expect(promoted.id).toMatch(/^TASK-\d+$/);
+    expect(promoted.status).toBe('To Do');
+  });
+
+  it('demotes a task to a draft', async () => {
+    await createTaskHandler(deps(), { title: 'Too early' });
+    const demoted = await demoteTaskHandler(deps(), { taskId: 'TASK-1' });
+    expect(demoted.id).toMatch(/^DRAFT-\d+$/);
+    expect(demoted.status).toBe('Draft');
   });
 });

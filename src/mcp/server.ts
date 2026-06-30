@@ -29,6 +29,8 @@ import {
   completeTaskHandler,
   archiveTaskHandler,
   restoreTaskHandler,
+  promoteDraftHandler,
+  demoteTaskHandler,
   type McpHandlerDeps,
 } from './handlers';
 
@@ -208,6 +210,26 @@ async function main(): Promise<void> {
       inputSchema: { taskId: z.string().describe('Task ID to restore.') },
     },
     async (args) => runTool(() => restoreTaskHandler(deps, args))
+  );
+
+  server.registerTool(
+    'promote_draft',
+    {
+      title: 'Promote draft',
+      description: 'Promote a draft (DRAFT-N) into a task with a new TASK-N id.',
+      inputSchema: { taskId: z.string().describe('Draft ID to promote, e.g. DRAFT-3.') },
+    },
+    async (args) => runTool(() => promoteDraftHandler(deps, args))
+  );
+
+  server.registerTool(
+    'demote_task',
+    {
+      title: 'Demote task',
+      description: 'Demote a task into a draft (new DRAFT-N id, status Draft).',
+      inputSchema: { taskId: z.string().describe('Task ID to demote, e.g. TASK-7.') },
+    },
+    async (args) => runTool(() => demoteTaskHandler(deps, args))
   );
 
   const transport = new StdioServerTransport();

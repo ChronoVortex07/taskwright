@@ -274,6 +274,24 @@ export async function restoreTaskHandler(
   return { taskId: args.taskId, outcome: 'restored', path: dest };
 }
 
+/** Promote a draft (DRAFT-N) to a task (new TASK-N id). */
+export async function promoteDraftHandler(
+  deps: McpHandlerDeps,
+  args: { taskId: string }
+): Promise<TaskSummary> {
+  const newId = await deps.writer.promoteDraft(args.taskId, deps.parser);
+  return requireSummary(deps, newId);
+}
+
+/** Demote a task to a draft (new DRAFT-N id, status Draft). */
+export async function demoteTaskHandler(
+  deps: McpHandlerDeps,
+  args: { taskId: string }
+): Promise<TaskSummary> {
+  const newId = await deps.writer.demoteTask(args.taskId, deps.parser);
+  return requireSummary(deps, newId);
+}
+
 /** Apply partial edits to a task and return the updated summary. */
 export async function editTaskHandler(
   deps: McpHandlerDeps,
