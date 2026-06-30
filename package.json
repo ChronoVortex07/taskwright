@@ -99,7 +99,7 @@
         "taskwright.enforceWorktreeIsolation": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Install a managed `pre-commit` git hook that blocks committing a dispatched task branch from the primary working tree — the failure mode where a parallel agent escapes its `.worktrees/<branch>` and clobbers a sibling branch. Bypass a single commit with `git commit --no-verify`. Set to `false` to remove the hook."
+          "markdownDescription": "Install a managed `pre-commit` git hook that blocks committing a dispatched task branch from the primary working tree — the failure mode where a parallel agent escapes its `.worktrees/<branch>` and clobbers a sibling branch. Bypass a single commit with `git commit --no-verify`. Set to `false` to remove the hook. When enabled, adds a managed fenced block to the project's `.husky/pre-commit` (or `.git/hooks/pre-commit` when husky is absent) and copies a small guard script into the gitignored `.taskwright/hooks/`."
         }
       }
     },

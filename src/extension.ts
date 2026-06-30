@@ -1088,6 +1088,9 @@ export function activate(context: vscode.ExtensionContext) {
       if (affectsTaskwrightConfig(event, 'taskIdDisplay')) {
         tasksHosts.forEach((host) => host.refresh());
       }
+      if (affectsTaskwrightConfig(event, 'enforceWorktreeIsolation') && workspaceRootPath) {
+        syncWorktreeGuard(workspaceRootPath, context.extensionUri);
+      }
     })
   );
 

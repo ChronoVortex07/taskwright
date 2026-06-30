@@ -1,1 +1,4 @@
 bunx lint-staged
+# >>> taskwright worktree guard >>>
+if [ -f ".taskwright/hooks/worktree-guard.js" ]; then node ".taskwright/hooks/worktree-guard.js" || exit 1; fi
+# <<< taskwright worktree guard <<<
