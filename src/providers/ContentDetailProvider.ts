@@ -90,7 +90,7 @@ export class ContentDetailProvider {
       return ContentDetailProvider.currentPanel;
     }
 
-    const panel = vscode.window.createWebviewPanel('backlog.contentDetail', title, column, {
+    const panel = vscode.window.createWebviewPanel('taskwright.contentDetail', title, column, {
       enableScripts: true,
       localResourceRoots: [this.extensionUri],
       retainContextWhenHidden: true,

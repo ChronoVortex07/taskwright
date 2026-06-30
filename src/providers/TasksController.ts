@@ -21,6 +21,7 @@ import { BacklogCli } from '../core/BacklogCli';
 import { readActiveTask } from '../core/activeTask';
 import { isClaimStale } from '../core/claims';
 import { getClaimStalenessMs } from './claimActions';
+import { getTaskwrightConfig } from '../config';
 
 export type TasksViewMode =
   | 'kanban'
@@ -84,9 +85,7 @@ export class TasksController {
   ) {}
 
   private getTasksViewSettings(): TasksViewSettings {
-    const configuredMode = vscode.workspace
-      .getConfiguration('backlog')
-      .get<TaskIdDisplayMode>('taskIdDisplay', 'full');
+    const configuredMode = getTaskwrightConfig<TaskIdDisplayMode>('taskIdDisplay', 'full');
 
     const taskIdDisplay: TaskIdDisplayMode =
       configuredMode === 'number' || configuredMode === 'hidden' ? configuredMode : 'full';
@@ -353,7 +352,7 @@ export class TasksController {
         // editor group (and focus it); the sidebar opens it in the default column.
         const options =
           this.host.kind === 'editor' ? { viewColumn: vscode.ViewColumn.Active } : undefined;
-        vscode.commands.executeCommand('backlog.openTaskDetail', ref, options);
+        vscode.commands.executeCommand('taskwright.openTaskDetail', ref, options);
         break;
       }
 
@@ -368,7 +367,7 @@ export class TasksController {
         // tab in the board's own editor group (reusing one detail tab), keeping
         // focus on the board so quick card-to-card browsing stays fluid.
         if (this.host.kind === 'editor') {
-          vscode.commands.executeCommand('backlog.openTaskDetail', taskRef, {
+          vscode.commands.executeCommand('taskwright.openTaskDetail', taskRef, {
             preserveFocus: true,
             viewColumn: vscode.ViewColumn.Active,
           });
@@ -378,7 +377,7 @@ export class TasksController {
         await this.onSelectTask?.(taskRef);
         // ...and also update the full edit view when a detail panel is already active.
         if (TaskDetailProvider.hasActivePanel()) {
-          vscode.commands.executeCommand('backlog.openTaskDetail', taskRef, {
+          vscode.commands.executeCommand('taskwright.openTaskDetail', taskRef, {
             preserveFocus: true,
           });
         }
@@ -386,7 +385,7 @@ export class TasksController {
       }
 
       case 'focusTaskPreview': {
-        await vscode.commands.executeCommand('backlog.taskPreview.focus');
+        await vscode.commands.executeCommand('taskwright.taskPreview.focus');
         break;
       }
 
@@ -704,27 +703,27 @@ export class TasksController {
       }
 
       case 'openDocument': {
-        vscode.commands.executeCommand('backlog.openDocumentDetail', message.documentId);
+        vscode.commands.executeCommand('taskwright.openDocumentDetail', message.documentId);
         break;
       }
 
       case 'openDecision': {
-        vscode.commands.executeCommand('backlog.openDecisionDetail', message.decisionId);
+        vscode.commands.executeCommand('taskwright.openDecisionDetail', message.decisionId);
         break;
       }
 
       case 'filterByStatus': {
-        vscode.commands.executeCommand('backlog.filterByStatus', message.status);
+        vscode.commands.executeCommand('taskwright.filterByStatus', message.status);
         break;
       }
 
       case 'requestCreateTask': {
-        vscode.commands.executeCommand('backlog.createTask');
+        vscode.commands.executeCommand('taskwright.createTask');
         break;
       }
 
       case 'requestCreateMilestone': {
-        vscode.commands.executeCommand('backlog.createMilestone');
+        vscode.commands.executeCommand('taskwright.createMilestone');
         break;
       }
 
@@ -769,15 +768,15 @@ export class TasksController {
 
       case 'initBacklog': {
         if (message.mode === 'defaults') {
-          vscode.commands.executeCommand('backlog.init', { defaults: true });
+          vscode.commands.executeCommand('taskwright.init', { defaults: true });
         } else {
-          vscode.commands.executeCommand('backlog.init');
+          vscode.commands.executeCommand('taskwright.init');
         }
         break;
       }
 
       case 'setupAgentIntegration': {
-        vscode.commands.executeCommand('backlog.setupAgentIntegration');
+        vscode.commands.executeCommand('taskwright.setupAgentIntegration');
         break;
       }
 

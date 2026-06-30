@@ -289,7 +289,7 @@ describe('TaskDetailProvider', () => {
       // The create path must pass the column + preserveFocus through (not a bare
       // ViewColumn), so the first open keeps focus on the originating board.
       expect(vscode.window.createWebviewPanel).toHaveBeenCalledWith(
-        'backlog.taskDetail',
+        'taskwright.taskDetail',
         expect.any(String),
         { viewColumn: vscode.ViewColumn.Active, preserveFocus: true },
         expect.objectContaining({ enableScripts: true })

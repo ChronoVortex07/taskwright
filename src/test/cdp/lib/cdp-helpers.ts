@@ -123,11 +123,11 @@ export async function cdpKeyCombo(cdp: CdpClient, key: string, modifiers: number
  * Ctrl=2, Shift=8, Alt=1 → Ctrl+Shift+Alt = 11
  */
 export const COMMAND_KEYBINDINGS: Record<string, { key: string; modifiers: number }> = {
-  'backlog.openKanban': { key: 'k', modifiers: 11 },
-  'backlog.refresh': { key: 'r', modifiers: 11 },
-  'backlog.showListView': { key: 'l', modifiers: 11 },
-  'backlog.showKanbanView': { key: 'b', modifiers: 11 },
-  'backlog.openTasksInEditor': { key: 'e', modifiers: 11 },
+  'taskwright.openKanban': { key: 'k', modifiers: 11 },
+  'taskwright.refresh': { key: 'r', modifiers: 11 },
+  'taskwright.showListView': { key: 'l', modifiers: 11 },
+  'taskwright.showKanbanView': { key: 'b', modifiers: 11 },
+  'taskwright.openTasksInEditor': { key: 'e', modifiers: 11 },
   'workbench.action.closeAuxiliaryBar': { key: 'x', modifiers: 11 },
 };
 
@@ -232,10 +232,10 @@ export const KEYBINDINGS_JSON: Array<{ key: string; command: string }> = Object.
 
 /** Map from command palette labels to command IDs for keybinding lookup */
 export const COMMAND_LABEL_TO_ID: Record<string, string> = {
-  'Backlog: Open Kanban Board': 'backlog.openKanban',
-  'Backlog: Refresh': 'backlog.refresh',
-  'Switch to List View': 'backlog.showListView',
-  'Switch to Kanban View': 'backlog.showKanbanView',
+  'Backlog: Open Kanban Board': 'taskwright.openKanban',
+  'Backlog: Refresh': 'taskwright.refresh',
+  'Switch to List View': 'taskwright.showListView',
+  'Switch to Kanban View': 'taskwright.showKanbanView',
 };
 
 /**

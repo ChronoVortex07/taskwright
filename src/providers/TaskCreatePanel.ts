@@ -41,7 +41,7 @@ export class TaskCreatePanel {
     this.providers = providers;
 
     this.panel = vscode.window.createWebviewPanel(
-      'backlog.createTask',
+      'taskwright.createTask',
       'Create New Task',
       vscode.ViewColumn.One,
       {

@@ -130,7 +130,7 @@ describe('TasksController', () => {
     });
     // Sidebar single-click must not open a detail editor in a specific column.
     expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith(
-      'backlog.openTaskDetail',
+      'taskwright.openTaskDetail',
       expect.anything(),
       expect.objectContaining({ viewColumn: vscode.ViewColumn.Active })
     );
@@ -153,7 +153,7 @@ describe('TasksController', () => {
     expect(onSelect).not.toHaveBeenCalled();
     // ...instead the detail opens in the board's own group, focus retained on the board.
     expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
-      'backlog.openTaskDetail',
+      'taskwright.openTaskDetail',
       {
         taskId: 'TASK-42',
         filePath: '/fake/backlog/tasks/task-42.md',
@@ -174,7 +174,7 @@ describe('TasksController', () => {
     });
 
     expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
-      'backlog.openTaskDetail',
+      'taskwright.openTaskDetail',
       {
         taskId: 'TASK-9',
         filePath: '/fake/backlog/tasks/task-9.md',
@@ -195,7 +195,7 @@ describe('TasksController', () => {
     });
 
     expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
-      'backlog.openTaskDetail',
+      'taskwright.openTaskDetail',
       {
         taskId: 'TASK-9',
         filePath: '/fake/backlog/tasks/task-9.md',

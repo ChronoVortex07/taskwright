@@ -105,7 +105,7 @@ describe('BacklogDocumentLinkProvider', () => {
     const target = links[0].target;
     expect(target).toBeDefined();
     // The URI should encode the command to open the task detail
-    expect(target!.path).toContain('backlog.openTaskDetail');
+    expect(target!.path).toContain('taskwright.openTaskDetail');
     expect(target!.path).toContain('TASK-2');
   });
 

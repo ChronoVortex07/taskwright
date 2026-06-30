@@ -7,6 +7,7 @@ import { GitBranchService } from '../core/GitBranchService';
 import { resolveClaimIdentity } from '../core/claimIdentity';
 import { Claim } from '../core/claims';
 import { resolveClaimAction, stalenessMsFromHours } from '../core/claimResolution';
+import { getTaskwrightConfig } from '../config';
 
 /**
  * Provider-layer glue for advisory claiming. Resolves the claimant identity
@@ -18,13 +19,13 @@ const claimService = new ClaimService();
 
 /** The identity a UI/command-initiated claim is attributed to. */
 export function getClaimIdentity(): string {
-  const configured = vscode.workspace.getConfiguration('backlog').get<string>('claimIdentity', '');
+  const configured = getTaskwrightConfig<string>('claimIdentity', '');
   return resolveClaimIdentity(configured, os.userInfo().username);
 }
 
 /** The configured staleness window for advisory claims, in milliseconds (0 = off). */
 export function getClaimStalenessMs(): number {
-  const hours = vscode.workspace.getConfiguration('backlog').get<number>('claimStalenessHours', 12);
+  const hours = getTaskwrightConfig<number>('claimStalenessHours', 12);
   return stalenessMsFromHours(hours);
 }
 

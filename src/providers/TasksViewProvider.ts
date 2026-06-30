@@ -80,7 +80,7 @@ export class TasksViewProvider implements vscode.WebviewViewProvider {
     _resolveContext: vscode.WebviewViewResolveContext,
     _token: vscode.CancellationToken
   ): void | Thenable<void> {
-    console.log('[Backlog.md] resolveWebviewView called for backlog.kanban');
+    console.log('[Taskwright] resolveWebviewView called for taskwright.kanban');
     this._view = webviewView;
 
     webviewView.webview.options = {

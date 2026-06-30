@@ -68,7 +68,7 @@ describe('TasksPanelProvider', () => {
     provider.reveal();
 
     expect(vscode.window.createWebviewPanel).toHaveBeenCalledWith(
-      'backlog.tasksEditor',
+      'taskwright.tasksEditor',
       'Backlog',
       vscode.ViewColumn.Active,
       expect.objectContaining({ enableScripts: true, retainContextWhenHidden: true })

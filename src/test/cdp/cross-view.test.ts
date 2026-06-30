@@ -89,7 +89,7 @@ describe('Cross-view CDP tests', () => {
     await resetEditorState(instance.cdp);
     await dismissNotifications(instance.cdp);
     // Trigger a refresh so the extension re-reads the reset files
-    await executeCommand(instance.cdp, 'backlog.refresh');
+    await executeCommand(instance.cdp, 'taskwright.refresh');
     // Wait for the tasks webview to have content (signal-based, not blind sleep)
     await waitForWebviewContent(instance.cdp, 'tasks', 'TASK-', { timeoutMs: 10_000 });
   }, 30_000);
@@ -111,7 +111,7 @@ describe('Cross-view CDP tests', () => {
 
   it('clicking task in kanban updates preview panel', async () => {
     // 1. Ensure kanban is open
-    await executeCommand(instance.cdp, 'backlog.openKanban');
+    await executeCommand(instance.cdp, 'taskwright.openKanban');
     await waitForWebviewContent(instance.cdp, 'tasks', 'TASK-', { timeoutMs: 10_000 });
 
     // 2. Click TASK-2 card in the tasks webview
@@ -130,7 +130,7 @@ describe('Cross-view CDP tests', () => {
 
   it('status change in preview panel updates kanban', async () => {
     // 1. Open kanban view, click TASK-1 to select it
-    await executeCommand(instance.cdp, 'backlog.openKanban');
+    await executeCommand(instance.cdp, 'taskwright.openKanban');
     await waitForWebviewContent(instance.cdp, 'tasks', 'TASK-', { timeoutMs: 10_000 });
 
     const clicked = await clickInWebview(instance.cdp, 'tasks', '[data-task-id="TASK-1"]');
@@ -184,7 +184,7 @@ describe('Cross-view CDP tests', () => {
 
   it('view switch preserves selected task in preview', async () => {
     // 1. Open kanban, select TASK-3
-    await executeCommand(instance.cdp, 'backlog.openKanban');
+    await executeCommand(instance.cdp, 'taskwright.openKanban');
     await waitForWebviewContent(instance.cdp, 'tasks', 'TASK-', { timeoutMs: 10_000 });
 
     const clicked = await clickInWebview(instance.cdp, 'tasks', '[data-task-id="TASK-3"]');
@@ -198,7 +198,7 @@ describe('Cross-view CDP tests', () => {
 
     // 2. Switch to list view via keybinding
     clearWebviewSessionCache();
-    await executeCommand(instance.cdp, 'backlog.showListView');
+    await executeCommand(instance.cdp, 'taskwright.showListView');
     await waitForWebviewContent(instance.cdp, 'tasks', 'TASK-', { timeoutMs: 10_000 });
 
     // 3. Preview should still show TASK-3
@@ -207,7 +207,7 @@ describe('Cross-view CDP tests', () => {
 
     // 4. Switch back to kanban
     clearWebviewSessionCache();
-    await executeCommand(instance.cdp, 'backlog.showKanbanView');
+    await executeCommand(instance.cdp, 'taskwright.showKanbanView');
     await waitForWebviewContent(instance.cdp, 'tasks', 'TASK-', { timeoutMs: 10_000 });
 
     // Preview should still show TASK-3
@@ -217,7 +217,7 @@ describe('Cross-view CDP tests', () => {
 
   it('drag-and-drop in kanban updates file on disk', async () => {
     // 1. Open kanban view
-    await executeCommand(instance.cdp, 'backlog.openKanban');
+    await executeCommand(instance.cdp, 'taskwright.openKanban');
     await waitForWebviewContent(instance.cdp, 'tasks', 'TASK-', { timeoutMs: 10_000 });
 
     // 2. Drag TASK-1 (To Do) to the "In Progress" column's task-list
@@ -240,7 +240,7 @@ describe('Cross-view CDP tests', () => {
 
   it('active task highlighting when detail panel opens', async () => {
     // 1. Open kanban, check TASK-1 does NOT have active-edited class
-    await executeCommand(instance.cdp, 'backlog.openKanban');
+    await executeCommand(instance.cdp, 'taskwright.openKanban');
     await waitForWebviewContent(instance.cdp, 'tasks', 'TASK-', { timeoutMs: 10_000 });
 
     const beforeClass = await queryWebviewElement(
@@ -275,7 +275,7 @@ describe('Cross-view CDP tests', () => {
 
   it('switching tasks in kanban updates both preview and open detail panel', async () => {
     // 1. Open kanban, select TASK-1, open edit panel
-    await executeCommand(instance.cdp, 'backlog.openKanban');
+    await executeCommand(instance.cdp, 'taskwright.openKanban');
     await waitForWebviewContent(instance.cdp, 'tasks', 'TASK-', { timeoutMs: 10_000 });
 
     await clickInWebview(instance.cdp, 'tasks', '[data-task-id="TASK-1"]');
@@ -316,7 +316,7 @@ describe('Cross-view CDP tests', () => {
     // should switch to TASK-3's description (not show TASK-1's stale content).
 
     // 1. Open kanban, select TASK-1, open edit panel
-    await executeCommand(instance.cdp, 'backlog.openKanban');
+    await executeCommand(instance.cdp, 'taskwright.openKanban');
     await waitForWebviewContent(instance.cdp, 'tasks', 'TASK-', { timeoutMs: 10_000 });
 
     await clickInWebview(instance.cdp, 'tasks', '[data-task-id="TASK-1"]');
@@ -381,7 +381,7 @@ describe('Cross-view CDP tests', () => {
 
   it('editing title in detail panel updates preview panel', async () => {
     // 1. Open kanban, click TASK-1 to show preview
-    await executeCommand(instance.cdp, 'backlog.openKanban');
+    await executeCommand(instance.cdp, 'taskwright.openKanban');
     await waitForWebviewContent(instance.cdp, 'tasks', 'TASK-', { timeoutMs: 10_000 });
 
     await clickInWebview(instance.cdp, 'tasks', '[data-task-id="TASK-1"]');
@@ -421,7 +421,7 @@ describe('Cross-view CDP tests', () => {
 
   it('external file edit updates preview panel', async () => {
     // 1. Open kanban, click TASK-1 to show preview
-    await executeCommand(instance.cdp, 'backlog.openKanban');
+    await executeCommand(instance.cdp, 'taskwright.openKanban');
     await waitForWebviewContent(instance.cdp, 'tasks', 'TASK-', { timeoutMs: 10_000 });
 
     await clickInWebview(instance.cdp, 'tasks', '[data-task-id="TASK-1"]');
@@ -456,7 +456,7 @@ describe('Cross-view CDP tests', () => {
     // the user should remain in edit mode.
 
     // 1. Open kanban, select TASK-1, open edit panel
-    await executeCommand(instance.cdp, 'backlog.openKanban');
+    await executeCommand(instance.cdp, 'taskwright.openKanban');
     await waitForWebviewContent(instance.cdp, 'tasks', 'TASK-', { timeoutMs: 10_000 });
 
     await clickInWebview(instance.cdp, 'tasks', '[data-task-id="TASK-1"]');
@@ -521,10 +521,10 @@ describe('Cross-view CDP tests', () => {
 
   it('editor-tab board opens and stays in sync with the sidebar and disk', async () => {
     // 1. Open the sidebar board, then the editor-tab board.
-    await executeCommand(instance.cdp, 'backlog.openKanban');
+    await executeCommand(instance.cdp, 'taskwright.openKanban');
     await waitForWebviewContent(instance.cdp, 'tasks', 'TASK-', { timeoutMs: 10_000 });
 
-    await executeCommand(instance.cdp, 'backlog.openTasksInEditor');
+    await executeCommand(instance.cdp, 'taskwright.openTasksInEditor');
     await waitForWebviewContent(instance.cdp, 'tasksEditor', 'TASK-', { timeoutMs: 10_000 });
 
     // 2. The editor-tab board shows the same tasks as the sidebar.
@@ -536,7 +536,7 @@ describe('Cross-view CDP tests', () => {
     const sentinel = 'Synced editor-tab title';
     const original = fs.readFileSync(taskFile, 'utf-8');
     fs.writeFileSync(taskFile, original.replace('title: Test task for e2e', `title: ${sentinel}`));
-    await executeCommand(instance.cdp, 'backlog.refresh');
+    await executeCommand(instance.cdp, 'taskwright.refresh');
 
     // 4. BOTH the sidebar and the editor-tab board reflect the change.
     const sidebarAfter = await waitForWebviewContent(instance.cdp, 'tasks', sentinel, {
@@ -551,7 +551,7 @@ describe('Cross-view CDP tests', () => {
 
   it('single-click in the editor-tab board opens the task detail', async () => {
     // 1. Open the editor-tab board.
-    await executeCommand(instance.cdp, 'backlog.openTasksInEditor');
+    await executeCommand(instance.cdp, 'taskwright.openTasksInEditor');
     await waitForWebviewContent(instance.cdp, 'tasksEditor', 'TASK-', { timeoutMs: 10_000 });
 
     // 2. Single-click a card — from the editor host this opens the detail as a

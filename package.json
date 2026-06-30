@@ -48,7 +48,7 @@
     "configuration": {
       "title": "Taskwright",
       "properties": {
-        "backlog.taskIdDisplay": {
+        "taskwright.taskIdDisplay": {
           "type": "string",
           "enum": [
             "full",
@@ -58,34 +58,34 @@
           "default": "full",
           "description": "Controls how task IDs are shown in task cards and list rows: full (TASK-123), number (123), or hidden."
         },
-        "backlog.claimIdentity": {
+        "taskwright.claimIdentity": {
           "type": "string",
           "default": "",
           "markdownDescription": "Identity that advisory task claims are attributed to (e.g. `@alice`). When empty, your OS username is used, prefixed with `@`."
         },
-        "backlog.claimStalenessHours": {
+        "taskwright.claimStalenessHours": {
           "type": "number",
           "default": 12,
           "minimum": 0,
           "markdownDescription": "Hours after which another session's advisory claim is treated as stale (abandoned): stale claims are shown as such and can be re-claimed without an override prompt. Set to `0` to disable staleness (every live claim by another identity then requires confirmation to override)."
         },
-        "backlog.dispatchTemplate": {
+        "taskwright.dispatchTemplate": {
           "type": "string",
           "editPresentation": "multilineText",
           "default": "",
           "markdownDescription": "Template for the dispatch prompt copied to the clipboard. Supports `{{id}}`, `{{title}}`, `{{status}}`, `{{priority}}`, `{{labels}}`, `{{description}}`, `{{acceptanceCriteria}}`, `{{plan}}`, `{{worktree}}`, and `{{filePath}}`. Leave empty to use the built-in template."
         },
-        "backlog.dispatchCreateWorktree": {
+        "taskwright.dispatchCreateWorktree": {
           "type": "boolean",
           "default": false,
           "markdownDescription": "When dispatching a task, create an isolated git worktree at `.worktrees/<branch>` and set the active task there, so parallel sessions don't share state. Falls back to the workspace root when not a git repo."
         },
-        "backlog.dispatchOpenTerminal": {
+        "taskwright.dispatchOpenTerminal": {
           "type": "boolean",
           "default": false,
           "markdownDescription": "When dispatching a task creates a worktree, open an integrated terminal in that worktree directory."
         },
-        "backlog.intakeTemplate": {
+        "taskwright.intakeTemplate": {
           "type": "string",
           "editPresentation": "multilineText",
           "default": "",
@@ -95,141 +95,141 @@
     },
     "commands": [
       {
-        "command": "backlog.init",
+        "command": "taskwright.init",
         "title": "Taskwright: Initialize Backlog"
       },
       {
-        "command": "backlog.openKanban",
+        "command": "taskwright.openKanban",
         "title": "Taskwright: Open Kanban Board"
       },
       {
-        "command": "backlog.openTasksInEditor",
+        "command": "taskwright.openTasksInEditor",
         "title": "Taskwright: Open Board in Editor Tab",
         "icon": "$(link-external)"
       },
       {
-        "command": "backlog.openTaskList",
+        "command": "taskwright.openTaskList",
         "title": "Taskwright: Open Task List"
       },
       {
-        "command": "backlog.openDashboard",
+        "command": "taskwright.openDashboard",
         "title": "Taskwright: Open Dashboard"
       },
       {
-        "command": "backlog.refresh",
+        "command": "taskwright.refresh",
         "title": "Taskwright: Refresh",
         "icon": "$(refresh)"
       },
       {
-        "command": "backlog.openTaskDetail",
+        "command": "taskwright.openTaskDetail",
         "title": "Taskwright: Open Task Detail"
       },
       {
-        "command": "backlog.createTask",
+        "command": "taskwright.createTask",
         "title": "Taskwright: Create Task",
         "icon": "$(add)"
       },
       {
-        "command": "backlog.createMilestone",
+        "command": "taskwright.createMilestone",
         "title": "Taskwright: Create Milestone",
         "icon": "$(milestone)"
       },
       {
-        "command": "backlog.openMarkdown",
+        "command": "taskwright.openMarkdown",
         "title": "Taskwright: Open Task Markdown"
       },
       {
-        "command": "backlog.showListView",
+        "command": "taskwright.showListView",
         "title": "Switch to List View",
         "icon": "$(list-flat)"
       },
       {
-        "command": "backlog.showKanbanView",
+        "command": "taskwright.showKanbanView",
         "title": "Switch to Kanban View",
         "icon": "$(layout)"
       },
       {
-        "command": "backlog.showDraftsView",
+        "command": "taskwright.showDraftsView",
         "title": "Switch to Drafts View",
         "icon": "$(edit)"
       },
       {
-        "command": "backlog.showArchivedView",
+        "command": "taskwright.showArchivedView",
         "title": "Switch to Archived View",
         "icon": "$(archive)"
       },
       {
-        "command": "backlog.showDocsView",
+        "command": "taskwright.showDocsView",
         "title": "Taskwright: Show Documents"
       },
       {
-        "command": "backlog.showDecisionsView",
+        "command": "taskwright.showDecisionsView",
         "title": "Taskwright: Show Decisions"
       },
       {
-        "command": "backlog.openDocumentDetail",
+        "command": "taskwright.openDocumentDetail",
         "title": "Taskwright: Open Document Detail"
       },
       {
-        "command": "backlog.openDecisionDetail",
+        "command": "taskwright.openDecisionDetail",
         "title": "Taskwright: Open Decision Detail"
       },
       {
-        "command": "backlog.selectBacklog",
+        "command": "taskwright.selectBacklog",
         "title": "Taskwright: Select Active Backlog"
       },
       {
-        "command": "backlog.setupAgentIntegration",
+        "command": "taskwright.setupAgentIntegration",
         "title": "Taskwright: Set Up Agent Integration"
       },
       {
-        "command": "backlog.claimTask",
+        "command": "taskwright.claimTask",
         "title": "Taskwright: Claim Task",
         "icon": "$(lock)"
       },
       {
-        "command": "backlog.releaseTask",
+        "command": "taskwright.releaseTask",
         "title": "Taskwright: Release Task",
         "icon": "$(unlock)"
       },
       {
-        "command": "backlog.setActiveTask",
+        "command": "taskwright.setActiveTask",
         "title": "Taskwright: Set Active Task (for agent)",
         "icon": "$(target)"
       },
       {
-        "command": "backlog.clearActiveTask",
+        "command": "taskwright.clearActiveTask",
         "title": "Taskwright: Clear Active Task"
       },
       {
-        "command": "backlog.dispatchTask",
+        "command": "taskwright.dispatchTask",
         "title": "Taskwright: Dispatch Task (copy prompt)",
         "icon": "$(rocket)"
       },
       {
-        "command": "backlog.categorizeWithClaude",
+        "command": "taskwright.categorizeWithClaude",
         "title": "Taskwright: Categorize with Claude (copy prompt)",
         "icon": "$(sparkle)"
       },
       {
-        "command": "backlog.attachPlan",
+        "command": "taskwright.attachPlan",
         "title": "Taskwright: Attach Plan to Task",
         "icon": "$(file-symlink-file)"
       },
       {
-        "command": "backlog.detachPlan",
+        "command": "taskwright.detachPlan",
         "title": "Taskwright: Detach Plan from Task"
       },
       {
-        "command": "backlog.setupClaudeIntegration",
+        "command": "taskwright.setupClaudeIntegration",
         "title": "Taskwright: Set Up Claude Code Integration"
       }
     ],
     "menus": {
       "view/title": [
         {
-          "command": "backlog.openTasksInEditor",
-          "when": "view == backlog.kanban",
+          "command": "taskwright.openTasksInEditor",
+          "when": "view == taskwright.kanban",
           "group": "navigation@1"
         }
       ]
@@ -237,23 +237,23 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "backlog",
+          "id": "taskwright",
           "title": "Taskwright",
           "icon": "$(checklist)"
         }
       ]
     },
     "views": {
-      "backlog": [
+      "taskwright": [
         {
           "type": "webview",
-          "id": "backlog.kanban",
+          "id": "taskwright.kanban",
           "name": "Tasks",
           "icon": "images/view-kanban.svg"
         },
         {
           "type": "webview",
-          "id": "backlog.taskPreview",
+          "id": "taskwright.taskPreview",
           "name": "Details",
           "icon": "images/view-task-preview.svg",
           "visibility": "visible"

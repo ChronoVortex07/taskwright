@@ -97,7 +97,7 @@ describe('TaskCreatePanel', () => {
       showPanel();
 
       expect(vscode.window.createWebviewPanel).toHaveBeenCalledWith(
-        'backlog.createTask',
+        'taskwright.createTask',
         'Create New Task',
         vscode.ViewColumn.One,
         expect.objectContaining({

@@ -200,7 +200,7 @@ export class TaskDetailProvider {
     // the reveal path above), so the first single-click from the editor-tab
     // board keeps focus on the board like subsequent clicks do.
     const panel = vscode.window.createWebviewPanel(
-      'backlog.taskDetail',
+      'taskwright.taskDetail',
       `${task.id}: ${task.title}`,
       { viewColumn: column, preserveFocus: options?.preserveFocus },
       {
@@ -593,7 +593,7 @@ export class TaskDetailProvider {
 
       case 'filterByLabel':
         if (message.label) {
-          vscode.commands.executeCommand('backlog.filterByLabel', message.label);
+          vscode.commands.executeCommand('taskwright.filterByLabel', message.label);
         }
         break;
 

@@ -112,11 +112,19 @@ describe('TasksViewProvider', () => {
   });
 
   describe('tasks view settings', () => {
-    it('should post settingsUpdated with default task id display mode', async () => {
-      const getConfigValue = vi.fn().mockReturnValue('full');
-      (vscode.workspace.getConfiguration as Mock).mockReturnValue({
-        get: getConfigValue,
-      });
+    // taskIdDisplay is read via the taskwright.* config with a legacy backlog.*
+    // fallback (see src/config.ts), so we stub WorkspaceConfiguration.inspect().
+    function mockConfigInspect(values: { taskwright?: string; backlog?: string }) {
+      (vscode.workspace.getConfiguration as Mock).mockImplementation((section: string) => ({
+        inspect: vi.fn(() => {
+          const value = section === 'taskwright' ? values.taskwright : values.backlog;
+          return value === undefined ? undefined : { globalValue: value };
+        }),
+      }));
+    }
+
+    it('should post settingsUpdated with default task id display mode when unset', async () => {
+      mockConfigInspect({});
 
       const provider = new TasksViewProvider(extensionUri, mockParser, mockContext);
       resolveView(provider);
@@ -124,8 +132,7 @@ describe('TasksViewProvider', () => {
 
       await provider.refresh();
 
-      expect(vscode.workspace.getConfiguration).toHaveBeenCalledWith('backlog');
-      expect(getConfigValue).toHaveBeenCalledWith('taskIdDisplay', 'full');
+      expect(vscode.workspace.getConfiguration).toHaveBeenCalledWith('taskwright');
       expect(mockWebview.postMessage).toHaveBeenCalledWith({
         type: 'settingsUpdated',
         settings: { taskIdDisplay: 'full' },
@@ -133,10 +140,7 @@ describe('TasksViewProvider', () => {
     });
 
     it('should post settingsUpdated with configured number mode', async () => {
-      const getConfigValue = vi.fn().mockReturnValue('number');
-      (vscode.workspace.getConfiguration as Mock).mockReturnValue({
-        get: getConfigValue,
-      });
+      mockConfigInspect({ taskwright: 'number' });
 
       const provider = new TasksViewProvider(extensionUri, mockParser, mockContext);
       resolveView(provider);
@@ -147,6 +151,21 @@ describe('TasksViewProvider', () => {
       expect(mockWebview.postMessage).toHaveBeenCalledWith({
         type: 'settingsUpdated',
         settings: { taskIdDisplay: 'number' },
+      });
+    });
+
+    it('falls back to a legacy backlog.* taskIdDisplay value when taskwright.* is unset', async () => {
+      mockConfigInspect({ backlog: 'hidden' });
+
+      const provider = new TasksViewProvider(extensionUri, mockParser, mockContext);
+      resolveView(provider);
+      (mockWebview.postMessage as ReturnType<typeof vi.fn>).mockClear();
+
+      await provider.refresh();
+
+      expect(mockWebview.postMessage).toHaveBeenCalledWith({
+        type: 'settingsUpdated',
+        settings: { taskIdDisplay: 'hidden' },
       });
     });
   });
@@ -484,7 +503,7 @@ describe('TasksViewProvider', () => {
         .calls[0][0];
       await messageHandler({ type: 'focusTaskPreview' });
 
-      expect(vscode.commands.executeCommand).toHaveBeenCalledWith('backlog.taskPreview.focus');
+      expect(vscode.commands.executeCommand).toHaveBeenCalledWith('taskwright.taskPreview.focus');
     });
   });
 
@@ -689,7 +708,7 @@ describe('TasksViewProvider', () => {
         .calls[0][0];
       await messageHandler({ type: 'requestCreateMilestone' });
 
-      expect(vscode.commands.executeCommand).toHaveBeenCalledWith('backlog.createMilestone');
+      expect(vscode.commands.executeCommand).toHaveBeenCalledWith('taskwright.createMilestone');
     });
   });
 
@@ -1300,7 +1319,7 @@ describe('TasksViewProvider', () => {
   });
 
   describe('handleMessage filterByStatus', () => {
-    it('should execute backlog.filterByStatus command', async () => {
+    it('should execute taskwright.filterByStatus command', async () => {
       const provider = new TasksViewProvider(extensionUri, mockParser, mockContext);
       resolveView(provider);
 
@@ -1309,12 +1328,12 @@ describe('TasksViewProvider', () => {
       await messageHandler({ type: 'filterByStatus', status: 'To Do' });
 
       expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
-        'backlog.filterByStatus',
+        'taskwright.filterByStatus',
         'To Do'
       );
     });
 
-    it('should execute backlog.filterByStatus with In Progress status', async () => {
+    it('should execute taskwright.filterByStatus with In Progress status', async () => {
       const provider = new TasksViewProvider(extensionUri, mockParser, mockContext);
       resolveView(provider);
 
@@ -1323,7 +1342,7 @@ describe('TasksViewProvider', () => {
       await messageHandler({ type: 'filterByStatus', status: 'In Progress' });
 
       expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
-        'backlog.filterByStatus',
+        'taskwright.filterByStatus',
         'In Progress'
       );
     });
@@ -1593,7 +1612,7 @@ describe('TasksViewProvider', () => {
       // Both preview and editor should be updated
       expect(onSelectTask).toHaveBeenCalledWith(taskRef);
       expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
-        'backlog.openTaskDetail',
+        'taskwright.openTaskDetail',
         taskRef,
         { preserveFocus: true }
       );
@@ -1624,7 +1643,7 @@ describe('TasksViewProvider', () => {
         branch: 'feature/test',
       });
       expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith(
-        'backlog.openTaskDetail',
+        'taskwright.openTaskDetail',
         expect.anything()
       );
     });

@@ -11,6 +11,7 @@ import {
   dispatchContextFromTask,
   renderDispatchPrompt,
 } from '../core/dispatchPrompt';
+import { getTaskwrightConfig } from '../config';
 
 /**
  * Provider-layer glue for subscription-safe dispatch. Composes the pure cores
@@ -40,12 +41,11 @@ interface DispatchSettings {
 }
 
 function readSettings(): DispatchSettings {
-  const cfg = vscode.workspace.getConfiguration('backlog');
-  const template = cfg.get<string>('dispatchTemplate', '').trim();
+  const template = getTaskwrightConfig<string>('dispatchTemplate', '').trim();
   return {
     template: template || DEFAULT_DISPATCH_TEMPLATE,
-    createWorktree: cfg.get<boolean>('dispatchCreateWorktree', false),
-    openTerminal: cfg.get<boolean>('dispatchOpenTerminal', false),
+    createWorktree: getTaskwrightConfig<boolean>('dispatchCreateWorktree', false),
+    openTerminal: getTaskwrightConfig<boolean>('dispatchOpenTerminal', false),
   };
 }
 

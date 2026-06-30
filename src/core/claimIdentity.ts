@@ -2,7 +2,7 @@
  * Resolve the identity that a human-driven claim is attributed to.
  *
  * Priority:
- *  1. An explicitly configured identity (`backlog.claimIdentity`), used verbatim
+ *  1. An explicitly configured identity (`taskwright.claimIdentity`), used verbatim
  *     (trimmed) — lets a user pick a handle independent of their OS account.
  *  2. The OS username, `@`-prefixed to match Backlog.md assignee conventions.
  *  3. `@unknown` as a last resort.

@@ -81,7 +81,7 @@ describe('TaskPreviewViewProvider', () => {
     expect(calledPaths.some((path) => path.endsWith('/task-preview.js'))).toBe(true);
   });
 
-  it('forwards openTask messages from preview to backlog.openTaskDetail command', async () => {
+  it('forwards openTask messages from preview to taskwright.openTaskDetail command', async () => {
     const provider = new TaskPreviewViewProvider(
       extensionUri,
       parser,
@@ -108,7 +108,7 @@ describe('TaskPreviewViewProvider', () => {
       branch: 'main',
     });
 
-    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('backlog.openTaskDetail', {
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith('taskwright.openTaskDetail', {
       taskId: 'TASK-2',
       filePath: '/repo/backlog/tasks/TASK-2 - Example.md',
       source: 'local',
@@ -159,7 +159,7 @@ describe('TaskPreviewViewProvider', () => {
 
     expect(webviewView.show).toHaveBeenCalledWith(true);
     expect(vscode.commands.executeCommand).not.toHaveBeenCalledWith(
-      'backlog.openTaskDetail',
+      'taskwright.openTaskDetail',
       expect.anything()
     );
     expect(webview.postMessage).toHaveBeenCalledWith(

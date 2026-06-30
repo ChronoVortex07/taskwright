@@ -78,7 +78,7 @@ export class TasksPanelProvider {
     }
 
     const panel = vscode.window.createWebviewPanel(
-      'backlog.tasksEditor',
+      'taskwright.tasksEditor',
       'Backlog',
       vscode.ViewColumn.Active,
       {

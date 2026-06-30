@@ -31,6 +31,7 @@ import {
   registerTaskwrightMcp,
 } from './core/claudeMcp';
 import { injectConvention } from './core/agentConvention';
+import { affectsTaskwrightConfig } from './config';
 
 let fileWatcher: FileWatcher | undefined;
 let crossBranchStatusBarItem: vscode.StatusBarItem | undefined;
@@ -128,7 +129,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Register Tasks view provider (unified Kanban + List view)
   const tasksProvider = new TasksViewProvider(context.extensionUri, parser, context);
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider('backlog.kanban', tasksProvider)
+    vscode.window.registerWebviewViewProvider('taskwright.kanban', tasksProvider)
   );
   console.log('[Backlog.md] Tasks view provider registered');
 
@@ -151,7 +152,7 @@ export function activate(context: vscode.ExtensionContext) {
     () => tasksHosts.forEach((host) => host.refresh())
   );
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider('backlog.taskPreview', taskPreviewProvider, {
+    vscode.window.registerWebviewViewProvider('taskwright.taskPreview', taskPreviewProvider, {
       webviewOptions: { retainContextWhenHidden: true },
     })
   );
@@ -247,7 +248,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.StatusBarAlignment.Left,
         99
       );
-      workspaceStatusBarItem.command = 'backlog.selectBacklog';
+      workspaceStatusBarItem.command = 'taskwright.selectBacklog';
       context.subscriptions.push(workspaceStatusBarItem);
     }
     const active = mgr.getActiveRoot();
@@ -261,88 +262,88 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register commands
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.openKanban', () => {
-      vscode.commands.executeCommand('backlog.kanban.focus');
+    vscode.commands.registerCommand('taskwright.openKanban', () => {
+      vscode.commands.executeCommand('taskwright.kanban.focus');
     })
   );
 
   // Open the Tasks board as a full editor tab (synced with the sidebar)
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.openTasksInEditor', () => {
+    vscode.commands.registerCommand('taskwright.openTasksInEditor', () => {
       tasksPanelProvider.reveal();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.openTaskList', () => {
-      vscode.commands.executeCommand('backlog.taskList.focus');
+    vscode.commands.registerCommand('taskwright.openTaskList', () => {
+      vscode.commands.executeCommand('taskwright.taskList.focus');
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.openDashboard', () => {
+    vscode.commands.registerCommand('taskwright.openDashboard', () => {
       tasksProvider.setViewMode('dashboard');
-      vscode.commands.executeCommand('backlog.kanban.focus');
+      vscode.commands.executeCommand('taskwright.kanban.focus');
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.refresh', () => {
+    vscode.commands.registerCommand('taskwright.refresh', () => {
       tasksHosts.forEach((host) => host.refresh());
     })
   );
 
   // Register 3-way view mode toggle commands (kanban | list | drafts)
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.showListView', () => {
+    vscode.commands.registerCommand('taskwright.showListView', () => {
       tasksProvider.setViewMode('list');
       vscode.commands.executeCommand('setContext', 'backlog.viewMode', 'list');
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.showKanbanView', () => {
+    vscode.commands.registerCommand('taskwright.showKanbanView', () => {
       tasksProvider.setViewMode('kanban');
       vscode.commands.executeCommand('setContext', 'backlog.viewMode', 'kanban');
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.showDraftsView', () => {
+    vscode.commands.registerCommand('taskwright.showDraftsView', () => {
       tasksProvider.setViewMode('drafts');
       vscode.commands.executeCommand('setContext', 'backlog.viewMode', 'drafts');
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.showArchivedView', () => {
+    vscode.commands.registerCommand('taskwright.showArchivedView', () => {
       tasksProvider.setViewMode('archived');
       vscode.commands.executeCommand('setContext', 'backlog.viewMode', 'archived');
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.showDocsView', () => {
+    vscode.commands.registerCommand('taskwright.showDocsView', () => {
       tasksProvider.setViewMode('docs');
       vscode.commands.executeCommand('setContext', 'backlog.viewMode', 'docs');
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.showDecisionsView', () => {
+    vscode.commands.registerCommand('taskwright.showDecisionsView', () => {
       tasksProvider.setViewMode('decisions');
       vscode.commands.executeCommand('setContext', 'backlog.viewMode', 'decisions');
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.openDocumentDetail', (docId: string) => {
+    vscode.commands.registerCommand('taskwright.openDocumentDetail', (docId: string) => {
       contentDetailProvider.openDocument(docId);
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.openDecisionDetail', (decisionId: string) => {
+    vscode.commands.registerCommand('taskwright.openDecisionDetail', (decisionId: string) => {
       contentDetailProvider.openDecision(decisionId);
     })
   );
@@ -358,7 +359,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register filter by status command (used by dashboard clickable cards)
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.filterByStatus', (status: string) => {
+    vscode.commands.registerCommand('taskwright.filterByStatus', (status: string) => {
       const filter = status ? `status:${status}` : 'all';
 
       // Switch to list view and apply filter
@@ -370,7 +371,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register filter by label command (used by task detail clickable labels)
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.filterByLabel', (label: string) => {
+    vscode.commands.registerCommand('taskwright.filterByLabel', (label: string) => {
       // Switch to list view and apply label filter
       tasksProvider.setViewMode('list');
       vscode.commands.executeCommand('setContext', 'backlog.viewMode', 'list');
@@ -380,7 +381,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand(
-      'backlog.openTaskDetail',
+      'taskwright.openTaskDetail',
       (
         task: string | { taskId: string; filePath?: string; source?: TaskSource; branch?: string },
         options?: { preserveFocus?: boolean; viewColumn?: vscode.ViewColumn }
@@ -408,24 +409,24 @@ export function activate(context: vscode.ExtensionContext) {
   };
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.openMarkdown', openMarkdownCommand)
+    vscode.commands.registerCommand('taskwright.openMarkdown', openMarkdownCommand)
   );
 
   // Backward-compatible alias for older keybindings/macros
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.openRawMarkdown', openMarkdownCommand)
+    vscode.commands.registerCommand('taskwright.openRawMarkdown', openMarkdownCommand)
   );
 
-  // Register backlog.selectBacklog command
+  // Register taskwright.selectBacklog command
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.selectBacklog', async () => {
+    vscode.commands.registerCommand('taskwright.selectBacklog', async () => {
       await manager.selectBacklog();
     })
   );
 
   // Register backlog init command
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.init', async (args?: { defaults?: boolean }) => {
+    vscode.commands.registerCommand('taskwright.init', async (args?: { defaults?: boolean }) => {
       // Get workspace root
       const workspaceFolders = vscode.workspace.workspaceFolders;
       if (!workspaceFolders || workspaceFolders.length === 0) {
@@ -637,7 +638,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register agent integration setup command
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.setupAgentIntegration', async () => {
+    vscode.commands.registerCommand('taskwright.setupAgentIntegration', async () => {
       const cliResult = await BacklogCli.isAvailable();
 
       if (cliResult.available) {
@@ -676,7 +677,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Register create task command (opens form to create a draft)
   const writer = new BacklogWriter();
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.createTask', () => {
+    vscode.commands.registerCommand('taskwright.createTask', () => {
       const activeBacklogPath = manager.getActiveRoot()?.backlogPath;
       if (!activeBacklogPath || !parser) {
         vscode.window.showErrorMessage('No backlog folder found in workspace');
@@ -692,7 +693,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register create milestone command
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.createMilestone', async () => {
+    vscode.commands.registerCommand('taskwright.createMilestone', async () => {
       const activeBacklogPath = manager.getActiveRoot()?.backlogPath;
       if (!activeBacklogPath || !parser) {
         vscode.window.showErrorMessage('No backlog folder found in workspace');
@@ -741,7 +742,7 @@ export function activate(context: vscode.ExtensionContext) {
     return TaskDetailProvider.getCurrentTaskId();
   };
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.claimTask', async (arg?: unknown) => {
+    vscode.commands.registerCommand('taskwright.claimTask', async (arg?: unknown) => {
       if (!parser) {
         vscode.window.showErrorMessage('No backlog folder found in workspace');
         return;
@@ -760,7 +761,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showErrorMessage(`Failed to claim task: ${error}`);
       }
     }),
-    vscode.commands.registerCommand('backlog.releaseTask', async (arg?: unknown) => {
+    vscode.commands.registerCommand('taskwright.releaseTask', async (arg?: unknown) => {
       if (!parser) {
         vscode.window.showErrorMessage('No backlog folder found in workspace');
         return;
@@ -788,7 +789,7 @@ export function activate(context: vscode.ExtensionContext) {
     return backlogPath ? path.dirname(backlogPath) : undefined;
   };
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.setActiveTask', async (arg?: unknown) => {
+    vscode.commands.registerCommand('taskwright.setActiveTask', async (arg?: unknown) => {
       const root = activeRootDir();
       if (!root) {
         vscode.window.showErrorMessage('No backlog folder found in workspace');
@@ -808,7 +809,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showErrorMessage(`Failed to set active task: ${error}`);
       }
     }),
-    vscode.commands.registerCommand('backlog.clearActiveTask', () => {
+    vscode.commands.registerCommand('taskwright.clearActiveTask', () => {
       const root = activeRootDir();
       if (!root) {
         vscode.window.showErrorMessage('No backlog folder found in workspace');
@@ -829,7 +830,7 @@ export function activate(context: vscode.ExtensionContext) {
   // optionally an isolated worktree + active-task handoff), copy it to the
   // clipboard. Never spawns `claude -p` — the user pastes it into a fresh session.
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.dispatchTask', async (arg?: unknown) => {
+    vscode.commands.registerCommand('taskwright.dispatchTask', async (arg?: unknown) => {
       if (!parser) {
         vscode.window.showErrorMessage('No backlog folder found in workspace');
         return;
@@ -864,7 +865,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Superpowers bridge: attach / detach a task's implementation plan so the
   // board tracks plan progress.
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.attachPlan', async (arg?: unknown) => {
+    vscode.commands.registerCommand('taskwright.attachPlan', async (arg?: unknown) => {
       if (!parser) {
         vscode.window.showErrorMessage('No backlog folder found in workspace');
         return;
@@ -884,7 +885,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showErrorMessage(`Failed to attach plan: ${error}`);
       }
     }),
-    vscode.commands.registerCommand('backlog.detachPlan', async (arg?: unknown) => {
+    vscode.commands.registerCommand('taskwright.detachPlan', async (arg?: unknown) => {
       if (!parser) {
         vscode.window.showErrorMessage('No backlog folder found in workspace');
         return;
@@ -909,7 +910,7 @@ export function activate(context: vscode.ExtensionContext) {
   // paste-ready "categorize these into Backlog.md tasks" prompt on the clipboard.
   // Subscription-safe — never spawns `claude -p`.
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.categorizeWithClaude', async () => {
+    vscode.commands.registerCommand('taskwright.categorizeWithClaude', async () => {
       if (!parser) {
         vscode.window.showErrorMessage('No backlog folder found in workspace');
         return;
@@ -998,7 +999,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
   };
   context.subscriptions.push(
-    vscode.commands.registerCommand('backlog.setupClaudeIntegration', setUpClaudeIntegration)
+    vscode.commands.registerCommand('taskwright.setupClaudeIntegration', setUpClaudeIntegration)
   );
 
   // One-time prompt: in a backlog repo where Claude Code is installed but the
@@ -1038,7 +1039,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration('backlog.taskIdDisplay')) {
+      if (affectsTaskwrightConfig(event, 'taskIdDisplay')) {
         tasksHosts.forEach((host) => host.refresh());
       }
     })

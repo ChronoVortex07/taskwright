@@ -42,7 +42,7 @@ export class TaskPreviewViewProvider extends BaseViewProvider {
   }
 
   protected get viewType(): string {
-    return 'backlog.taskPreview';
+    return 'taskwright.taskPreview';
   }
 
   protected getHtmlContent(webview: vscode.Webview): string {
@@ -72,7 +72,7 @@ export class TaskPreviewViewProvider extends BaseViewProvider {
     if (this._view) {
       this._view.show(true);
     } else {
-      await vscode.commands.executeCommand('backlog.taskPreview.focus');
+      await vscode.commands.executeCommand('taskwright.taskPreview.focus');
     }
     await this.refresh();
   }
@@ -144,7 +144,7 @@ export class TaskPreviewViewProvider extends BaseViewProvider {
         });
         return;
       case 'openTask':
-        await vscode.commands.executeCommand('backlog.openTaskDetail', {
+        await vscode.commands.executeCommand('taskwright.openTaskDetail', {
           taskId: message.taskId,
           filePath: message.filePath,
           source: message.source,

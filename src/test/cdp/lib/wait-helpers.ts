@@ -82,7 +82,7 @@ export async function waitForExtensionReady(cdp: CdpClient, timeoutMs = 60_000):
 
   // Open kanban via keybinding (much faster than command palette)
   await sleep(500);
-  await executeCommand(cdp, 'backlog.openKanban');
+  await executeCommand(cdp, 'taskwright.openKanban');
 
   // Wait for tasks to render in the webview iframe.
   // Note: the old .pane-body textContent check never worked because webview

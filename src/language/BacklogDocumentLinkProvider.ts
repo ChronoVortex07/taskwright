@@ -49,7 +49,7 @@ export class BacklogDocumentLinkProvider implements vscode.DocumentLinkProvider 
         const range = new vscode.Range(startPos, endPos);
 
         const commandUri = vscode.Uri.parse(
-          `command:backlog.openTaskDetail?${encodeURIComponent(JSON.stringify(taskId))}`
+          `command:taskwright.openTaskDetail?${encodeURIComponent(JSON.stringify(taskId))}`
         );
         const link = new vscode.DocumentLink(range, commandUri);
         link.tooltip = `Open ${taskId}`;

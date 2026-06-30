@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { BacklogParser } from '../core/BacklogParser';
 import { writeHandoff } from '../core/handoff';
 import { DEFAULT_INTAKE_TEMPLATE, intakeContext, renderIntakePrompt } from '../core/intakePrompt';
+import { getTaskwrightConfig } from '../config';
 
 /**
  * Provider-layer glue for "Categorize with Claude" intake. Captures a raw dump
@@ -43,8 +44,7 @@ export async function categorizeWithClaude(
   const priorities = config.priorities ?? ['high', 'medium', 'low'];
 
   const template =
-    vscode.workspace.getConfiguration('backlog').get<string>('intakeTemplate', '').trim() ||
-    DEFAULT_INTAKE_TEMPLATE;
+    getTaskwrightConfig<string>('intakeTemplate', '').trim() || DEFAULT_INTAKE_TEMPLATE;
   const prompt = renderIntakePrompt(
     template,
     intakeContext(dump, { labels, statuses, priorities })
