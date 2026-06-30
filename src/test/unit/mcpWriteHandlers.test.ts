@@ -60,6 +60,13 @@ describe('createTaskHandler', () => {
     expect(fs.readdirSync(path.join(backlogPath, 'tasks'))).toHaveLength(0);
   });
 
+  it('rejects an empty-string status', async () => {
+    await expect(createTaskHandler(deps(), { title: 'X', status: '' })).rejects.toThrow(
+      'Invalid status'
+    );
+    expect(fs.readdirSync(path.join(backlogPath, 'tasks'))).toHaveLength(0);
+  });
+
   it('creates a draft when draft is set, with the given title', async () => {
     const summary = await createTaskHandler(deps(), { title: 'Spike caching', draft: true });
     expect(summary.id).toBe('DRAFT-1');
@@ -88,6 +95,13 @@ describe('editTaskHandler', () => {
   it('rejects an invalid status', async () => {
     await createTaskHandler(deps(), { title: 'Edit me' });
     await expect(editTaskHandler(deps(), { taskId: 'TASK-1', status: 'Nope' })).rejects.toThrow(
+      'Invalid status'
+    );
+  });
+
+  it('rejects an empty-string status', async () => {
+    await createTaskHandler(deps(), { title: 'Edit me' });
+    await expect(editTaskHandler(deps(), { taskId: 'TASK-1', status: '' })).rejects.toThrow(
       'Invalid status'
     );
   });

@@ -196,8 +196,8 @@ export async function createTaskHandler(
   const title = args.title?.trim();
   if (!title) throw new Error('A task title is required.');
   const config = await deps.parser.getConfig();
-  if (args.status) assertValidStatus(args.status, config.statuses ?? []);
-  if (args.priority) assertValidPriority(args.priority);
+  if (args.status !== undefined) assertValidStatus(args.status, config.statuses ?? []);
+  if (args.priority !== undefined) assertValidPriority(args.priority);
 
   if (args.draft) {
     const { id } = await deps.writer.createDraft(deps.backlogPath, deps.parser, {
@@ -247,8 +247,8 @@ export async function editTaskHandler(
   args: EditTaskArgs
 ): Promise<TaskSummary> {
   const config = await deps.parser.getConfig();
-  if (args.status) assertValidStatus(args.status, config.statuses ?? []);
-  if (args.priority) assertValidPriority(args.priority);
+  if (args.status !== undefined) assertValidStatus(args.status, config.statuses ?? []);
+  if (args.priority !== undefined) assertValidPriority(args.priority);
 
   const updates: Record<string, unknown> = {};
   if (args.title !== undefined) updates.title = args.title;
