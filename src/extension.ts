@@ -52,10 +52,10 @@ interface TasksBoardSurface {
 }
 
 export function activate(context: vscode.ExtensionContext) {
-  console.log('[Backlog.md] Extension activating...');
-  console.log('[Backlog.md] Extension URI:', context.extensionUri.toString());
+  console.log('[Taskwright] Extension activating...');
+  console.log('[Taskwright] Extension URI:', context.extensionUri.toString());
   console.log(
-    '[Backlog.md] Workspace folders:',
+    '[Taskwright] Workspace folders:',
     vscode.workspace.workspaceFolders?.map((f) => f.uri.fsPath)
   );
 
@@ -68,9 +68,9 @@ export function activate(context: vscode.ExtensionContext) {
   const backlogFolder = activeRoot?.backlogPath;
 
   if (!backlogFolder) {
-    console.log('[Backlog.md] No backlog folder found in workspace');
+    console.log('[Taskwright] No backlog folder found in workspace');
   } else {
-    console.log('[Backlog.md] Found backlog folder:', backlogFolder);
+    console.log('[Taskwright] Found backlog folder:', backlogFolder);
   }
 
   // Initialize parser (may be undefined if no backlog folder)
@@ -111,18 +111,18 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.languages.registerDocumentLinkProvider(selector, linkProvider),
       vscode.languages.registerHoverProvider(selector, hoverProvider)
     );
-    console.log('[Backlog.md] Language providers registered for:', backlogDir);
+    console.log('[Taskwright] Language providers registered for:', backlogDir);
   }
 
   if (parser && activeRoot) {
-    console.log('[Backlog.md] Parser initialized');
+    console.log('[Taskwright] Parser initialized');
     registerLanguageProviders(parser, activeRoot.backlogDir);
   }
 
   // Initialize file watcher (only if backlog folder exists)
   if (backlogFolder) {
     fileWatcher = new FileWatcher(backlogFolder);
-    console.log('[Backlog.md] File watcher initialized');
+    console.log('[Taskwright] File watcher initialized');
     context.subscriptions.push(fileWatcher);
   }
 
@@ -131,7 +131,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('taskwright.kanban', tasksProvider)
   );
-  console.log('[Backlog.md] Tasks view provider registered');
+  console.log('[Taskwright] Tasks view provider registered');
 
   // Editor-tab host for the same Tasks board (opened on demand, synced via disk)
   const tasksPanelProvider = new TasksPanelProvider(context.extensionUri, parser, context);
@@ -157,14 +157,14 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
   tasksProvider.setTaskSelectionHandler((taskRef) => taskPreviewProvider.selectTask(taskRef));
-  console.log('[Backlog.md] Task preview view provider registered');
+  console.log('[Taskwright] Task preview view provider registered');
 
   // Create Task Detail provider for opening task details in editor
   const taskDetailProvider = new TaskDetailProvider(context.extensionUri, parser);
   if (backlogFolder) {
     taskDetailProvider.setBacklogPath(backlogFolder);
   }
-  console.log('[Backlog.md] Task detail provider created');
+  console.log('[Taskwright] Task detail provider created');
 
   // Track active edited task for board highlighting and routing
   TaskDetailProvider.onActiveTaskChanged((taskId) => {
@@ -173,13 +173,13 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Create Content Detail provider for opening docs/decisions in editor
   const contentDetailProvider = new ContentDetailProvider(context.extensionUri, parser);
-  console.log('[Backlog.md] Content detail provider created');
+  console.log('[Taskwright] Content detail provider created');
 
   // --- switchActiveBacklog: consolidated reinit logic ---
   function switchActiveBacklog(root: BacklogRoot | undefined) {
     if (!root) return;
 
-    console.log('[Backlog.md] Switching active backlog to:', root.backlogPath);
+    console.log('[Taskwright] Switching active backlog to:', root.backlogPath);
 
     // Dispose old file watcher
     if (fileWatcher) {
@@ -193,7 +193,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Wire debounced refresh
     const debouncedRefresh = createDebouncedHandler((uri: vscode.Uri) => {
-      console.log('[Backlog.md] Debounced refresh triggered');
+      console.log('[Taskwright] Debounced refresh triggered');
       tasksHosts.forEach((host) => host.refresh());
       taskPreviewProvider.refresh();
       TaskDetailProvider.onFileChanged(uri, taskDetailProvider);
@@ -615,7 +615,7 @@ export function activate(context: vscode.ExtensionContext) {
 
       try {
         const newBacklogPath = initializeBacklog(workspaceRoot, options);
-        console.log('[Backlog.md] Backlog initialized at:', newBacklogPath);
+        console.log('[Taskwright] Backlog initialized at:', newBacklogPath);
 
         // Add the new root to the manager — this fires onDidChangeActiveRoot → switchActiveBacklog
         manager.addRoot({
@@ -643,7 +643,7 @@ export function activate(context: vscode.ExtensionContext) {
 
       if (cliResult.available) {
         // CLI available — run backlog init in terminal (re-init shows integration wizard)
-        const terminal = vscode.window.createTerminal('Backlog Agent Setup');
+        const terminal = vscode.window.createTerminal('Taskwright Agent Setup');
         terminal.show();
         terminal.sendText('backlog init');
         return;
@@ -658,7 +658,7 @@ export function activate(context: vscode.ExtensionContext) {
             ? 'bun install -g backlog.md && backlog init'
             : 'npm install -g backlog.md && backlog init';
 
-        const terminal = vscode.window.createTerminal('Backlog Agent Setup');
+        const terminal = vscode.window.createTerminal('Taskwright Agent Setup');
         terminal.show();
         terminal.sendText(installCmd);
       } else {
@@ -964,7 +964,7 @@ export function activate(context: vscode.ExtensionContext) {
       }
     } else {
       vscode.window.showWarningMessage(
-        'Claude Code CLI not found on PATH — skipped MCP registration. Install Claude Code, then run "Taskwright: Set Up Claude Code Integration" again.'
+        'Claude Code CLI not found on PATH — skipped MCP registration. Install Claude Code, then run "Taskwright: Set Up Claude Code Integration (MCP + CLAUDE.md)" again.'
       );
     }
 
@@ -1026,13 +1026,13 @@ export function activate(context: vscode.ExtensionContext) {
   // Listen for file changes (only if we have a file watcher)
   if (fileWatcher) {
     const debouncedRefresh = createDebouncedHandler((uri: vscode.Uri) => {
-      console.log('[Backlog.md] Debounced refresh triggered');
+      console.log('[Taskwright] Debounced refresh triggered');
       tasksHosts.forEach((host) => host.refresh());
       taskPreviewProvider.refresh();
       TaskDetailProvider.onFileChanged(uri, taskDetailProvider);
     }, 300);
     fileWatcher.onDidChange((uri) => {
-      console.log('[Backlog.md] File change detected, scheduling refresh');
+      console.log('[Taskwright] File change detected, scheduling refresh');
       debouncedRefresh(uri);
     });
   }
@@ -1051,7 +1051,7 @@ export function activate(context: vscode.ExtensionContext) {
     tasksHosts.forEach((host) => host.checkAndSendIntegrationState());
   }
 
-  console.log('[Backlog.md] Extension activation complete!');
+  console.log('[Taskwright] Extension activation complete!');
 }
 
 export function deactivate() {
@@ -1082,12 +1082,12 @@ async function checkCrossBranchConfig(
 
     if (!crossBranchEnabled) {
       // Local-only mode is configured (or default) - hide status bar
-      console.log('[Backlog.md] Cross-branch features not enabled in config');
+      console.log('[Taskwright] Cross-branch features not enabled in config');
       return;
     }
 
     // Cross-branch features are enabled - native support is now available
-    console.log('[Backlog.md] Cross-branch features enabled, using native git support');
+    console.log('[Taskwright] Cross-branch features enabled, using native git support');
 
     // Create status bar item
     crossBranchStatusBarItem = BacklogCli.createStatusBarItem();
@@ -1099,6 +1099,6 @@ async function checkCrossBranchConfig(
     // Notify the tasks boards about the data source mode
     tasksHosts.forEach((host) => host.setDataSourceMode('cross-branch'));
   } catch (error) {
-    console.error('[Backlog.md] Error checking cross-branch config:', error);
+    console.error('[Taskwright] Error checking cross-branch config:', error);
   }
 }

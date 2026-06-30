@@ -42,8 +42,8 @@ export class StatusCallbackRunner {
     return new Promise<void>((resolve) => {
       exec(command, { cwd: workDir, timeout: 30000 }, (error, _stdout, stderr) => {
         if (error) {
-          console.error(`[Backlog.md] onStatusChange callback failed: ${error.message}`);
-          if (stderr) console.error(`[Backlog.md] stderr: ${stderr}`);
+          console.error(`[Taskwright] onStatusChange callback failed: ${error.message}`);
+          if (stderr) console.error(`[Taskwright] stderr: ${stderr}`);
         }
         // Always resolve — callback failure should not block the status update
         resolve();

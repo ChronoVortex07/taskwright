@@ -478,7 +478,7 @@
       </button>
     </div>
     <p class="init-hint">
-      Or run <code>Backlog: Initialize</code> from the Command Palette
+      Or run <code>Taskwright: Initialize Backlog</code> from the Command Palette
     </p>
   </div>
 {:else if activeTab === 'kanban'}

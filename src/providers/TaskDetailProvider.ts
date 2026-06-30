@@ -489,7 +489,7 @@ export class TaskDetailProvider {
 
       webview.postMessage({ type: 'taskData', data });
     } catch (error) {
-      console.error('[Backlog.md] Error sending task data:', error);
+      console.error('[Taskwright] Error sending task data:', error);
       webview.postMessage({ type: 'error', message: 'Failed to load task data' });
     }
   }

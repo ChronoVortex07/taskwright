@@ -38,4 +38,9 @@ describe('renderIntakePrompt', () => {
     expect(out).not.toContain('Backlog.md MCP');
     expect(out).not.toMatch(/\{\{\w+\}\}/);
   });
+
+  it('refers to the board as a Taskwright board, not Backlog.md', () => {
+    expect(DEFAULT_INTAKE_TEMPLATE).toContain('Taskwright task board');
+    expect(DEFAULT_INTAKE_TEMPLATE).not.toContain('Backlog.md task board');
+  });
 });

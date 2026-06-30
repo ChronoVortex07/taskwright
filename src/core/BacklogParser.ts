@@ -203,15 +203,15 @@ export class BacklogParser {
    */
   async getTasksFromFolder(folderName: string): Promise<Task[]> {
     const folderPath = path.join(this.backlogPath, folderName);
-    console.log(`[Backlog.md Parser] Looking for tasks in: ${folderPath}`);
+    console.log(`[Taskwright Parser] Looking for tasks in: ${folderPath}`);
 
     if (!fs.existsSync(folderPath)) {
-      console.log(`[Backlog.md Parser] Path does not exist: ${folderPath}`);
+      console.log(`[Taskwright Parser] Path does not exist: ${folderPath}`);
       return [];
     }
 
     const files = fs.readdirSync(folderPath).filter((f) => f.endsWith('.md'));
-    console.log(`[Backlog.md Parser] Found ${files.length} .md files:`, files.slice(0, 5));
+    console.log(`[Taskwright Parser] Found ${files.length} .md files:`, files.slice(0, 5));
     const tasks: Task[] = [];
     const currentPaths = new Set<string>();
     const milestones = this.getMilestonesFromFiles();
@@ -239,7 +239,7 @@ export class BacklogParser {
           tasks.push(task);
         }
       } catch (error) {
-        console.error(`[Backlog.md Parser] Error parsing task file ${file}:`, error);
+        console.error(`[Taskwright Parser] Error parsing task file ${file}:`, error);
       }
     }
 
@@ -257,7 +257,7 @@ export class BacklogParser {
       const prevIdx = seenIds.get(tasks[i].id);
       if (prevIdx !== undefined) {
         console.warn(
-          `[Backlog.md Parser] Duplicate task ID "${tasks[i].id}" in ${folderName}/, keeping latest file`
+          `[Taskwright Parser] Duplicate task ID "${tasks[i].id}" in ${folderName}/, keeping latest file`
         );
       }
       seenIds.set(tasks[i].id, i);
@@ -266,7 +266,7 @@ export class BacklogParser {
       seenIds.size === tasks.length ? tasks : [...seenIds.values()].map((idx) => tasks[idx]);
 
     console.log(
-      `[Backlog.md Parser] Successfully parsed ${dedupedTasks.length} tasks from ${folderName}`
+      `[Taskwright Parser] Successfully parsed ${dedupedTasks.length} tasks from ${folderName}`
     );
     return dedupedTasks;
   }
@@ -386,7 +386,7 @@ export class BacklogParser {
       this.cachedConfigMtime = mtime;
       return config;
     } catch (error) {
-      console.error(`[Backlog.md Parser] Error parsing config file:`, error);
+      console.error(`[Taskwright Parser] Error parsing config file:`, error);
       return {};
     }
   }
@@ -463,7 +463,7 @@ export class BacklogParser {
     // Check if this is a git repository
     const gitService = new GitBranchService(wsRoot);
     if (!(await gitService.isGitRepository())) {
-      console.log('[Backlog.md Parser] Not a git repository, falling back to local-only');
+      console.log('[Taskwright Parser] Not a git repository, falling back to local-only');
       return this.getTasks();
     }
 
@@ -474,7 +474,7 @@ export class BacklogParser {
     } catch (error) {
       // Fallback to local-only on git errors
       console.error(
-        '[Backlog.md Parser] Cross-branch loading failed, falling back to local:',
+        '[Taskwright Parser] Cross-branch loading failed, falling back to local:',
         error
       );
       return this.getTasks();
@@ -536,7 +536,7 @@ export class BacklogParser {
           this.applyFrontmatter(frontmatter, task);
         }
       } catch (error) {
-        console.error(`[Backlog.md Parser] Error parsing YAML frontmatter in ${filePath}:`, error);
+        console.error(`[Taskwright Parser] Error parsing YAML frontmatter in ${filePath}:`, error);
       }
     }
 
@@ -987,7 +987,7 @@ export class BacklogParser {
         const doc = this.parseDocumentFile(filePath);
         if (doc) documents.push(doc);
       } catch (error) {
-        console.error(`[Backlog.md Parser] Error parsing document file ${filePath}:`, error);
+        console.error(`[Taskwright Parser] Error parsing document file ${filePath}:`, error);
       }
     }
 
@@ -1018,7 +1018,7 @@ export class BacklogParser {
         const decision = this.parseDecisionFile(filePath);
         if (decision) decisions.push(decision);
       } catch (error) {
-        console.error(`[Backlog.md Parser] Error parsing decision file ${file}:`, error);
+        console.error(`[Taskwright Parser] Error parsing decision file ${file}:`, error);
       }
     }
 
@@ -1109,7 +1109,7 @@ export class BacklogParser {
         }
       } catch (error) {
         console.error(
-          `[Backlog.md Parser] Error parsing document frontmatter in ${filePath}:`,
+          `[Taskwright Parser] Error parsing document frontmatter in ${filePath}:`,
           error
         );
       }
@@ -1182,7 +1182,7 @@ export class BacklogParser {
         }
       } catch (error) {
         console.error(
-          `[Backlog.md Parser] Error parsing decision frontmatter in ${filePath}:`,
+          `[Taskwright Parser] Error parsing decision frontmatter in ${filePath}:`,
           error
         );
       }

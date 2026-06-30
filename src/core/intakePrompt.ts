@@ -21,7 +21,7 @@ export interface IntakeVocabulary {
   priorities: string[];
 }
 
-export const DEFAULT_INTAKE_TEMPLATE = `You are triaging a raw dump of bugs and improvements into a Backlog.md task board.
+export const DEFAULT_INTAKE_TEMPLATE = `You are triaging a raw dump of bugs and improvements into a Taskwright task board.
 
 For each distinct issue in the dump below, create one task with the Taskwright MCP \`create_task\` tool. Before creating, review existing tasks and skip anything already tracked. For each new task:
 

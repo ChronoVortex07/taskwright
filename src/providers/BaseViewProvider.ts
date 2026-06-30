@@ -39,7 +39,7 @@ export abstract class BaseViewProvider implements vscode.WebviewViewProvider {
     _context: vscode.WebviewViewResolveContext,
     _token: vscode.CancellationToken
   ): void | Thenable<void> {
-    console.log(`[Backlog.md] resolveWebviewView called for ${this.viewType}`);
+    console.log(`[Taskwright] resolveWebviewView called for ${this.viewType}`);
     this._view = webviewView;
 
     webviewView.webview.options = {
@@ -47,17 +47,17 @@ export abstract class BaseViewProvider implements vscode.WebviewViewProvider {
       localResourceRoots: [this.extensionUri],
     };
 
-    console.log(`[Backlog.md] Setting webview HTML for ${this.viewType}`);
+    console.log(`[Taskwright] Setting webview HTML for ${this.viewType}`);
     webviewView.webview.html = this.getHtmlContent(webviewView.webview);
 
     // Handle messages from the webview
     webviewView.webview.onDidReceiveMessage(async (message: WebviewMessage) => {
-      console.log(`[Backlog.md] Received message from ${this.viewType}:`, message.type);
+      console.log(`[Taskwright] Received message from ${this.viewType}:`, message.type);
       await this.handleMessage(message);
     });
 
     // Initial data load
-    console.log(`[Backlog.md] Triggering initial refresh for ${this.viewType}`);
+    console.log(`[Taskwright] Triggering initial refresh for ${this.viewType}`);
     this.refresh();
   }
 
@@ -65,23 +65,23 @@ export abstract class BaseViewProvider implements vscode.WebviewViewProvider {
    * Refresh the view with current data
    */
   async refresh(): Promise<void> {
-    console.log(`[Backlog.md] refresh() called for ${this.viewType}, view exists: ${!!this._view}`);
+    console.log(`[Taskwright] refresh() called for ${this.viewType}, view exists: ${!!this._view}`);
     if (!this._view) return;
 
     // If no parser, show empty state
     if (!this.parser) {
-      console.log(`[Backlog.md] No parser available, showing empty state`);
+      console.log(`[Taskwright] No parser available, showing empty state`);
       this.postMessage({ type: 'noBacklogFolder' });
       return;
     }
 
     try {
-      console.log(`[Backlog.md] Fetching tasks from parser...`);
+      console.log(`[Taskwright] Fetching tasks from parser...`);
       const tasks = await this.parser.getTasks();
-      console.log(`[Backlog.md] Got ${tasks.length} tasks, sending to webview`);
+      console.log(`[Taskwright] Got ${tasks.length} tasks, sending to webview`);
       this.postMessage({ type: 'tasksUpdated', tasks });
     } catch (error) {
-      console.error('[Backlog.md] Error refreshing view:', error);
+      console.error('[Taskwright] Error refreshing view:', error);
       this.postMessage({ type: 'error', message: 'Failed to load tasks' });
     }
   }

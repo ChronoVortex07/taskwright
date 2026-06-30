@@ -165,7 +165,7 @@ export class TasksController {
         cliAvailable: cliResult.available,
       });
     } catch (error) {
-      console.error('[Backlog.md] Error checking integration status:', error);
+      console.error('[Taskwright] Error checking integration status:', error);
       this.host.postMessage({ type: 'integrationBannerState', show: false, cliAvailable: false });
     }
   }
@@ -330,7 +330,7 @@ export class TasksController {
       const draftCount = this.viewMode === 'drafts' ? tasks.length : draftCountFromFolder;
       this.host.postMessage({ type: 'draftCountUpdated', count: draftCount });
     } catch (error) {
-      console.error('[Backlog.md] Error refreshing Tasks view:', error);
+      console.error('[Taskwright] Error refreshing Tasks view:', error);
       this.host.postMessage({ type: 'error', message: 'Failed to load tasks' });
     }
   }
@@ -691,7 +691,7 @@ export class TasksController {
           const completedTasks = await this.parser.getCompletedTasks();
           this.host.postMessage({ type: 'completedTasksUpdated', tasks: completedTasks });
         } catch (error) {
-          console.error('[Backlog.md] Error loading completed tasks:', error);
+          console.error('[Taskwright] Error loading completed tasks:', error);
           this.host.postMessage({ type: 'error', message: 'Failed to load completed tasks' });
         }
         break;
@@ -909,7 +909,7 @@ export class TasksController {
       this.host.postMessage({ type: 'activeTabChanged', tab: 'docs' });
       this.host.postMessage({ type: 'documentsUpdated', documents });
     } catch (error) {
-      console.error('[Backlog.md] Error refreshing documents:', error);
+      console.error('[Taskwright] Error refreshing documents:', error);
       this.host.postMessage({ type: 'error', message: 'Failed to load documents' });
     }
   }
@@ -925,7 +925,7 @@ export class TasksController {
       this.host.postMessage({ type: 'activeTabChanged', tab: 'decisions' });
       this.host.postMessage({ type: 'decisionsUpdated', decisions });
     } catch (error) {
-      console.error('[Backlog.md] Error refreshing decisions:', error);
+      console.error('[Taskwright] Error refreshing decisions:', error);
       this.host.postMessage({ type: 'error', message: 'Failed to load decisions' });
     }
   }
@@ -945,7 +945,7 @@ export class TasksController {
       const stats = this.computeStatistics(tasks, completedTasks.length, statuses);
       this.host.postMessage({ type: 'statsUpdated', stats });
     } catch (error) {
-      console.error('[Backlog.md] Error refreshing dashboard stats:', error);
+      console.error('[Taskwright] Error refreshing dashboard stats:', error);
       this.host.postMessage({ type: 'error', message: 'Failed to load statistics' });
     }
   }
