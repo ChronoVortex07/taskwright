@@ -10,9 +10,6 @@ labels:
 dependencies: []
 priority: low
 ordinal: 2000
-claimed_by: '@agent'
-worktree: task-2-replace-leftover-backlog-md-branding-in-user-facing-strings
-claimed_at: '2026-06-30 22:58'
 ---
 
 ## Description
