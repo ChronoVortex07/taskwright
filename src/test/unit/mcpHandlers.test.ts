@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BacklogParser } from '../../core/BacklogParser';
+import { BacklogWriter } from '../../core/BacklogWriter';
 import { ClaimService } from '../../core/ClaimService';
 import { PlanService } from '../../core/PlanService';
 import {
@@ -60,7 +61,9 @@ function routeReads(activeJson: string | null) {
 function makeDeps(): McpHandlerDeps {
   return {
     root: ROOT,
+    backlogPath: BACKLOG,
     parser: new BacklogParser(BACKLOG),
+    writer: new BacklogWriter(),
     claimService: new ClaimService(),
     planService: new PlanService(),
   };

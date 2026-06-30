@@ -15,6 +15,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import * as path from 'path';
 import { BacklogParser } from '../core/BacklogParser';
+import { BacklogWriter } from '../core/BacklogWriter';
 import { ClaimService } from '../core/ClaimService';
 import { PlanService } from '../core/PlanService';
 import { resolveBacklogDirectory } from '../core/resolveBacklogDirectory';
@@ -43,7 +44,9 @@ async function main(): Promise<void> {
 
   const deps: McpHandlerDeps = {
     root,
+    backlogPath,
     parser: new BacklogParser(backlogPath),
+    writer: new BacklogWriter(),
     claimService: new ClaimService(),
     planService: new PlanService(),
   };

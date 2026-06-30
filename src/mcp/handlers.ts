@@ -1,4 +1,5 @@
 import { BacklogParser } from '../core/BacklogParser';
+import { BacklogWriter } from '../core/BacklogWriter';
 import { ClaimService } from '../core/ClaimService';
 import { PlanService } from '../core/PlanService';
 import { readActiveTask } from '../core/activeTask';
@@ -12,7 +13,10 @@ import { ChecklistItem, Task } from '../core/types';
 export interface McpHandlerDeps {
   /** Directory holding `.taskwright/active-task.json` (session cwd / worktree). */
   root: string;
+  /** Path to the `backlog/` directory (parent of `tasks/`); used by create tools. */
+  backlogPath: string;
   parser: BacklogParser;
+  writer: BacklogWriter;
   claimService: ClaimService;
   planService: PlanService;
 }
@@ -69,7 +73,7 @@ export interface AttachPlanResult {
   plan: string;
 }
 
-function toSummary(task: Task, root: string): TaskSummary {
+export function toSummary(task: Task, root: string): TaskSummary {
   let planProgress: PlanProgressSummary | undefined;
   if (task.plan) {
     const loaded = loadPlanProgress(root, task.plan);
