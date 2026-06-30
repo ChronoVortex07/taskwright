@@ -1,0 +1,12 @@
+[install]
+# Reject packages published less than 7 days ago to mitigate supply chain attacks.
+# Security updates via Dependabot bypass cooldown automatically.
+# See: https://nesbitt.io/2026/03/04/package-managers-need-to-cool-down.html
+minimumReleaseAge = 604800
+
+[test]
+# Scope bun's built-in test runner to unit tests only.
+# Playwright e2e tests (e2e/*.spec.ts) require `bun run test:playwright`.
+# CDP cross-view tests (src/test/cdp/) require `bun run test:cdp`.
+# Note: Use `bun run test` (Vitest) for the full unit test suite.
+root = "src/test/unit"
