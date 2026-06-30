@@ -74,3 +74,17 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
 - TDD: write the failing test first (the repo has comprehensive Vitest coverage).
 
 @AGENTS.md
+
+<!-- TASKWRIGHT:BEGIN -->
+
+## Taskwright
+
+This project is managed with [Taskwright](https://github.com/ChronoVortex07/taskwright). At the **start of a task session**:
+
+1. Call the `taskwright` MCP tool **`get_active_task`** to load your assigned task and its full context (description, acceptance criteria, plan). Work from that — do not infer the task from the file tree.
+2. Call **`claim_task`** with your task ID to mark it in progress, so parallel sessions in other worktrees don't collide. Claiming is advisory.
+3. When you finish or hand off, call **`release_task`**.
+
+The active task is chosen on the Taskwright board ("Set active") or set by a dispatch. If `get_active_task` reports none is set, ask which task to work on rather than assuming.
+
+<!-- TASKWRIGHT:END -->
