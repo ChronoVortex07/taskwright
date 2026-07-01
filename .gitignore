@@ -25,3 +25,10 @@ e2e/__screenshots__/
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
+# >>> taskwright synced board >>>
+# Board tasks live on the taskwright-board ref, not on code branches.
+backlog/tasks/
+backlog/drafts/
+backlog/completed/
+backlog/archive/
+# <<< taskwright synced board <<<
