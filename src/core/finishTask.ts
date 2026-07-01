@@ -185,7 +185,7 @@ export async function openPullRequest(
       reason: `gh pr create failed (is the GitHub CLI installed and authenticated?): ${`${create.stdout}\n${create.stderr}`.trim()}`,
     };
   }
-  const url = (create.stdout.match(/https?:\/\/\S+/) ?? [''])[0].trim();
+  const url = create.stdout.match(/https?:\/\/\S+/)?.[0]?.trim();
   return { ok: true, url };
 }
 

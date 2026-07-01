@@ -32,6 +32,10 @@ describe('hasCodeWip', () => {
     expect(hasCodeWip('R  backlog/a.md -> backlog/b.md\n')).toBe(false);
     expect(hasCodeWip('R  src/a.ts -> src/b.ts\n')).toBe(true);
   });
+  it('handles quoted rename destinations with spaces', () => {
+    expect(hasCodeWip('R  "backlog/a b.md" -> "backlog/c d.md"\n')).toBe(false);
+    expect(hasCodeWip('R  "backlog/a b.md" -> "src/c d.ts"\n')).toBe(true);
+  });
 });
 
 describe('ffMergeToBase', () => {
@@ -52,6 +56,15 @@ describe('ffMergeToBase', () => {
     const r = await ffMergeToBase(exec, '/primary', 'main', 'task-7-x');
     expect(r.ok).toBe(false);
     expect(r.reason).toContain('main');
+  });
+
+  it('aborts on a detached HEAD (symbolic-ref throws)', async () => {
+    const exec = gitExec((a) =>
+      a[0] === 'symbolic-ref' ? new Error('ref HEAD is not a symbolic ref') : { stdout: '' }
+    );
+    const r = await ffMergeToBase(exec, '/primary', 'main', 'task-7-x');
+    expect(r.ok).toBe(false);
+    expect(r.reason).toContain('detached');
   });
 
   it('aborts when the primary tree has code WIP', async () => {
@@ -111,6 +124,13 @@ describe('openPullRequest', () => {
     expect(r.ok).toBe(false);
     expect(r.reason).toContain('gh');
   });
+
+  it('returns ok with url undefined when gh prints no URL', async () => {
+    const exec = gitExec((a) => (a[0] === 'remote' ? { stdout: 'origin\n' } : { stdout: '' }));
+    const run: RunFn = async () => ({ code: 0, stdout: 'done, no url here', stderr: '' });
+    const r = await openPullRequest(exec, run, '/wt', 'task-7-x', 'main');
+    expect(r).toEqual({ ok: true, url: undefined });
+  });
 });
 
 describe('best-effort cleanup', () => {
@@ -124,6 +144,19 @@ describe('best-effort cleanup', () => {
     await expect(removeWorktree(exec, '/primary', '.worktrees/task-7-x')).resolves.toBeUndefined();
     expect(calls).toContainEqual(['worktree', 'remove', '--force', '.worktrees/task-7-x']);
     expect(calls).toContainEqual(['worktree', 'prune']);
+  });
+
+  it('removeWorktree removes then prunes on the happy path', async () => {
+    const calls: string[][] = [];
+    const exec: GitExecFn = async (_cwd, args) => {
+      calls.push(args);
+      return { stdout: '', stderr: '' };
+    };
+    await removeWorktree(exec, '/primary', '.worktrees/task-7-x');
+    expect(calls).toEqual([
+      ['worktree', 'remove', '--force', '.worktrees/task-7-x'],
+      ['worktree', 'prune'],
+    ]);
   });
 
   it('deleteBranch swallows errors', async () => {
