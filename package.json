@@ -245,6 +245,14 @@
         "icon": "$(rocket)"
       },
       {
+        "command": "taskwright.approveMerge",
+        "title": "Taskwright: Approve Merge"
+      },
+      {
+        "command": "taskwright.sendBackMerge",
+        "title": "Taskwright: Send Back Merge"
+      },
+      {
         "command": "taskwright.categorizeWithClaude",
         "title": "Taskwright: Categorize with Claude (copy prompt)",
         "icon": "$(sparkle)"

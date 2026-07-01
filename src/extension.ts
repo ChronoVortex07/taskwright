@@ -20,6 +20,7 @@ import { BacklogWorkspaceManager, type BacklogRoot } from './core/BacklogWorkspa
 import { detectPackageManager } from './core/AgentIntegrationDetector';
 import { claimTaskForCurrentUser, releaseTaskClaim } from './providers/claimActions';
 import { dispatchTask } from './providers/dispatchActions';
+import { approveMergeInQueue, sendBackMerge } from './providers/mergeActions';
 import { categorizeWithClaude } from './providers/intakeActions';
 import { attachPlanForTask, detachPlanForTask } from './providers/planActions';
 import { writeActiveTask, clearActiveTask } from './core/activeTask';
@@ -113,6 +114,19 @@ async function syncMergeConfig(repoRoot: string): Promise<void> {
     staleMinutes: cfg.get('mergeQueueStaleMinutes'),
   });
   writeMergeConfig(mergeConfigPath(commonDir), merged, nodeQueueFs);
+}
+
+/** Resolve the shared git common dir (identical from every worktree). */
+async function resolveCommonDir(repoRoot: string): Promise<string | undefined> {
+  try {
+    const { stdout } = await execFileAsync('git', ['rev-parse', '--git-common-dir'], {
+      cwd: repoRoot,
+      timeout: 15_000,
+    });
+    return path.resolve(repoRoot, stdout.trim());
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -987,6 +1001,51 @@ export function activate(context: vscode.ExtensionContext) {
         }
       } catch (error) {
         vscode.window.showErrorMessage(`Failed to dispatch task: ${error}`);
+      }
+    })
+  );
+
+  // Merge-queue review: approve a queued task (grants the manual-review gate)
+  // or send it back (dequeues + resets the board status to In Progress).
+  context.subscriptions.push(
+    vscode.commands.registerCommand('taskwright.approveMerge', async (arg?: unknown) => {
+      const taskId = resolveClaimTarget(arg);
+      if (!taskId || !workspaceRootPath) {
+        vscode.window.showInformationMessage('Open a task awaiting review to approve it.');
+        return;
+      }
+      const commonDir = await resolveCommonDir(workspaceRootPath);
+      if (!commonDir) {
+        vscode.window.showErrorMessage('Not a git repository — no merge queue to approve.');
+        return;
+      }
+      try {
+        approveMergeInQueue(commonDir, taskId);
+        refreshAllViews();
+        TaskDetailProvider.refreshCurrent(taskDetailProvider);
+        vscode.window.showInformationMessage(`Approved ${taskId} — the agent will merge it.`);
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to approve merge: ${error}`);
+      }
+    }),
+    vscode.commands.registerCommand('taskwright.sendBackMerge', async (arg?: unknown) => {
+      const taskId = resolveClaimTarget(arg);
+      if (!taskId || !workspaceRootPath || !parser) {
+        vscode.window.showInformationMessage('Open a task awaiting review to send it back.');
+        return;
+      }
+      const commonDir = await resolveCommonDir(workspaceRootPath);
+      if (!commonDir) {
+        vscode.window.showErrorMessage('Not a git repository — no merge queue to update.');
+        return;
+      }
+      try {
+        await sendBackMerge(commonDir, taskId, parser, writer);
+        refreshAllViews();
+        TaskDetailProvider.refreshCurrent(taskDetailProvider);
+        vscode.window.showInformationMessage(`Sent ${taskId} back to In Progress.`);
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to send back: ${error}`);
       }
     })
   );
