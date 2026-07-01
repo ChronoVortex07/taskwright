@@ -29,7 +29,7 @@ export interface MergeConfig {
 
 export const DEFAULT_MERGE_CONFIG: MergeConfig = {
   mode: 'manual-review',
-  verifyCommands: DEFAULT_VERIFY_COMMANDS,
+  verifyCommands: [...DEFAULT_VERIFY_COMMANDS],
   staleMinutes: DEFAULT_STALE_MINUTES,
 };
 
@@ -41,7 +41,7 @@ export function mergeConfigPath(commonDir: string): string {
 function coerceCommands(value: unknown): string[] {
   return Array.isArray(value) && value.every((v) => typeof v === 'string')
     ? (value as string[])
-    : DEFAULT_VERIFY_COMMANDS;
+    : [...DEFAULT_VERIFY_COMMANDS];
 }
 
 function coerceStale(value: unknown): number {
@@ -68,11 +68,11 @@ export function readMergeConfig(
   filePath: string,
   fsDeps: Pick<QueueFsDeps, 'exists' | 'read'>
 ): MergeConfig {
-  if (!fsDeps.exists(filePath)) return DEFAULT_MERGE_CONFIG;
+  if (!fsDeps.exists(filePath)) return resolveMergeConfigFromSettings({});
   try {
     return resolveMergeConfigFromSettings(JSON.parse(fsDeps.read(filePath)));
   } catch {
-    return DEFAULT_MERGE_CONFIG;
+    return resolveMergeConfigFromSettings({});
   }
 }
 

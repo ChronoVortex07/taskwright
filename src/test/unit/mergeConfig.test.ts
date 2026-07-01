@@ -61,10 +61,31 @@ describe('readMergeConfig', () => {
 });
 
 describe('writeMergeConfig', () => {
-  it('serializes through writeAtomic', () => {
+  it('forwards the path and serializes the whole config through writeAtomic', () => {
+    let path = '';
     let written = '';
-    writeMergeConfig('/c.json', DEFAULT_MERGE_CONFIG, { writeAtomic: (_p, d) => (written = d) });
-    expect(JSON.parse(written).mode).toBe('manual-review');
+    writeMergeConfig('/c.json', DEFAULT_MERGE_CONFIG, {
+      writeAtomic: (p, d) => {
+        path = p;
+        written = d;
+      },
+    });
+    expect(path).toBe('/c.json');
+    expect(written).toBe(`${JSON.stringify(DEFAULT_MERGE_CONFIG, null, 2)}\n`);
+    expect(JSON.parse(written)).toEqual(DEFAULT_MERGE_CONFIG);
+  });
+});
+
+describe('config defaults are not shared mutable references', () => {
+  it('readMergeConfig fallbacks and DEFAULT_MERGE_CONFIG do not alias DEFAULT_VERIFY_COMMANDS', () => {
+    const fromMissing = readMergeConfig('/nope.json', { exists: () => false, read: () => '' });
+    fromMissing.verifyCommands.push('mutated');
+    expect(DEFAULT_VERIFY_COMMANDS).toEqual(['bun run test', 'bun run lint', 'bun run typecheck']);
+    expect(DEFAULT_MERGE_CONFIG.verifyCommands).toEqual([
+      'bun run test',
+      'bun run lint',
+      'bun run typecheck',
+    ]);
   });
 });
 
