@@ -1,2 +1,11 @@
-bun run depcheck
-bun run licenses:check
+# Pre-push checks. These require the local toolchain (bun) on PATH. GUI push
+# clients (VS Code Source Control, GitHub Desktop) often run hooks with a
+# minimal environment that lacks user-installed tools like bun, so guard the
+# checks: run them when bun is available, otherwise skip with a warning. CI
+# enforces both regardless (see .github/workflows/ci.yml).
+if command -v bun >/dev/null 2>&1; then
+  bun run depcheck || exit 1
+  bun run licenses:check || exit 1
+else
+  echo "husky/pre-push: 'bun' not found on PATH — skipping depcheck & licenses:check locally (CI enforces these)."
+fi
