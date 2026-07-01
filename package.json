@@ -69,6 +69,32 @@
           "minimum": 0,
           "markdownDescription": "Hours after which another session's advisory claim is treated as stale (abandoned): stale claims are shown as such and can be re-claimed without an override prompt. Set to `0` to disable staleness (every live claim by another identity then requires confirmation to override)."
         },
+        "taskwright.sync.mode": {
+          "type": "string",
+          "enum": [
+            "off",
+            "local",
+            "github"
+          ],
+          "default": "off",
+          "markdownDescription": "How the Taskwright board is stored and shared. `off` (default): tasks are committed to your code branches as today. `local`: the board lives on a dedicated local ref (off your code branches) — kills cross-branch read-only ghosts, no sync. `github`: additionally push/pull that ref to a shared remote for near-real-time, collision-proof multi-user claims. Enable via the **Taskwright: Enable Board Sync** command, which performs the one-time off-branch migration."
+        },
+        "taskwright.sync.ref": {
+          "type": "string",
+          "default": "taskwright-board",
+          "markdownDescription": "Name of the dedicated orphan branch that stores the synced board (kept off your code branches). Change only if it collides with an existing branch."
+        },
+        "taskwright.sync.remote": {
+          "type": "string",
+          "default": "origin",
+          "markdownDescription": "Git remote used to share the board when `taskwright.sync.mode` is `github`. Uses your existing push credentials — no separate account or service."
+        },
+        "taskwright.sync.pollIntervalSeconds": {
+          "type": "number",
+          "default": 20,
+          "minimum": 5,
+          "markdownDescription": "How often (seconds) Taskwright fetches the shared board ref to show teammates' changes. Claims are collision-proof the instant they happen (atomic push); this only controls display latency."
+        },
         "taskwright.dispatchTemplate": {
           "type": "string",
           "editPresentation": "multilineText",

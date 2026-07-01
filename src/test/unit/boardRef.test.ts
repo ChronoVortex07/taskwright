@@ -15,6 +15,9 @@ import {
   setLocalRef,
   fetchRef,
   pushRef,
+  isAncestor,
+  revCount,
+  commitTreeRoot,
 } from '../../core/boardRef';
 import { makeTempGitRepo, TempRepo } from './helpers/tempGitRepo';
 
@@ -330,5 +333,75 @@ describe('remote ref helpers', () => {
     expect(push.rejected).toBe(true);
 
     cloneB.cleanup();
+  });
+});
+
+describe('ref-relation helpers', () => {
+  let repo: TempRepo;
+  const indexFile = () => path.join(repo.root, '.taskwright', 'board.index');
+  beforeEach(async () => {
+    repo = await makeTempGitRepo();
+    repo.addGitignore(['.taskwright/', 'backlog/tasks/']);
+    repo.writeFile('backlog/tasks/task-1 - A.md', 'A\n');
+  });
+  afterEach(() => repo.cleanup());
+
+  it('revCount is 0 for a missing ref and grows per snapshot', async () => {
+    expect(await revCount(repo.root, 'taskwright-board', defaultBoardExec)).toBe(0);
+    const c1 = await snapshotBoardToRef({
+      repoRoot: repo.root,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      message: 's1',
+      exec: defaultBoardExec,
+    });
+    expect(await revCount(repo.root, 'taskwright-board', defaultBoardExec)).toBe(1);
+    repo.writeFile('backlog/tasks/task-2 - B.md', 'B\n');
+    await snapshotBoardToRef({
+      repoRoot: repo.root,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      message: 's2',
+      parent: c1.commit,
+      exec: defaultBoardExec,
+    });
+    expect(await revCount(repo.root, 'taskwright-board', defaultBoardExec)).toBe(2);
+  });
+
+  it('isAncestor reflects the commit chain', async () => {
+    const c1 = await snapshotBoardToRef({
+      repoRoot: repo.root,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      message: 's1',
+      exec: defaultBoardExec,
+    });
+    repo.writeFile('backlog/tasks/task-2 - B.md', 'B\n');
+    const c2 = await snapshotBoardToRef({
+      repoRoot: repo.root,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      message: 's2',
+      parent: c1.commit,
+      exec: defaultBoardExec,
+    });
+    expect(await isAncestor(repo.root, c1.commit, c2.commit, defaultBoardExec)).toBe(true);
+    expect(await isAncestor(repo.root, c2.commit, c1.commit, defaultBoardExec)).toBe(false);
+  });
+
+  it('commitTreeRoot wraps the ref tree in a parentless commit', async () => {
+    await snapshotBoardToRef({
+      repoRoot: repo.root,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      message: 's1',
+      exec: defaultBoardExec,
+    });
+    const root = await commitTreeRoot(repo.root, 'taskwright-board', 'compact', defaultBoardExec);
+    const parents = (await repo.git(['rev-list', '--parents', '-n', '1', root])).trim().split(' ');
+    expect(parents).toHaveLength(1); // no parents
+    const refTree = (await repo.git(['rev-parse', 'refs/heads/taskwright-board^{tree}'])).trim();
+    const rootTree = (await repo.git(['rev-parse', `${root}^{tree}`])).trim();
+    expect(rootTree).toBe(refTree);
   });
 });

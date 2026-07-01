@@ -242,3 +242,73 @@ export async function pushRef(
     return { ok: false, rejected, stderr };
   }
 }
+
+/** True when `maybeAncestor` is an ancestor of (or equal to) `descendant`. */
+export async function isAncestor(
+  repoRoot: string,
+  maybeAncestor: string,
+  descendant: string,
+  exec: BoardGitExec = defaultBoardExec
+): Promise<boolean> {
+  try {
+    await exec(repoRoot, ['merge-base', '--is-ancestor', maybeAncestor, descendant]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Number of commits reachable from `ref`; 0 when the ref does not exist. */
+export async function revCount(
+  repoRoot: string,
+  ref: string,
+  exec: BoardGitExec = defaultBoardExec
+): Promise<number> {
+  try {
+    const { stdout } = await exec(repoRoot, ['rev-list', '--count', qualifyRef(ref)]);
+    return Number.parseInt(stdout.trim(), 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Create a new parentless commit wrapping `ref`'s current tree (for compaction). */
+export async function commitTreeRoot(
+  repoRoot: string,
+  ref: string,
+  message: string,
+  exec: BoardGitExec = defaultBoardExec
+): Promise<string> {
+  const { stdout } = await exec(repoRoot, [
+    'commit-tree',
+    `${qualifyRef(ref)}^{tree}`,
+    '-m',
+    message,
+  ]);
+  return stdout.trim();
+}
+
+/** Force-push `ref` with a lease on `expectedOldTip` (safe CAS force; never blind). */
+export async function pushRefForceWithLease(
+  repoRoot: string,
+  remote: string,
+  ref: string,
+  expectedOldTip: string,
+  exec: BoardGitExec = defaultBoardExec
+): Promise<PushResult> {
+  const q = qualifyRef(ref);
+  try {
+    const { stderr } = await exec(repoRoot, [
+      'push',
+      `--force-with-lease=${q}:${expectedOldTip}`,
+      remote,
+      `${q}:${q}`,
+    ]);
+    return { ok: true, rejected: false, stderr: stderr ?? '' };
+  } catch (e: unknown) {
+    const err = e as { stderr?: string; message?: string };
+    const stderr = String(err.stderr ?? err.message ?? '');
+    const rejected = /\b(rejected|stale info|non-fast-forward|fetch first)\b/i.test(stderr);
+    return { ok: false, rejected, stderr };
+  }
+}

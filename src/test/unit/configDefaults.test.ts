@@ -28,3 +28,17 @@ describe('contributed dispatch config defaults', () => {
     expect(setting.default).toBe('');
   });
 });
+
+describe('taskwright.sync.* manifest defaults', () => {
+  it('sync.mode defaults to off with the three modes', () => {
+    const setting = props['taskwright.sync.mode'] as { default: unknown; enum?: unknown };
+    expect(setting.default).toBe('off');
+    expect(setting.enum).toEqual(['off', 'local', 'github']);
+  });
+
+  it('sync.ref / sync.remote / sync.pollIntervalSeconds match DEFAULT_SYNC_CONFIG', () => {
+    expect(props['taskwright.sync.ref'].default).toBe('taskwright-board');
+    expect(props['taskwright.sync.remote'].default).toBe('origin');
+    expect(props['taskwright.sync.pollIntervalSeconds'].default).toBe(20);
+  });
+});
