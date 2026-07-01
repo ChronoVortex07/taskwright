@@ -32,6 +32,7 @@ import {
   promoteDraftHandler,
   demoteTaskHandler,
   createSubtaskHandler,
+  requestMergeHandler,
   type McpHandlerDeps,
 } from './handlers';
 
@@ -245,6 +246,17 @@ async function main(): Promise<void> {
       },
     },
     async (args) => runTool(() => createSubtaskHandler(deps, args))
+  );
+
+  server.registerTool(
+    'request_merge',
+    {
+      title: 'Request merge',
+      description:
+        'Submit your finished task for integration and wait. From inside your .worktrees/<branch>, this rebases onto the base branch, runs the verify commands, then enqueues you in the shared merge queue. It blocks until you reach the head and (in manual-review mode) a human approves, then fast-forward-merges to the base branch (or opens a PR), completes the task, and removes your worktree. Call this once when the task is committed and clean; do not merge or commit to the repo root yourself.',
+      inputSchema: { taskId: z.string().describe('Task ID to integrate, e.g. TASK-7.') },
+    },
+    async (args) => runTool(() => requestMergeHandler(deps, args))
   );
 
   const transport = new StdioServerTransport();

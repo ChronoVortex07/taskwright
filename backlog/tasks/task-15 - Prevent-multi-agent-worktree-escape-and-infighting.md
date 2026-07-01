@@ -3,10 +3,10 @@ id: TASK-15
 title: >-
   Prevent multi-agent worktree escape and infighting (isolation + auto-merge +
   merge right-of-way)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-30 17:24'
-updated_date: '2026-07-01 04:47'
+updated_date: '2026-07-01 06:32'
 labels:
   - bug
   - agent-orchestration
@@ -65,3 +65,9 @@ Deferred follow-up: the advisory post-checkout warn-hook (spec section 4.2) was 
 
 Remaining: Component B (merge queue + request_merge) and Component C (board status + approval UI + modes) — plans not yet written.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Component B (Task 6) complete: `request_merge` MCP tool registered in server.ts; `requestMergeHandler` wired in handlers.ts with full gitFacts resolution, isPrimaryTree guard, detached-HEAD guard, injected fsDeps/board/exec/run/now/sleep seams, and `makePrimaryBoard` factory. `getActiveTask` extended with best-effort `queuePosition` via positionOf. Added `fsDeps?: QueueFsDeps` to McpHandlerDeps so tests inject in-memory queue/config without vi.mock('fs') (avoids a vitest v4.1.8 + Node v24 + SWC transformer OOM that occurs with complex factory closures). All 3 new tests GREEN (temp-dir pattern), 1172 total tests pass, lint clean, typecheck clean.
+<!-- SECTION:FINAL_SUMMARY:END -->

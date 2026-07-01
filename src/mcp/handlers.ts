@@ -1,3 +1,6 @@
+import { execFile, exec as childExec } from 'child_process';
+import { promisify } from 'util';
+import * as path from 'path';
 import { BacklogParser } from '../core/BacklogParser';
 import { BacklogWriter } from '../core/BacklogWriter';
 import { ClaimService } from '../core/ClaimService';
@@ -11,6 +14,16 @@ import {
   assertValidStatus,
   renderChecklist,
 } from './taskWriteHelpers';
+import { isPrimaryTree } from '../core/worktreeGuard';
+import { MergeQueueStore, mergeQueuePath, nodeQueueFs, positionOf } from '../core/mergeQueue';
+import { mergeConfigPath, readMergeConfig } from '../core/mergeConfig';
+import {
+  requestMerge,
+  type BoardOps,
+  type GitExecFn,
+  type RunFn,
+  type RequestMergeResult,
+} from '../core/finishTask';
 
 /**
  * Pure-ish implementations of the Taskwright MCP tools, decoupled from the MCP
@@ -25,6 +38,17 @@ export interface McpHandlerDeps {
   writer: BacklogWriter;
   claimService: ClaimService;
   planService: PlanService;
+  /** Injectable git runner (defaults to execFile('git')). Tests override. */
+  gitExec?: GitExecFn;
+  /** Injectable shell runner for verify/gh (defaults to child_process.exec). */
+  shellRun?: RunFn;
+  /** Injectable clock/sleep for the wait loop (defaults to wall clock). */
+  now?: () => Date;
+  sleep?: (ms: number) => Promise<void>;
+  /** Injectable board (defaults to makePrimaryBoard(primaryRoot)). Tests override. */
+  board?: BoardOps;
+  /** Injectable fs adapter for queue/config I/O (defaults to nodeQueueFs). Tests override. */
+  fsDeps?: import('../core/mergeQueue').QueueFsDeps;
 }
 
 export interface PlanProgressSummary {
@@ -58,6 +82,7 @@ export interface ActiveTaskResult {
   active: boolean;
   task?: TaskSummary;
   message?: string;
+  queuePosition?: number;
 }
 
 export interface ClaimResult {
@@ -77,6 +102,125 @@ export interface AttachPlanResult {
   attached: true;
   taskId: string;
   plan: string;
+}
+
+const execFileAsync = promisify(execFile);
+const childExecAsync = promisify(childExec);
+
+const defaultGitExec: GitExecFn = (cwd, args) =>
+  execFileAsync('git', args, { cwd, timeout: 120_000, maxBuffer: 16 * 1024 * 1024 });
+
+const defaultShellRun: RunFn = async (cwd, commandLine) => {
+  try {
+    const { stdout, stderr } = await childExecAsync(commandLine, {
+      cwd,
+      timeout: 600_000,
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    return { code: 0, stdout: String(stdout), stderr: String(stderr) };
+  } catch (error) {
+    const e = error as { code?: number; stdout?: string; stderr?: string; message?: string };
+    return {
+      code: typeof e.code === 'number' ? e.code : 1,
+      stdout: String(e.stdout ?? ''),
+      stderr: String(e.stderr ?? e.message ?? ''),
+    };
+  }
+};
+
+/** Git facts needed to run `request_merge` from a worktree. */
+interface GitFacts {
+  gitDir: string;
+  commonDir: string;
+  primaryRoot: string;
+  branch: string | null;
+}
+
+async function gitFacts(exec: GitExecFn, cwd: string): Promise<GitFacts> {
+  const gitDir = path.resolve((await exec(cwd, ['rev-parse', '--git-dir'])).stdout.trim());
+  const commonDir = path.resolve(
+    (await exec(cwd, ['rev-parse', '--git-common-dir'])).stdout.trim()
+  );
+  let branch: string | null;
+  try {
+    branch = (await exec(cwd, ['symbolic-ref', '--short', 'HEAD'])).stdout.trim();
+  } catch {
+    branch = null;
+  }
+  return { gitDir, commonDir, primaryRoot: path.dirname(commonDir), branch };
+}
+
+/** A BoardOps bound to the PRIMARY tree's board (what the human watches). */
+export function makePrimaryBoard(primaryRoot: string): BoardOps {
+  const backlogPath = path.join(primaryRoot, 'backlog');
+  const parser = new BacklogParser(backlogPath);
+  const writer = new BacklogWriter();
+  const claims = new ClaimService();
+  return {
+    async setStatus(taskId, status) {
+      await writer.updateTask(taskId, { status } as Partial<Task>, parser);
+    },
+    async complete(taskId) {
+      await writer.completeTask(taskId, parser);
+    },
+    async release(taskId) {
+      await claims.releaseTask(taskId, parser);
+    },
+  };
+}
+
+function queueStoreFor(
+  commonDir: string,
+  fsDeps: import('../core/mergeQueue').QueueFsDeps = nodeQueueFs
+): MergeQueueStore {
+  return new MergeQueueStore(mergeQueuePath(commonDir), fsDeps);
+}
+
+/**
+ * `request_merge`: submit the active task for integration and block until it is
+ * merged / a PR is opened / it is sent back — the single closing call an agent
+ * makes from inside its worktree.
+ */
+export async function requestMergeHandler(
+  deps: McpHandlerDeps,
+  args: { taskId: string }
+): Promise<RequestMergeResult> {
+  const exec = deps.gitExec ?? defaultGitExec;
+  const run = deps.shellRun ?? defaultShellRun;
+  const facts = await gitFacts(exec, deps.root);
+
+  if (isPrimaryTree(facts.gitDir)) {
+    return {
+      status: 'aborted',
+      reason:
+        'request_merge must be called from inside your .worktrees/<branch>, not the primary tree. cd into the worktree and try again.',
+    };
+  }
+  if (!facts.branch) {
+    return {
+      status: 'aborted',
+      reason: 'Your worktree has a detached HEAD; check out your task branch first.',
+    };
+  }
+
+  const fsDeps = deps.fsDeps ?? nodeQueueFs;
+  const config = readMergeConfig(mergeConfigPath(facts.commonDir), fsDeps);
+  return requestMerge(
+    {
+      root: deps.root,
+      primaryRoot: facts.primaryRoot,
+      branch: facts.branch,
+      worktreeRel: `.worktrees/${facts.branch}`,
+      config,
+      queue: queueStoreFor(facts.commonDir, fsDeps),
+      board: deps.board ?? makePrimaryBoard(facts.primaryRoot),
+      exec,
+      run,
+      now: deps.now ?? (() => new Date()),
+      sleep: deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))),
+    },
+    args.taskId
+  );
 }
 
 export function toSummary(task: Task, root: string): TaskSummary {
@@ -129,7 +273,18 @@ export async function getActiveTask(deps: McpHandlerDeps): Promise<ActiveTaskRes
       message: `Active task ${active.taskId} was set but no matching task file was found.`,
     };
   }
-  return { active: true, task: toSummary(task, deps.root) };
+  let queuePosition: number | undefined;
+  try {
+    const exec = deps.gitExec ?? defaultGitExec;
+    const commonDir = path.resolve(
+      (await exec(deps.root, ['rev-parse', '--git-common-dir'])).stdout.trim()
+    );
+    const pos = positionOf(queueStoreFor(commonDir, deps.fsDeps).read(), active.taskId);
+    if (pos > 0) queuePosition = pos;
+  } catch {
+    // not a git repo / no queue — omit the field
+  }
+  return { active: true, task: toSummary(task, deps.root), queuePosition };
 }
 
 /** Place an advisory claim on a task so other sessions can see it is in progress. */
