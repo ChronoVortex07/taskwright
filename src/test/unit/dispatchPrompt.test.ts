@@ -187,3 +187,10 @@ describe('resolveTerminalLaunch', () => {
     expect(d.warning).toMatch(/--print|-p/);
   });
 });
+
+describe('DEFAULT_DISPATCH_TEMPLATE closing step', () => {
+  it('instructs the agent to close with request_merge from the worktree', () => {
+    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('request_merge');
+    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('wait for it to return');
+  });
+});

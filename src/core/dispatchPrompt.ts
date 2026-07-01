@@ -48,7 +48,7 @@ Status: {{status}} · Priority: {{priority}} · Labels: {{labels}}
 {{plan}}
 
 ---
-Before writing code, call the \`taskwright\` MCP tool \`get_active_task\` to confirm your assignment and load full context, then \`claim_task\` with id \`{{id}}\` (worktree \`{{worktree}}\`). Follow the project's TDD / superpowers workflow. Record what you learn in the task's Implementation Notes, and call \`release_task\` when you finish or hand off.`;
+Before writing code, call the \`taskwright\` MCP tool \`get_active_task\` to confirm your assignment and load full context, then \`claim_task\` with id \`{{id}}\` (worktree \`{{worktree}}\`). Follow the project's TDD / superpowers workflow. Record what you learn in the task's Implementation Notes. When the task is committed and your worktree is clean, call \`request_merge\` (taskwright MCP) from inside your worktree and wait for it to return — it rebases onto the base branch, runs the verify commands, waits for its turn in the merge queue (and your approval, in manual-review mode), then integrates and cleans up. Do not merge, commit, or push from the repository root yourself.`;
 
 /** Format a checklist as markdown, or a placeholder when empty. */
 export function formatChecklist(items: ChecklistItem[]): string {
