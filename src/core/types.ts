@@ -1,3 +1,6 @@
+import type { MergeTaskState } from './mergeBoard';
+import type { MergeMode } from './mergeQueue';
+
 /**
  * Task status values matching Backlog.md format.
  * Supports arbitrary custom statuses from config.yml in addition to the built-in ones.
@@ -16,6 +19,8 @@ export type TaskIdDisplayMode = 'full' | 'number' | 'hidden';
 
 export interface TasksViewSettings {
   taskIdDisplay: TaskIdDisplayMode;
+  /** Active merge mode; drives the merge-review controls shown on the board. */
+  mergeMode?: MergeMode;
 }
 
 /**
@@ -83,6 +88,10 @@ export interface Task {
   // Taskwright superpowers bridge: path (repo-root-relative) to the task's
   // implementation plan/spec, e.g. docs/superpowers/plans/2026-06-30-foo.md.
   plan?: string;
+
+  // Taskwright merge-review board enrichment: this task's place in the shared
+  // merge queue (Component C), or undefined when not queued.
+  mergeState?: MergeTaskState;
 }
 
 /**
@@ -263,7 +272,9 @@ export type WebviewMessage =
   | { type: 'openDecision'; decisionId: string }
   | { type: 'initBacklog'; mode: 'defaults' | 'customize' }
   | { type: 'setupAgentIntegration' }
-  | { type: 'dismissIntegrationBanner' };
+  | { type: 'dismissIntegrationBanner' }
+  | { type: 'approveMerge'; taskId: string }
+  | { type: 'sendBackMerge'; taskId: string };
 
 /**
  * Data source mode for task viewing
@@ -334,3 +345,6 @@ export type ExtensionMessage =
   | { type: 'decisionData'; decision: BacklogDecision; sections: Record<string, string> }
   | { type: 'activeEditedTaskChanged'; taskId: string | null }
   | { type: 'integrationBannerState'; show: boolean; cliAvailable: boolean };
+
+/** Re-exported so webview/provider code has one import site for the merge-board state shape. */
+export type { MergeTaskState } from './mergeBoard';

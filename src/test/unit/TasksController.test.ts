@@ -255,4 +255,94 @@ describe('TasksController', () => {
     expect(mockParser.getTasksWithCrossBranch).toHaveBeenCalled();
     expect(mockParser.getTasks).not.toHaveBeenCalled();
   });
+
+  it('enriches tasks with mergeState from the injected queue reader', async () => {
+    (mockParser.getTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'TASK-1',
+        title: 'Reviewed task',
+        status: 'Pending Review',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/fake/backlog/tasks/task-1.md',
+      } as Task,
+    ]);
+
+    const controller = new TasksController(host, mockParser, mockContext);
+    controller.setMergeQueueReader(() => ({
+      version: 1,
+      entries: [
+        {
+          taskId: 'TASK-1',
+          branch: 'b',
+          worktree: '.worktrees/b',
+          mode: 'manual-review',
+          submittedAt: '2026-07-01T00:00:00Z',
+          approved: false,
+          active: false,
+          activeAt: null,
+        },
+      ],
+    }));
+
+    await controller.refresh();
+
+    const tasksMsg = posted.find((m) => m.type === 'tasksUpdated') as {
+      type: 'tasksUpdated';
+      tasks: Array<Task & { mergeState?: { queued: boolean; position: number; mode: string } }>;
+    };
+    const task = tasksMsg.tasks.find((t) => t.id === 'TASK-1');
+    expect(task?.mergeState).toMatchObject({ queued: true, position: 1, mode: 'manual-review' });
+
+    const settingsMsg = posted.find((m) => m.type === 'settingsUpdated') as {
+      type: 'settingsUpdated';
+      settings: { mergeMode?: string };
+    };
+    expect(settingsMsg.settings.mergeMode).toBe('manual-review');
+  });
+
+  it('omits mergeState when no queue reader is injected', async () => {
+    (mockParser.getTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'TASK-1',
+        title: 'Plain task',
+        status: 'To Do',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/fake/backlog/tasks/task-1.md',
+      } as Task,
+    ]);
+
+    const controller = new TasksController(host, mockParser, mockContext);
+    await controller.refresh();
+
+    const tasksMsg = posted.find((m) => m.type === 'tasksUpdated') as {
+      type: 'tasksUpdated';
+      tasks: Array<Task & { mergeState?: unknown }>;
+    };
+    const task = tasksMsg.tasks.find((t) => t.id === 'TASK-1');
+    expect(task?.mergeState).toBeUndefined();
+  });
+
+  it('handles approveMerge and sendBackMerge by executing the matching commands', async () => {
+    const controller = new TasksController(host, mockParser, mockContext);
+
+    await controller.handleMessage({ type: 'approveMerge', taskId: 'TASK-5' });
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+      'taskwright.approveMerge',
+      'TASK-5'
+    );
+
+    await controller.handleMessage({ type: 'sendBackMerge', taskId: 'TASK-6' });
+    expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+      'taskwright.sendBackMerge',
+      'TASK-6'
+    );
+  });
 });

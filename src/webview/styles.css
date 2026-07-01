@@ -720,6 +720,29 @@ body {
   white-space: nowrap;
 }
 
+.merge-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--vscode-charts-blue, #3794ff);
+}
+
+.merge-indicator svg {
+  opacity: 0.9;
+  flex-shrink: 0;
+}
+
+.merge-indicator-label {
+  white-space: nowrap;
+}
+
+/* An approved queue entry is ready to merge — green like the active-task badge. */
+.merge-indicator.approved {
+  color: var(--vscode-charts-green, #89d185);
+}
+
 /* Task card optimistic UI */
 .task-card.saving {
   opacity: 0.7;

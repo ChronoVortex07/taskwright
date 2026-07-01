@@ -41,7 +41,7 @@ import {
   writeMergeConfig,
   mergeConfigPath,
 } from './core/mergeConfig';
-import { nodeQueueFs } from './core/mergeQueue';
+import { nodeQueueFs, MergeQueueStore, mergeQueuePath, type MergeQueue } from './core/mergeQueue';
 import { planStatusSync, parseStatusesLine, rewriteStatusesLine } from './core/mergeStatusConfig';
 import type { MergeMode } from './core/mergeQueue';
 
@@ -181,6 +181,7 @@ interface TasksBoardSurface {
   setDataSourceMode(mode: DataSourceMode, reason?: string): void;
   setActiveEditedTaskId(taskId: string | null): void;
   checkAndSendIntegrationState(): Promise<void>;
+  setMergeQueueReader(reader: () => MergeQueue | undefined): void;
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -280,6 +281,28 @@ export function activate(context: vscode.ExtensionContext) {
   if (workspaceRootPath) {
     syncWorktreeGuard(workspaceRootPath, context.extensionUri);
     void syncMergeConfig(workspaceRootPath);
+  }
+
+  // Merge-queue board enrichment: resolve the shared queue location once, inject
+  // a reader into both board hosts, and watch the queue file so out-of-process
+  // mutations (request_merge merging/dequeuing, approve/send-back) refresh the
+  // board without a manual reload.
+  if (workspaceRootPath) {
+    void (async () => {
+      const commonDir = await resolveCommonDir(workspaceRootPath);
+      if (!commonDir) return;
+      const store = new MergeQueueStore(mergeQueuePath(commonDir), nodeQueueFs);
+      const reader = (): MergeQueue => store.read();
+      tasksHosts.forEach((host) => host.setMergeQueueReader(reader));
+      tasksHosts.forEach((host) => host.refresh());
+
+      const watcher = vscode.workspace.createFileSystemWatcher(mergeQueuePath(commonDir));
+      const onQueueChange = () => tasksHosts.forEach((host) => host.refresh());
+      watcher.onDidChange(onQueueChange);
+      watcher.onDidCreate(onQueueChange);
+      watcher.onDidDelete(onQueueChange);
+      context.subscriptions.push(watcher);
+    })();
   }
 
   const taskPreviewProvider = new TaskPreviewViewProvider(

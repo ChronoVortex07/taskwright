@@ -22,6 +22,8 @@ import { readActiveTask } from '../core/activeTask';
 import { isClaimStale } from '../core/claims';
 import { getClaimStalenessMs } from './claimActions';
 import { getTaskwrightConfig } from '../config';
+import { mergeStateForTask, type MergeTaskState } from '../core/mergeBoard';
+import type { MergeQueue, MergeMode } from '../core/mergeQueue';
 
 export type TasksViewMode =
   | 'kanban'
@@ -77,6 +79,7 @@ export class TasksController {
   private readonly writer = new BacklogWriter();
   private workspaceRoot: string | undefined;
   private onSelectTask?: (taskRef: TaskSelectionRef) => void | Promise<void>;
+  private mergeQueueReader?: () => MergeQueue | undefined;
 
   constructor(
     private readonly host: TasksHost,
@@ -90,11 +93,18 @@ export class TasksController {
     const taskIdDisplay: TaskIdDisplayMode =
       configuredMode === 'number' || configuredMode === 'hidden' ? configuredMode : 'full';
 
-    return { taskIdDisplay };
+    const mergeMode = getTaskwrightConfig<MergeMode>('mergeMode', 'manual-review');
+
+    return { taskIdDisplay, mergeMode };
   }
 
   setParser(parser: BacklogParser): void {
     this.parser = parser;
+  }
+
+  /** Inject a reader for the shared merge queue (best-effort board enrichment). */
+  setMergeQueueReader(reader: () => MergeQueue | undefined): void {
+    this.mergeQueueReader = reader;
   }
 
   setTaskSelectionHandler(handler: (taskRef: TaskSelectionRef) => void | Promise<void>): void {
@@ -268,6 +278,16 @@ export class TasksController {
       }
       const stalenessMs = getClaimStalenessMs();
 
+      // Merge-queue enrichment for the board's review badge. Best-effort: a
+      // reader failure (e.g. corrupt/missing shared queue file) must not break
+      // loading the board.
+      let mergeQueue: MergeQueue | undefined;
+      try {
+        mergeQueue = this.mergeQueueReader?.();
+      } catch {
+        mergeQueue = undefined;
+      }
+
       const tasksWithBlocks = tasks.map((task) => {
         const enhanced: Task & {
           blocksTaskIds?: string[];
@@ -275,11 +295,13 @@ export class TasksController {
           blockingDependencyIds?: string[];
           isActiveTask?: boolean;
           claimStale?: boolean;
+          mergeState?: MergeTaskState;
         } = {
           ...task,
           blocksTaskIds: reverseDeps.get(task.id) || [],
           isActiveTask: !!activeTaskId && task.id === activeTaskId,
           claimStale: !!task.claimedBy && isClaimStale(task.claimedAt, stalenessMs),
+          mergeState: mergeQueue ? mergeStateForTask(mergeQueue, task.id) : undefined,
         };
         const blockingDependencyIds = task.dependencies.filter((depId) => {
           if (completedTaskIds.has(depId) || archivedTaskIds.has(depId)) return false;
@@ -714,6 +736,16 @@ export class TasksController {
 
       case 'filterByStatus': {
         vscode.commands.executeCommand('taskwright.filterByStatus', message.status);
+        break;
+      }
+
+      case 'approveMerge': {
+        vscode.commands.executeCommand('taskwright.approveMerge', message.taskId);
+        break;
+      }
+
+      case 'sendBackMerge': {
+        vscode.commands.executeCommand('taskwright.sendBackMerge', message.taskId);
         break;
       }
 

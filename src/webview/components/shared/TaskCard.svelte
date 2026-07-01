@@ -104,6 +104,18 @@
   let readOnlyContext = $derived(getReadOnlyTaskContext(task));
   let displayTaskId = $derived(formatTaskIdForDisplay(task.id, taskIdDisplay));
   let showTaskId = $derived(taskIdDisplay !== 'hidden');
+  let mergeState = $derived(task.mergeState);
+  let mergeLabel = $derived(
+    !mergeState
+      ? ''
+      : mergeState.active
+        ? 'merging…'
+        : mergeState.approved
+          ? 'approved'
+          : mergeState.mode === 'manual-review'
+            ? `review · #${mergeState.position}`
+            : `queued · #${mergeState.position}`
+  );
 </script>
 
 <div
@@ -169,6 +181,17 @@
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         <span class="claim-indicator-label">{task.claimedBy}{#if isStaleClaim} · stale{/if}</span>
+      </span>
+    {/if}
+    {#if mergeState}
+      <span
+        class="merge-indicator"
+        class:approved={mergeState.approved}
+        data-testid="merge-indicator-{task.id}"
+        title="In the merge queue: {mergeLabel}"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>
+        <span class="merge-indicator-label">{mergeLabel}</span>
       </span>
     {/if}
     {#if hasBlockingDependencies}

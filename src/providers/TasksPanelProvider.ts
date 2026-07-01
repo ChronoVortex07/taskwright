@@ -3,6 +3,7 @@ import { WebviewMessage, DataSourceMode } from '../core/types';
 import { BacklogParser } from '../core/BacklogParser';
 import { TasksController, TasksHost } from './TasksController';
 import { getTasksWebviewHtml } from './tasksWebviewHtml';
+import type { MergeQueue } from '../core/mergeQueue';
 
 /**
  * Editor-tab host for the unified Tasks board.
@@ -26,6 +27,7 @@ export class TasksPanelProvider {
   private workspaceRoot: string | undefined;
   private dataSourceMode: DataSourceMode = 'local-only';
   private dataSourceReason: string | undefined;
+  private mergeQueueReader?: () => MergeQueue | undefined;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -49,6 +51,11 @@ export class TasksPanelProvider {
     this.dataSourceMode = mode;
     this.dataSourceReason = reason;
     this.controller?.setDataSourceMode(mode, reason);
+  }
+
+  setMergeQueueReader(reader: () => MergeQueue | undefined): void {
+    this.mergeQueueReader = reader;
+    this.controller?.setMergeQueueReader(reader);
   }
 
   setActiveEditedTaskId(taskId: string | null): void {
@@ -104,6 +111,9 @@ export class TasksPanelProvider {
       controller.setWorkspaceRoot(this.workspaceRoot);
     }
     controller.setDataSourceMode(this.dataSourceMode, this.dataSourceReason);
+    if (this.mergeQueueReader) {
+      controller.setMergeQueueReader(this.mergeQueueReader);
+    }
 
     panel.webview.html = getTasksWebviewHtml(panel.webview, this.extensionUri, {
       extraBodyClass: 'tasks-editor-page',

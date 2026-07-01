@@ -114,9 +114,12 @@ describe('TasksViewProvider', () => {
   describe('tasks view settings', () => {
     // taskIdDisplay is read via the taskwright.* config with a legacy backlog.*
     // fallback (see src/config.ts), so we stub WorkspaceConfiguration.inspect().
+    // Only the taskIdDisplay key is stubbed here; other keys (e.g. mergeMode)
+    // fall through to undefined so getTasksViewSettings() uses its own default.
     function mockConfigInspect(values: { taskwright?: string; backlog?: string }) {
       (vscode.workspace.getConfiguration as Mock).mockImplementation((section: string) => ({
-        inspect: vi.fn(() => {
+        inspect: vi.fn((key: string) => {
+          if (key !== 'taskIdDisplay') return undefined;
           const value = section === 'taskwright' ? values.taskwright : values.backlog;
           return value === undefined ? undefined : { globalValue: value };
         }),
@@ -135,7 +138,7 @@ describe('TasksViewProvider', () => {
       expect(vscode.workspace.getConfiguration).toHaveBeenCalledWith('taskwright');
       expect(mockWebview.postMessage).toHaveBeenCalledWith({
         type: 'settingsUpdated',
-        settings: { taskIdDisplay: 'full' },
+        settings: { taskIdDisplay: 'full', mergeMode: 'manual-review' },
       });
     });
 
@@ -150,7 +153,7 @@ describe('TasksViewProvider', () => {
 
       expect(mockWebview.postMessage).toHaveBeenCalledWith({
         type: 'settingsUpdated',
-        settings: { taskIdDisplay: 'number' },
+        settings: { taskIdDisplay: 'number', mergeMode: 'manual-review' },
       });
     });
 
@@ -165,7 +168,7 @@ describe('TasksViewProvider', () => {
 
       expect(mockWebview.postMessage).toHaveBeenCalledWith({
         type: 'settingsUpdated',
-        settings: { taskIdDisplay: 'hidden' },
+        settings: { taskIdDisplay: 'hidden', mergeMode: 'manual-review' },
       });
     });
   });

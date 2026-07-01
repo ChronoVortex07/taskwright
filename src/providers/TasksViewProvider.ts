@@ -3,6 +3,7 @@ import { WebviewMessage, DataSourceMode } from '../core/types';
 import { BacklogParser } from '../core/BacklogParser';
 import { TasksController, TasksHost, TasksViewMode, TaskSelectionRef } from './TasksController';
 import { getTasksWebviewHtml } from './tasksWebviewHtml';
+import type { MergeQueue } from '../core/mergeQueue';
 
 /**
  * Sidebar (activity-bar) host for the unified Tasks board.
@@ -49,6 +50,10 @@ export class TasksViewProvider implements vscode.WebviewViewProvider {
 
   setDataSourceMode(mode: DataSourceMode, reason?: string): void {
     this.controller.setDataSourceMode(mode, reason);
+  }
+
+  setMergeQueueReader(reader: () => MergeQueue | undefined): void {
+    this.controller.setMergeQueueReader(reader);
   }
 
   getDataSourceMode(): DataSourceMode {
