@@ -2,7 +2,6 @@ import {
   MergeQueueStore,
   enqueueEntry,
   removeEntry,
-  approveEntry, // re-exported for callers/tests convenience
   headEntry,
   markEntryActive,
   isHeadStale,
@@ -242,6 +241,9 @@ export interface BoardOps {
   setStatus(taskId: string, status: string): Promise<void>;
   complete(taskId: string): Promise<void>;
   release(taskId: string): Promise<void>;
+  /** Discard the primary tree's uncommitted edits to this task's file so a
+   *  fast-forward merge can update it (drops the transient intermediate-status write). */
+  resetTaskFile(taskId: string): Promise<void>;
 }
 
 export interface FinishDeps {
@@ -306,7 +308,7 @@ export async function requestMerge(deps: FinishDeps, taskId: string): Promise<Re
     };
   }
 
-  // 2. Enqueue + park in the mode's intermediate status.
+  // 2. Enqueue + park in the mode's intermediate status (inside try so dequeue covers failures).
   const entry: QueueEntry = {
     taskId,
     branch,
@@ -317,10 +319,11 @@ export async function requestMerge(deps: FinishDeps, taskId: string): Promise<Re
     active: false,
     activeAt: null,
   };
-  queue.mutate((q) => enqueueEntry(q, entry));
-  await board.setStatus(taskId, intermediateStatusForMode(config.mode));
 
   try {
+    queue.mutate((q) => enqueueEntry(q, entry));
+    await board.setStatus(taskId, intermediateStatusForMode(config.mode));
+
     // 3. Wait for the green light.
     const waited = await waitForTurn(deps, taskId);
     if (waited === 'sent_back') {
@@ -358,21 +361,24 @@ export async function requestMerge(deps: FinishDeps, taskId: string): Promise<Re
         await board.setStatus(taskId, IN_PROGRESS);
         return { status: 'aborted', reason: pr.reason ?? 'Opening the pull request failed.' };
       }
+      await board.setStatus(taskId, 'Done');
       await board.complete(taskId);
       await board.release(taskId);
       await removeWorktree(exec, primaryRoot, worktreeRel); // keep the branch for the PR
       return { status: 'pr_opened', taskId, url: pr.url ?? '' };
     }
 
+    await board.resetTaskFile(taskId); // drop the transient status edit so the ff can update the file
     const merge = await ffMergeToBase(exec, primaryRoot, base, branch);
     if (!merge.ok) {
       await board.setStatus(taskId, IN_PROGRESS);
       return { status: 'aborted', reason: merge.reason ?? 'Fast-forward merge failed.' };
     }
+    await board.setStatus(taskId, 'Done');
     await board.complete(taskId);
     await board.release(taskId);
-    await deleteBranch(exec, primaryRoot, branch);
     await removeWorktree(exec, primaryRoot, worktreeRel);
+    await deleteBranch(exec, primaryRoot, branch);
     return { status: 'merged', taskId, branch };
   } finally {
     // 7. Dequeue — unblocks the next head. Safe/no-op if already removed.
@@ -409,5 +415,3 @@ async function waitForTurn(deps: FinishDeps, taskId: string): Promise<'proceed' 
     await deps.sleep(base + Math.floor(Math.random() * base)); // jittered
   }
 }
-
-export { positionOf, approveEntry };

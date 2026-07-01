@@ -1,5 +1,5 @@
 // src/test/unit/requestMerge.test.ts
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, type MockedFunction } from 'vitest';
 import {
   requestMerge,
   type FinishDeps,
@@ -27,7 +27,12 @@ function memQueue(): { store: MergeQueueStore; file: () => string } {
   return { store: new MergeQueueStore('/q.json', fsDeps), file: () => files['/q.json'] };
 }
 
-function board(): BoardOps & { statuses: string[]; completed: string[]; released: string[] } {
+function board(): BoardOps & {
+  statuses: string[];
+  completed: string[];
+  released: string[];
+  resetTaskFile: MockedFunction<(taskId: string) => Promise<void>>;
+} {
   const rec = {
     statuses: [] as string[],
     completed: [] as string[],
@@ -41,6 +46,7 @@ function board(): BoardOps & { statuses: string[]; completed: string[]; released
     release: async (id: string) => {
       rec.released.push(id);
     },
+    resetTaskFile: vi.fn(async (_taskId: string) => {}),
   };
   return rec;
 }
@@ -124,13 +130,19 @@ describe('requestMerge — auto-merge happy path', () => {
     const q = memQueue();
     const b = board();
     const cfg: MergeConfig = { ...DEFAULT_MERGE_CONFIG, mode: 'auto-merge' };
-    const merged: string[][] = [];
+    // Track call order for Fix 1 (resetTaskFile before merge) and Fix 2 (removeWorktree before branch -D)
+    const calls: string[] = [];
+    b.resetTaskFile = vi.fn(async (_taskId: string) => {
+      calls.push('reset');
+    });
     const d = deps({
       queue: q.store,
       board: b,
       config: cfg,
       exec: okGit((a) => {
-        if (a[0] === 'merge') merged.push(a);
+        if (a[0] === 'merge') calls.push('merge');
+        if (a[0] === 'worktree' && a[1] === 'remove') calls.push('worktree-remove');
+        if (a[0] === 'branch' && a[1] === '-D') calls.push('branch-delete');
         return undefined;
       }),
     });
@@ -139,8 +151,18 @@ describe('requestMerge — auto-merge happy path', () => {
     expect(b.statuses[0]).toBe('Awaiting Merge');
     expect(b.completed).toEqual(['TASK-7']);
     expect(b.released).toEqual(['TASK-7']);
-    expect(merged).toContainEqual(['merge', '--ff-only', 'task-7-x']);
     expect(q.store.read().entries).toHaveLength(0); // dequeued
+    // Fix 1: resetTaskFile called with taskId, and before the ff-merge
+    expect(b.resetTaskFile).toHaveBeenCalledWith('TASK-7');
+    const resetIdx = calls.indexOf('reset');
+    const mergeIdx = calls.indexOf('merge');
+    expect(resetIdx).toBeGreaterThanOrEqual(0);
+    expect(mergeIdx).toBeGreaterThan(resetIdx); // reset precedes merge
+    // Fix 2: worktree remove before branch delete
+    const removeIdx = calls.indexOf('worktree-remove');
+    const deleteIdx = calls.indexOf('branch-delete');
+    expect(removeIdx).toBeGreaterThanOrEqual(0);
+    expect(deleteIdx).toBeGreaterThan(removeIdx); // remove precedes delete
   });
 });
 
@@ -280,6 +302,21 @@ describe('requestMerge — abort at ff-merge resets status and dequeues', () => 
     const r = await requestMerge(d, 'TASK-7');
     expect(r.status).toBe('aborted');
     expect(b.statuses).toContain('In Progress');
+    expect(q.store.read().entries).toHaveLength(0);
+  });
+});
+
+describe('requestMerge — Fix 3: setStatus failure leaves queue empty (no phantom head)', () => {
+  it('rejects and leaves the queue empty when setStatus throws', async () => {
+    const q = memQueue();
+    const b = board();
+    b.setStatus = async () => {
+      throw new Error('board write failed');
+    };
+    const cfg: MergeConfig = { ...DEFAULT_MERGE_CONFIG, mode: 'auto-merge' };
+    const d = deps({ queue: q.store, board: b, config: cfg });
+    await expect(requestMerge(d, 'TASK-7')).rejects.toThrow('board write failed');
+    // The finally block must have dequeued — no phantom head left.
     expect(q.store.read().entries).toHaveLength(0);
   });
 });

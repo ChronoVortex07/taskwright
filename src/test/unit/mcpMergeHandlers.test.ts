@@ -179,6 +179,7 @@ describe('requestMergeHandler', () => {
         completed.push(id);
       },
       release: async () => {},
+      resetTaskFile: async () => {},
     };
 
     const r = await requestMergeHandler(makeDeps(root, { board, fsDeps }), { taskId: 'TASK-7' });

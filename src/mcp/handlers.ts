@@ -157,7 +157,7 @@ async function gitFacts(exec: GitExecFn, cwd: string): Promise<GitFacts> {
 }
 
 /** A BoardOps bound to the PRIMARY tree's board (what the human watches). */
-export function makePrimaryBoard(primaryRoot: string): BoardOps {
+export function makePrimaryBoard(primaryRoot: string, exec: GitExecFn): BoardOps {
   const backlogPath = path.join(primaryRoot, 'backlog');
   const parser = new BacklogParser(backlogPath);
   const writer = new BacklogWriter();
@@ -171,6 +171,16 @@ export function makePrimaryBoard(primaryRoot: string): BoardOps {
     },
     async release(taskId) {
       await claims.releaseTask(taskId, parser);
+    },
+    async resetTaskFile(taskId) {
+      const task = await parser.getTask(taskId);
+      if (!task) return;
+      const rel = path.relative(primaryRoot, task.filePath);
+      try {
+        await exec(primaryRoot, ['checkout', '--', rel]);
+      } catch {
+        // best-effort: if it fails, the ff-merge will abort cleanly on the dirty file
+      }
     },
   };
 }
@@ -216,7 +226,7 @@ export async function requestMergeHandler(
       worktreeRel: `.worktrees/${facts.branch}`,
       config,
       queue: queueStoreFor(facts.commonDir, fsDeps),
-      board: deps.board ?? makePrimaryBoard(facts.primaryRoot),
+      board: deps.board ?? makePrimaryBoard(facts.primaryRoot, exec),
       exec,
       run,
       now: deps.now ?? (() => new Date()),
