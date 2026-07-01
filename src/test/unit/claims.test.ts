@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyClaim, clearClaim, isClaimStale, claimTimestamp } from '../../core/claims';
+import { applyClaim, clearClaim, isClaimStale, claimTimestamp, readClaim } from '../../core/claims';
 import { BacklogParser } from '../../core/BacklogParser';
 
 const parser = new BacklogParser('/fake/path');
@@ -111,5 +111,31 @@ describe('claims', () => {
       const stamp = claimTimestamp(d);
       expect(isClaimStale(stamp, 60 * 60 * 1000, d.getTime())).toBe(false);
     });
+  });
+});
+
+describe('readClaim', () => {
+  const base = ['---', 'id: TASK-1', 'title: X', 'status: To Do', '---', '', 'body', ''].join('\n');
+
+  it('returns undefined when there is no claim', () => {
+    expect(readClaim(base)).toBeUndefined();
+  });
+
+  it('reads back a claim written by applyClaim', () => {
+    const claimed = applyClaim(base, {
+      claimedBy: '@alice',
+      worktree: 'task-1-x',
+      claimedAt: '2026-07-01 09:30',
+    });
+    expect(readClaim(claimed)).toEqual({
+      claimedBy: '@alice',
+      worktree: 'task-1-x',
+      claimedAt: '2026-07-01 09:30',
+    });
+  });
+
+  it('omits worktree when absent', () => {
+    const claimed = applyClaim(base, { claimedBy: '@bob', claimedAt: '2026-07-01 10:00' });
+    expect(readClaim(claimed)).toEqual({ claimedBy: '@bob', claimedAt: '2026-07-01 10:00' });
   });
 });

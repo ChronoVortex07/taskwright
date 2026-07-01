@@ -183,3 +183,62 @@ export async function materializeRefToWorktree(
 
   return { files: [...refFiles].sort() };
 }
+
+/** Point a local ref at `sha` (`git update-ref`). */
+export async function setLocalRef(
+  repoRoot: string,
+  ref: string,
+  sha: string,
+  exec: BoardGitExec = defaultBoardExec
+): Promise<void> {
+  await exec(repoRoot, ['update-ref', qualifyRef(ref), sha]);
+}
+
+/**
+ * Fetch `ref` from `remote` and return the fetched remote tip, or null when the
+ * remote does not have the ref. Does not move any local branch itself.
+ */
+export async function fetchRef(
+  repoRoot: string,
+  remote: string,
+  ref: string,
+  exec: BoardGitExec = defaultBoardExec
+): Promise<string | null> {
+  try {
+    await exec(repoRoot, ['fetch', '--quiet', remote, qualifyRef(ref)]);
+  } catch {
+    return null; // remote has no such ref (or unreachable)
+  }
+  try {
+    const { stdout } = await exec(repoRoot, ['rev-parse', '--verify', '--quiet', 'FETCH_HEAD']);
+    const sha = stdout.trim();
+    return sha.length > 0 ? sha : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface PushResult {
+  ok: boolean;
+  rejected: boolean;
+  stderr: string;
+}
+
+/** Push `ref` to `remote` fast-forward-only; `rejected` marks a non-ff rejection. */
+export async function pushRef(
+  repoRoot: string,
+  remote: string,
+  ref: string,
+  exec: BoardGitExec = defaultBoardExec
+): Promise<PushResult> {
+  const q = qualifyRef(ref);
+  try {
+    const { stderr } = await exec(repoRoot, ['push', remote, `${q}:${q}`]);
+    return { ok: true, rejected: false, stderr: stderr ?? '' };
+  } catch (e: unknown) {
+    const err = e as { stderr?: string; message?: string };
+    const stderr = String(err.stderr ?? err.message ?? '');
+    const rejected = /\b(rejected|non-fast-forward|fetch first|stale info)\b/i.test(stderr);
+    return { ok: false, rejected, stderr };
+  }
+}

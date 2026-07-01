@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import {
   DEFAULT_BOARD_REF,
@@ -9,8 +12,34 @@ import {
   defaultBoardExec,
   snapshotBoardToRef,
   materializeRefToWorktree,
+  setLocalRef,
+  fetchRef,
+  pushRef,
 } from '../../core/boardRef';
 import { makeTempGitRepo, TempRepo } from './helpers/tempGitRepo';
+
+const execFileAsync = promisify(execFile);
+
+/** Make `origin` a bare repo and `clone` a working clone of it, both in tmp. */
+async function makeOriginAndClone(): Promise<{
+  origin: string;
+  clone: TempRepo;
+  cleanup: () => void;
+}> {
+  const origin = fs.mkdtempSync(path.join(os.tmpdir(), 'taskwright-origin-'));
+  await execFileAsync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
+  const clone = await makeTempGitRepo();
+  await clone.git(['remote', 'add', 'origin', origin]);
+  await clone.git(['push', '-q', 'origin', 'main']);
+  return {
+    origin,
+    clone,
+    cleanup: () => {
+      clone.cleanup();
+      fs.rmSync(origin, { recursive: true, force: true });
+    },
+  };
+}
 
 describe('boardRef constants + qualifyRef', () => {
   it('exposes the default ref name and board subdirs', () => {
@@ -216,5 +245,90 @@ describe('boardRef round-trip', () => {
     expect(second.files).toEqual(first.files);
     expect(read('backlog/tasks/task-1 - A.md')).toBe('A\n');
     expect(exists('backlog/tasks/task-2 - B.md')).toBe(true);
+  });
+});
+
+describe('remote ref helpers', () => {
+  let origin: string;
+  let clone: TempRepo;
+  let cleanup: () => void;
+  const indexFile = () => path.join(clone.root, '.taskwright', 'board.index');
+
+  beforeEach(async () => {
+    ({ origin, clone, cleanup } = await makeOriginAndClone());
+    clone.addGitignore(['.taskwright/', 'backlog/tasks/']);
+    clone.writeFile('backlog/tasks/task-1 - A.md', 'A\n');
+  });
+  afterEach(() => cleanup());
+
+  it('setLocalRef points a ref at a sha', async () => {
+    const head = await clone.headSha();
+    await setLocalRef(clone.root, 'taskwright-board', head, defaultBoardExec);
+    expect(await refTip(clone.root, 'taskwright-board', defaultBoardExec)).toBe(head);
+  });
+
+  it('fetchRef returns null when origin lacks the ref, sha once it exists', async () => {
+    expect(await fetchRef(clone.root, 'origin', 'taskwright-board', defaultBoardExec)).toBeNull();
+
+    const { commit } = await snapshotBoardToRef({
+      repoRoot: clone.root,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      message: 'seed',
+      exec: defaultBoardExec,
+    });
+    const push = await pushRef(clone.root, 'origin', 'taskwright-board', defaultBoardExec);
+    expect(push.ok).toBe(true);
+
+    expect(await fetchRef(clone.root, 'origin', 'taskwright-board', defaultBoardExec)).toBe(commit);
+  });
+
+  it('pushRef reports a non-fast-forward rejection', async () => {
+    // Seed origin from clone A.
+    await snapshotBoardToRef({
+      repoRoot: clone.root,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      message: 's1',
+      exec: defaultBoardExec,
+    });
+    await pushRef(clone.root, 'origin', 'taskwright-board', defaultBoardExec);
+
+    // Second clone advances origin.
+    const cloneB = await makeTempGitRepo();
+    await cloneB.git(['remote', 'add', 'origin', origin]);
+    cloneB.addGitignore(['.taskwright/', 'backlog/tasks/']);
+    await setLocalRef(
+      cloneB.root,
+      'taskwright-board',
+      (await fetchRef(cloneB.root, 'origin', 'taskwright-board', defaultBoardExec))!,
+      defaultBoardExec
+    );
+    cloneB.writeFile('backlog/tasks/task-2 - B.md', 'B\n');
+    await snapshotBoardToRef({
+      repoRoot: cloneB.root,
+      ref: 'taskwright-board',
+      indexFile: path.join(cloneB.root, '.taskwright/board.index'),
+      message: 's2',
+      parent: (await refTip(cloneB.root, 'taskwright-board', defaultBoardExec)) ?? undefined,
+      exec: defaultBoardExec,
+    });
+    await pushRef(cloneB.root, 'origin', 'taskwright-board', defaultBoardExec);
+
+    // Clone A makes a divergent commit on the OLD base and pushes -> rejected.
+    clone.writeFile('backlog/tasks/task-3 - C.md', 'C\n');
+    await snapshotBoardToRef({
+      repoRoot: clone.root,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      message: 's3',
+      parent: (await refTip(clone.root, 'taskwright-board', defaultBoardExec)) ?? undefined,
+      exec: defaultBoardExec,
+    });
+    const push = await pushRef(clone.root, 'origin', 'taskwright-board', defaultBoardExec);
+    expect(push.ok).toBe(false);
+    expect(push.rejected).toBe(true);
+
+    cloneB.cleanup();
   });
 });

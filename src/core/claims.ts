@@ -85,3 +85,33 @@ export function isClaimStale(
   if (Number.isNaN(t)) return false;
   return now - t > maxAgeMs;
 }
+
+/** Unquote a frontmatter scalar: strips matching quotes, unescapes doubled single-quotes. */
+function unquote(value: string): string {
+  const v = value.trim();
+  if (v.startsWith("'") && v.endsWith("'")) return v.slice(1, -1).replace(/''/g, "'");
+  if (v.startsWith('"') && v.endsWith('"')) return v.slice(1, -1);
+  return v;
+}
+
+/**
+ * Parse the claim from a task file's frontmatter, or undefined when unclaimed.
+ * The inverse of {@link applyClaim}.
+ */
+export function readClaim(content: string): Claim | undefined {
+  const split = splitFrontmatter(content);
+  if (!split) return undefined;
+  let claimedBy: string | undefined;
+  let worktree: string | undefined;
+  let claimedAt: string | undefined;
+  for (const line of split.fields) {
+    const m = line.match(/^(claimed_by|worktree|claimed_at):(.*)$/);
+    if (!m) continue;
+    const val = unquote(m[2]);
+    if (m[1] === 'claimed_by') claimedBy = val;
+    else if (m[1] === 'worktree') worktree = val;
+    else claimedAt = val;
+  }
+  if (!claimedBy) return undefined;
+  return { claimedBy, claimedAt: claimedAt ?? '', ...(worktree ? { worktree } : {}) };
+}
