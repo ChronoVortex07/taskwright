@@ -15,7 +15,13 @@ import {
   renderChecklist,
 } from './taskWriteHelpers';
 import { isPrimaryTree } from '../core/worktreeGuard';
-import { MergeQueueStore, mergeQueuePath, nodeQueueFs, positionOf } from '../core/mergeQueue';
+import {
+  MergeQueueStore,
+  mergeQueuePath,
+  nodeQueueFs,
+  positionOf,
+  type QueueFsDeps,
+} from '../core/mergeQueue';
 import { mergeConfigPath, readMergeConfig } from '../core/mergeConfig';
 import {
   requestMerge,
@@ -48,7 +54,7 @@ export interface McpHandlerDeps {
   /** Injectable board (defaults to makePrimaryBoard(primaryRoot)). Tests override. */
   board?: BoardOps;
   /** Injectable fs adapter for queue/config I/O (defaults to nodeQueueFs). Tests override. */
-  fsDeps?: import('../core/mergeQueue').QueueFsDeps;
+  fsDeps?: QueueFsDeps;
 }
 
 export interface PlanProgressSummary {
@@ -169,10 +175,7 @@ export function makePrimaryBoard(primaryRoot: string): BoardOps {
   };
 }
 
-function queueStoreFor(
-  commonDir: string,
-  fsDeps: import('../core/mergeQueue').QueueFsDeps = nodeQueueFs
-): MergeQueueStore {
+function queueStoreFor(commonDir: string, fsDeps: QueueFsDeps = nodeQueueFs): MergeQueueStore {
   return new MergeQueueStore(mergeQueuePath(commonDir), fsDeps);
 }
 
@@ -276,10 +279,11 @@ export async function getActiveTask(deps: McpHandlerDeps): Promise<ActiveTaskRes
   let queuePosition: number | undefined;
   try {
     const exec = deps.gitExec ?? defaultGitExec;
+    const fsDeps = deps.fsDeps ?? nodeQueueFs;
     const commonDir = path.resolve(
       (await exec(deps.root, ['rev-parse', '--git-common-dir'])).stdout.trim()
     );
-    const pos = positionOf(queueStoreFor(commonDir, deps.fsDeps).read(), active.taskId);
+    const pos = positionOf(queueStoreFor(commonDir, fsDeps).read(), active.taskId);
     if (pos > 0) queuePosition = pos;
   } catch {
     // not a git repo / no queue — omit the field
