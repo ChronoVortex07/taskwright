@@ -9,7 +9,12 @@ external CLI. At the start of a task session:
 2. **Stay in your worktree.** Your task runs in `.worktrees/<branch>`. `cd` there
    first and run all git/file/test commands inside it. Never `git checkout`,
    `commit`, or `merge` in the repository root — it is shared with other agents,
-   and a managed `pre-commit` hook will block such commits.
+   and a managed `pre-commit` hook will block such commits. A fresh worktree has
+   no `node_modules` (git-ignored), so run `bun install` there once before you
+   build or test. The `taskwright` MCP server runs from the primary build (via
+   `scripts/taskwright-mcp.cjs`), so if your task edits the MCP server itself,
+   those changes only take effect after the task is merged and the primary is
+   rebuilt.
 3. `claim_task` — mark it in progress (advisory; prevents cross-worktree collisions).
 4. Do the work. Use `create_task` / `edit_task` to add or update tasks, `create_subtask` for
    breakdowns, and `complete_task` when done. Record progress with `edit_task`

@@ -49,6 +49,18 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   the agentic banners (claim / set-active / dispatch) lives in `e2e/dispatch.spec.ts` — `bun run proof` builds
   and runs it, writing screenshots to `e2e/__screenshots__/dispatch/` (git-ignored).
   Opt-in `taskwright.dispatchOpenTerminal` + `taskwright.dispatchTerminalCommand` run a command (templated on `{{handoffFile}}`) in the worktree terminal; the command is refused if it uses `claude -p` (subscription-safe — `resolveTerminalLaunch` / `commandUsesClaudePrintMode` in `src/core/dispatchPrompt.ts`).
+- **Build-independent MCP in worktrees** ✅: a dispatched `.worktrees/<branch>` has no git-ignored `dist/`, so
+  `.mcp.json`'s old relative `node dist/mcp/server.js` never started and the agent lost every `taskwright` MCP
+  tool. `.mcp.json` now launches the server via the committed, dependency-free `scripts/taskwright-mcp.cjs`,
+  which resolves the **primary** checkout (via `git rev-parse --git-common-dir`) and runs its already-built,
+  standalone `dist/mcp/server.js` in-process with the worktree as `TASKWRIGHT_ROOT` — so MCP tools are live at
+  session start with no per-worktree build (pure `resolveMainServerPath` is unit-tested; the standalone bundle
+  needs no `node_modules`). Caveat: the running server reflects the **primary** build, so a task editing the MCP
+  server itself won't exercise its changes live until merged and the primary is rebuilt. For build/test, the
+  worktree still needs deps: the dispatch prompt tells the session to `bun install` in its worktree on demand.
+  (A `node_modules` junction was rejected — `request_merge`'s `git worktree remove --force` follows the reparse
+  point and wipes the **shared** install.) Design:
+  `docs/superpowers/specs/2026-07-01-buildable-worktrees-and-shared-mcp-design.md`.
 - **Intake — "Categorize with Claude"** ✅ (Phase 3): `backlog.categorizeWithClaude` captures the raw notes in
   the active editor (selection, else whole doc), renders a paste-ready prompt constrained by the board's
   labels/statuses/priorities, and copies it to the clipboard for a session to create tasks via the Backlog.md

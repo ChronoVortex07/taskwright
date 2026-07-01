@@ -153,6 +153,11 @@ describe('DEFAULT_DISPATCH_TEMPLATE worktree isolation', () => {
     expect(DEFAULT_DISPATCH_TEMPLATE).toContain('cd into it');
     expect(DEFAULT_DISPATCH_TEMPLATE).toContain('repository root');
   });
+
+  it('tells the session to bun install in the worktree before building/testing', () => {
+    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('bun install');
+    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('node_modules');
+  });
 });
 
 describe('resolveTerminalLaunch', () => {

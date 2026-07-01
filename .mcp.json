@@ -3,7 +3,7 @@
     "taskwright": {
       "type": "stdio",
       "command": "node",
-      "args": ["dist/mcp/server.js"],
+      "args": ["scripts/taskwright-mcp.cjs"],
       "env": {}
     },
     "svelte": {

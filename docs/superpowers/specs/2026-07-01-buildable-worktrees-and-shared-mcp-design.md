@@ -31,10 +31,12 @@ artifacts are absent:
 - The MCP server is **branch-agnostic infrastructure** — its behavior (read/write backlog,
   claims, merge queue) does not depend on the task's code under test.
 
-## Approach (chosen: "Launcher + node_modules link")
+## Approach (chosen: launcher + on-demand install)
 
-Two independent components. Component A fixes the MCP breakage without any per-worktree build;
-Component B makes the worktree buildable cheaply.
+Two independent components. Component A fixes the MCP breakage without any per-worktree build.
+Component B keeps the worktree buildable via an on-demand `bun install` documented in the dispatch
+prompt — an originally-approved `node_modules` junction was abandoned mid-implementation after
+end-to-end testing proved it destroys the shared install (see Component B).
 
 ### Component A — Shared MCP launcher
 
@@ -65,40 +67,45 @@ can import the `.cjs` without launching a server.
 server path (string logic only), exported from the launcher; the `git` call, existence check,
 and `require` are thin glue around it.
 
-### Component B — `node_modules` link into new worktrees
+### Component B — on-demand `bun install` (docs, not code)
 
-New `linkNodeModules(repoRoot, worktreePath, deps)` in `src/core/WorktreeService.ts`, using the
-same injectable-`fs` style as `createWorktree`:
+The worktree still needs `node_modules` to run `bun run build`/`test`/`lint`/Playwright. The
+`DEFAULT_DISPATCH_TEMPLATE` (`src/core/dispatchPrompt.ts`) instructs the dispatched session to run
+`bun install` in its worktree once before building or testing; `AGENTS.md` states the same for
+agents. No extension code provisions `node_modules`.
 
-- Acts only when the worktree was **newly created**, has no `node_modules`, and the primary repo
-  **does** have `node_modules`.
-- `fs.symlinkSync(primaryNodeModules, worktreeNodeModules, type)` with
-  `type = process.platform === 'win32' ? 'junction' : 'dir'`. Directory junctions need no admin
-  on Windows and resolve transparently for `bun`/`node`.
-- Invoked from `src/providers/dispatchActions.ts` immediately after `createWorktree` returns
-  `created: true`. Failures are **non-fatal** (log a warning and continue), mirroring the
-  existing worktree-creation error handling.
-
-**Testable seam:** a pure `nodeModulesLinkPlan(repoRoot, worktreePath)` returning
-`{ target, linkPath, type }`; unit-test path construction and the skip conditions with a mocked
-`existsSync`.
+**Rejected alternative — `node_modules` junction/symlink (originally approved, then abandoned).**
+The plan was to junction (Windows) / symlink each new worktree's `node_modules` to the primary's
+for instant buildability. Smoke testing revealed this is **unsafe**: `request_merge` cleanup calls
+`removeWorktree` → `git worktree remove --force` (`src/core/finishTask.ts:215`), and on Windows
+that recursive delete **follows the directory junction and wipes the primary's `node_modules`**
+(reproduced: it emptied the shared install, breaking every other worktree). Because worktrees are
+removed automatically on every merge — and, in a multi-agent setup, unpredictably — the blast
+radius (destroying shared deps for all agents) is unacceptable. A real per-worktree `bun install`
+(isolated, safe to delete) and "make cleanup junction-aware" were also considered; on-demand
+install was chosen for keeping dispatch instant and subscription-safe with zero footgun, given the
+confirmed pain (MCP failing to load) is fully solved by Component A, which needs no `node_modules`.
 
 ### Configuration
 
-- `taskwright.dispatchLinkNodeModules` (boolean, default `true`) — opt-out for Component B, in
-  parity with the existing `taskwright.dispatchCreateWorktree`.
+- Component B contributes **no** setting (it is documentation only).
 - Component A gets **no** setting: it is a strict improvement over the current relative path.
 
 ## Testing (TDD, Vitest)
 
-Write failing unit tests first for both pure seams before implementing:
+Write failing unit tests first before implementing:
 
 - `resolveMainServerPath` — primary-checkout case and linked-worktree case (both derive
-  `<primaryRoot>/dist/mcp/server.js` from the `--git-common-dir` output + cwd). Tested by
-  `require`-ing `scripts/taskwright-mcp.cjs` (the `require.main` guard keeps the import
-  side-effect-free); the "build missing" stderr/exit branch is thin glue, asserted separately.
-- `nodeModulesLinkPlan` — path construction + each skip condition (worktree already has
-  `node_modules`; primary lacks `node_modules`; reused worktree) via mocked `existsSync`.
+  `<primaryRoot>/dist/mcp/server.js` from the `--git-common-dir` output + cwd), plus the relative
+  fallback. Tested by `require`-ing `scripts/taskwright-mcp.cjs` (the `require.main` guard keeps
+  the import side-effect-free); the "build missing" stderr/exit branch is thin glue.
+- `DEFAULT_DISPATCH_TEMPLATE` — asserts the on-demand `bun install` / `node_modules` guidance is
+  present (Component B is prompt text, so this is its only automated check).
+
+Beyond unit tests, Component A is validated end-to-end: build the primary, create a throwaway
+worktree with **no** `dist/`, launch `scripts/taskwright-mcp.cjs` with the worktree as cwd, and
+confirm an MCP `initialize` + `tools/list` handshake returns `serverInfo` and the taskwright tools
+with `root` = the worktree.
 
 Then run the full gate: `bun run test && bun run lint && bun run typecheck`. (Note: ~22 upstream
 unit tests assert POSIX paths and fail on Windows by design — see `CLAUDE.md`.)
@@ -109,20 +116,21 @@ unit tests assert POSIX paths and fail on Windows by design — see `CLAUDE.md`.
   won't exercise its own changes live until it is merged and the primary is rebuilt. This is
   acceptable — arguably safer, since a half-edited server should not drive the shared merge
   queue for other live agents. Note this in `AGENTS.md` / `CLAUDE.md`.
-- Linked `node_modules` is shared with the primary: `bun add` inside a worktree mutates the
-  shared store. Document "add dependencies from the primary checkout."
+- A dispatched worktree has no `node_modules` until the session runs `bun install` there. The
+  first build/test in a worktree therefore pays a one-time install (warm bun cache keeps it
+  cheap). Documented in the dispatch prompt and `AGENTS.md`.
 
 ## Out of scope
 
-- Per-worktree full builds / installs (Approach ②).
+- Auto-provisioning `node_modules` (junction rejected as unsafe; per-worktree auto-install
+  rejected for blocking dispatch — see Component B).
 - Any change to dispatch's paste-based, subscription-safe UX.
 
 ## Affected files
 
 - `scripts/taskwright-mcp.cjs` (new) — launcher; hosts and exports pure `resolveMainServerPath`.
 - `.mcp.json` — point `taskwright` at the launcher.
-- `src/core/WorktreeService.ts` — `linkNodeModules` + pure `nodeModulesLinkPlan`.
-- `src/providers/dispatchActions.ts` — call the link step; read `dispatchLinkNodeModules`.
-- `package.json` — contribute the `taskwright.dispatchLinkNodeModules` setting.
-- Tests under `src/test/…` for both pure seams (the launcher test `require`s the `.cjs`).
-- `AGENTS.md` / `CLAUDE.md` — document the two limitations.
+- `src/core/dispatchPrompt.ts` — on-demand `bun install` line in `DEFAULT_DISPATCH_TEMPLATE`.
+- `src/test/…` — `resolveMainServerPath` tests (launcher test `require`s the `.cjs`) and the
+  dispatch-template assertion.
+- `AGENTS.md` / `CLAUDE.md` — document the MCP launcher, the on-demand install, and the caveats.
