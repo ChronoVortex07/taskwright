@@ -76,6 +76,10 @@ export interface SyncEngineDeps {
   writeClaimToFile: (filePath: string, claim: Claim) => void;
   clearClaimInFile: (filePath: string) => void;
   findTaskFile: (repoRoot: string, backlogDir: string, taskId: string) => string | null;
+  /** The board-ref sha last materialized into this worktree, or null if unknown. */
+  readMaterialized: (target: SyncTarget) => string | null;
+  /** Record the board-ref sha just materialized into this worktree. */
+  writeMaterialized: (target: SyncTarget, sha: string) => void;
   sleep: (ms: number) => Promise<void>;
   now: () => Date;
 }
@@ -87,6 +91,15 @@ function rewriteFile(filePath: string, transform: (content: string) => string): 
   const hadCRLF = detectCRLF(raw);
   const updated = transform(normalizeToLF(raw));
   fs.writeFileSync(filePath, restoreLineEndings(updated, hadCRLF), 'utf-8');
+}
+
+/**
+ * Per-worktree marker recording the board-ref sha last materialized into this
+ * working copy. Lives beside the isolated index in the worktree's git-ignored
+ * `.taskwright/`, so each worktree tracks its own materialization independently.
+ */
+function materializedMarkerPath(target: SyncTarget): string {
+  return path.join(path.dirname(target.indexFile), 'board.materialized');
 }
 
 export const defaultSyncEngineDeps: SyncEngineDeps = {
@@ -112,6 +125,19 @@ export const defaultSyncEngineDeps: SyncEngineDeps = {
   writeClaimToFile: (filePath, claim) => rewriteFile(filePath, (c) => applyClaim(c, claim)),
   clearClaimInFile: (filePath) => rewriteFile(filePath, clearClaim),
   findTaskFile,
+  readMaterialized: (target) => {
+    try {
+      const sha = fs.readFileSync(materializedMarkerPath(target), 'utf-8').trim();
+      return sha.length > 0 ? sha : null;
+    } catch {
+      return null;
+    }
+  },
+  writeMaterialized: (target, sha) => {
+    const p = materializedMarkerPath(target);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, `${sha}\n`, 'utf-8');
+  },
   sleep: (ms) => new Promise((res) => setTimeout(res, ms)),
   now: () => new Date(),
 };
@@ -169,7 +195,7 @@ export async function claimTaskSynced(
       ...(opts.worktree ? { worktree: opts.worktree } : {}),
     };
     d.writeClaimToFile(file, claim);
-    await d.snapshot({
+    const snap = await d.snapshot({
       repoRoot: target.repoRoot,
       ref: target.ref,
       indexFile: target.indexFile,
@@ -178,10 +204,19 @@ export async function claimTaskSynced(
       backlogDir,
     });
 
-    if (!target.remote) return { status: 'claimed', claim };
+    // The working copy now matches the snapshot commit, so record it as the
+    // materialized sha — this keeps a later refreshBoard poll from redundantly
+    // re-materializing (and re-rendering) content this worktree already wrote.
+    if (!target.remote) {
+      d.writeMaterialized(target, snap.commit);
+      return { status: 'claimed', claim };
+    }
 
     const push = await d.pushRef(target.repoRoot, target.remote, target.ref);
-    if (push.ok) return { status: 'claimed', claim };
+    if (push.ok) {
+      d.writeMaterialized(target, snap.commit);
+      return { status: 'claimed', claim };
+    }
     if (!push.rejected) return { status: 'failed', reason: push.stderr || 'push failed' };
 
     await d.sleep(backoffMs(attempt)); // remote advanced — re-fetch and retry
@@ -204,7 +239,7 @@ export async function releaseTaskSynced(
     if (!file) return { status: 'failed', reason: `Task ${taskId} not found on the board` };
 
     d.clearClaimInFile(file);
-    await d.snapshot({
+    const snap = await d.snapshot({
       repoRoot: target.repoRoot,
       ref: target.ref,
       indexFile: target.indexFile,
@@ -213,28 +248,50 @@ export async function releaseTaskSynced(
       backlogDir,
     });
 
-    if (!target.remote) return { status: 'released' };
+    if (!target.remote) {
+      d.writeMaterialized(target, snap.commit);
+      return { status: 'released' };
+    }
     const push = await d.pushRef(target.repoRoot, target.remote, target.ref);
-    if (push.ok) return { status: 'released' };
+    if (push.ok) {
+      d.writeMaterialized(target, snap.commit);
+      return { status: 'released' };
+    }
     if (!push.rejected) return { status: 'failed', reason: push.stderr || 'push failed' };
     await d.sleep(backoffMs(attempt));
   }
   return { status: 'failed', reason: 'exhausted retries (remote kept advancing)' };
 }
 
-/** Fetch and, if the remote advanced, fast-forward the local ref and materialize. */
+/**
+ * Reflect the shared board ref in THIS worktree's working copy. Fast-forwards the
+ * local ref to the remote tip (when a remote is set), then re-materializes when
+ * the working copy is behind the local ref tip.
+ *
+ * The local ref (`refs/heads/taskwright-board`) is **shared across git
+ * worktrees**, so a claim/release made from a sibling worktree (e.g. a dispatched
+ * task session's MCP server) advances the shared ref — and the remote — without
+ * ever touching this worktree's `backlog/tasks` files. Gating materialize on
+ * `local === remote` therefore misses that update, leaving the board view stale.
+ * Instead we record the sha last materialized into this worktree and refresh
+ * whenever the ref has moved past it.
+ */
 export async function refreshBoard(
   target: SyncTarget,
   opts: { deps?: Partial<SyncEngineDeps> } = {}
 ): Promise<{ changed: boolean }> {
   const d: SyncEngineDeps = { ...defaultSyncEngineDeps, ...opts.deps };
-  const local = await d.refTip(target.repoRoot, target.ref);
-  if (!target.remote) return { changed: false };
 
-  const remoteTip = await d.fetchRef(target.repoRoot, target.remote, target.ref);
-  if (!remoteTip || remoteTip === local) return { changed: false };
+  if (target.remote) {
+    const remoteTip = await d.fetchRef(target.repoRoot, target.remote, target.ref);
+    if (remoteTip) await d.setLocalRef(target.repoRoot, target.ref, remoteTip);
+  }
 
-  await d.setLocalRef(target.repoRoot, target.ref, remoteTip);
+  const localTip = await d.refTip(target.repoRoot, target.ref);
+  if (!localTip) return { changed: false };
+  if (d.readMaterialized(target) === localTip) return { changed: false };
+
   await d.materialize(target);
+  d.writeMaterialized(target, localTip);
   return { changed: true };
 }

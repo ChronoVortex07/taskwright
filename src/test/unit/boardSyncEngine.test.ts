@@ -14,7 +14,7 @@ import {
   type SyncTarget,
 } from '../../core/boardSyncEngine';
 import type { Claim } from '../../core/claims';
-import { snapshotBoardToRef, pushRef, fetchRef, setLocalRef } from '../../core/boardRef';
+import { snapshotBoardToRef, pushRef, fetchRef, setLocalRef, refTip } from '../../core/boardRef';
 import { makeTempGitRepo, type TempRepo } from './helpers/tempGitRepo';
 
 const execFileAsync = promisify(execFile);
@@ -54,6 +54,7 @@ const TARGET: SyncTarget = {
 /** Build fully-faked deps; each test overrides only what it needs. */
 function fakeDeps(over: Partial<SyncEngineDeps> = {}): SyncEngineDeps {
   let claimOnDisk: Claim | undefined;
+  let materializedMarker: string | null = null;
   return {
     fetchRef: async () => 'remote-tip',
     setLocalRef: async () => {},
@@ -69,6 +70,10 @@ function fakeDeps(over: Partial<SyncEngineDeps> = {}): SyncEngineDeps {
       claimOnDisk = undefined;
     },
     findTaskFile: () => '/repo/backlog/tasks/task-1 - A.md',
+    readMaterialized: () => materializedMarker,
+    writeMaterialized: (_t, sha) => {
+      materializedMarker = sha;
+    },
     sleep: async () => {},
     // Local-time construction so it lines up with the bare 'YYYY-MM-DD HH:mm'
     // claim strings below (claimTimestamp/isClaimStale both treat those as local).
@@ -183,12 +188,35 @@ describe('releaseTaskSynced', () => {
 });
 
 describe('refreshBoard', () => {
-  it('materializes when the remote tip advanced', async () => {
+  it('fast-forwards the local ref to the fetched remote tip before materializing', async () => {
+    let setTo: string | undefined;
+    await refreshBoard(TARGET, {
+      deps: fakeDeps({
+        fetchRef: async () => 'remote-new',
+        setLocalRef: async (_r, _ref, sha) => {
+          setTo = sha;
+        },
+        refTip: async () => 'remote-new',
+        readMaterialized: () => 'old',
+      }),
+    });
+    expect(setTo).toBe('remote-new');
+  });
+
+  it('materializes when the ref advanced past what this worktree last materialized', async () => {
+    // A sibling worktree already advanced BOTH the shared local ref and the
+    // remote to 'new', so local === remote — the old sha-equality check missed
+    // this and left the working copy stale.
     let materialized = 0;
+    let marker: string | null = 'old';
     const out = await refreshBoard(TARGET, {
       deps: fakeDeps({
-        refTip: async () => 'old',
         fetchRef: async () => 'new',
+        refTip: async () => 'new',
+        readMaterialized: () => marker,
+        writeMaterialized: (_t, sha) => {
+          marker = sha;
+        },
         materialize: async () => {
           materialized += 1;
         },
@@ -196,14 +224,16 @@ describe('refreshBoard', () => {
     });
     expect(out).toEqual({ changed: true });
     expect(materialized).toBe(1);
+    expect(marker).toBe('new'); // marker advanced so the next poll is a no-op
   });
 
-  it('does nothing when local already matches the remote tip', async () => {
+  it('does nothing when this worktree already materialized the current ref tip', async () => {
     let materialized = 0;
     const out = await refreshBoard(TARGET, {
       deps: fakeDeps({
-        refTip: async () => 'same',
         fetchRef: async () => 'same',
+        refTip: async () => 'same',
+        readMaterialized: () => 'same',
         materialize: async () => {
           materialized += 1;
         },
@@ -211,6 +241,22 @@ describe('refreshBoard', () => {
     });
     expect(out).toEqual({ changed: false });
     expect(materialized).toBe(0);
+  });
+
+  it('materializes on first refresh when this worktree has no marker yet', async () => {
+    let materialized = 0;
+    const out = await refreshBoard(TARGET, {
+      deps: fakeDeps({
+        fetchRef: async () => 'tip',
+        refTip: async () => 'tip',
+        readMaterialized: () => null,
+        materialize: async () => {
+          materialized += 1;
+        },
+      }),
+    });
+    expect(out).toEqual({ changed: true });
+    expect(materialized).toBe(1);
   });
 });
 
@@ -273,5 +319,73 @@ describe('two-clone anti-double-claim (integration)', () => {
       stalenessMs: 60 * 60 * 1000,
     });
     expect(second).toEqual({ status: 'surrendered', by: '@alice' });
+  });
+});
+
+describe('shared-worktree board refresh (integration)', () => {
+  let origin: string;
+  let primary: TempRepo;
+  const taskFile = 'backlog/tasks/task-1 - A.md';
+
+  const target = (root: string): SyncTarget => ({
+    repoRoot: root,
+    ref: 'taskwright-board',
+    remote: 'origin',
+    indexFile: path.join(root, '.taskwright/board.index'),
+    backlogDir: 'backlog',
+  });
+
+  beforeEach(async () => {
+    origin = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-wt-origin-'));
+    await execFileAsync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
+
+    primary = await makeTempGitRepo();
+    await primary.git(['remote', 'add', 'origin', origin]);
+    await primary.git(['push', '-q', 'origin', 'main']);
+    primary.addGitignore(['.taskwright/', '.worktrees/', 'backlog/tasks/']);
+    primary.writeFile(
+      taskFile,
+      '---\nid: TASK-1\ntitle: A\nstatus: To Do\nassignee: []\ndependencies: []\n---\n'
+    );
+
+    // Seed + publish the board from the primary checkout.
+    await snapshotBoardToRef({
+      repoRoot: primary.root,
+      ref: 'taskwright-board',
+      indexFile: path.join(primary.root, '.taskwright/board.index'),
+      message: 'seed',
+    });
+    await pushRef(primary.root, 'origin', 'taskwright-board');
+  });
+
+  afterEach(() => {
+    primary.cleanup();
+    fs.rmSync(origin, { recursive: true, force: true });
+  });
+
+  it('reflects a claim made from a sibling worktree even though local === remote', async () => {
+    // Steady state: the extension has materialized the seed into the primary.
+    await refreshBoard(target(primary.root));
+    expect(fs.readFileSync(path.join(primary.root, taskFile), 'utf-8')).not.toContain('claimed_by');
+
+    // A dispatched session claims the task from a sibling git worktree. Worktrees
+    // SHARE refs/heads/taskwright-board, so this advances the primary's local ref
+    // AND the remote in lockstep — local stays === remote from the primary's view.
+    const wt = path.join(primary.root, '.worktrees', 'task-1');
+    await primary.git(['worktree', 'add', '-q', '-b', 'task-1', wt, 'main']);
+    const outcome = await claimTaskSynced(target(wt), 'TASK-1', '@agent', { worktree: 'task-1' });
+    expect(outcome.status).toBe('claimed');
+
+    // Sanity: the primary's local ref now equals the remote (the worktree moved both).
+    const primaryTip = (await fetchRef(primary.root, 'origin', 'taskwright-board'))!;
+    expect(await refTip(primary.root, 'taskwright-board')).toBe(primaryTip);
+
+    // The extension polls the primary. Despite local === remote, the primary's
+    // working copy is still on the seed — it MUST re-materialize the claim.
+    const refreshed = await refreshBoard(target(primary.root));
+    expect(refreshed).toEqual({ changed: true });
+    expect(fs.readFileSync(path.join(primary.root, taskFile), 'utf-8')).toContain(
+      "claimed_by: '@agent'"
+    );
   });
 });
