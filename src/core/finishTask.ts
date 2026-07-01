@@ -239,7 +239,6 @@ export async function deleteBranch(
 /** Board mutations `request_merge` performs against the PRIMARY tree's board. */
 export interface BoardOps {
   setStatus(taskId: string, status: string): Promise<void>;
-  complete(taskId: string): Promise<void>;
   release(taskId: string): Promise<void>;
   /** Discard the primary tree's uncommitted edits to this task's file so a
    *  fast-forward merge can update it (drops the transient intermediate-status write). */
@@ -354,7 +353,8 @@ export async function requestMerge(deps: FinishDeps, taskId: string): Promise<Re
       };
     }
 
-    // 5-6. Perform the action, then complete + clean up.
+    // 5-6. Perform the action, then mark Done + clean up. The task file stays on
+    // the board (status Done); filing it into completed/ is a separate, opt-in action.
     if (config.mode === 'auto-pr') {
       const pr = await openPullRequest(exec, run, root, branch, base);
       if (!pr.ok) {
@@ -362,7 +362,6 @@ export async function requestMerge(deps: FinishDeps, taskId: string): Promise<Re
         return { status: 'aborted', reason: pr.reason ?? 'Opening the pull request failed.' };
       }
       await board.setStatus(taskId, 'Done');
-      await board.complete(taskId);
       await board.release(taskId);
       await removeWorktree(exec, primaryRoot, worktreeRel); // keep the branch for the PR
       return { status: 'pr_opened', taskId, url: pr.url ?? '' };
@@ -375,7 +374,6 @@ export async function requestMerge(deps: FinishDeps, taskId: string): Promise<Re
       return { status: 'aborted', reason: merge.reason ?? 'Fast-forward merge failed.' };
     }
     await board.setStatus(taskId, 'Done');
-    await board.complete(taskId);
     await board.release(taskId);
     await removeWorktree(exec, primaryRoot, worktreeRel);
     await deleteBranch(exec, primaryRoot, branch);

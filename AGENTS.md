@@ -16,10 +16,12 @@ external CLI. At the start of a task session:
    those changes only take effect after the task is merged and the primary is
    rebuilt.
 3. `claim_task` — mark it in progress (advisory; prevents cross-worktree collisions).
-4. Do the work. Use `create_task` / `edit_task` to add or update tasks, `create_subtask` for
-   breakdowns, and `complete_task` when done. Record progress with `edit_task`
-   (implementationNotes / finalSummary).
-5. **Close with `request_merge`.** When the task is committed and your worktree is clean, call `request_merge` from inside your worktree and wait for it to return. It rebases onto the base branch, runs the verify commands, waits for its turn in the shared merge queue (and, in manual-review mode, for your human's approval on the board), then fast-forward-merges to the base branch (or opens a PR), marks the task Done, and removes your worktree. Do not merge, commit, or push from the repo root yourself. (`release_task` is called for you as part of cleanup; call it directly only if you hand off without integrating.)
+4. Do the work. Use `create_task` / `edit_task` to add or update tasks, and `create_subtask` for
+   breakdowns. Record progress with `edit_task` (implementationNotes / finalSummary). Do **not** call
+   `complete_task` as part of the normal flow — `request_merge` marks the task **Done** on the board,
+   and it stays there. (`complete_task` files a task away into `backlog/completed/`, which removes it
+   from the board; it is an opt-in archival action, not the way a merged task reaches Done.)
+5. **Close with `request_merge`.** When the task is committed and your worktree is clean, call `request_merge` from inside your worktree and wait for it to return. It rebases onto the base branch, runs the verify commands, waits for its turn in the shared merge queue (and, in manual-review mode, for your human's approval on the board), then fast-forward-merges to the base branch (or opens a PR), marks the task **Done** on the board (leaving it in `tasks/`), and removes your worktree. Do not merge, commit, or push from the repo root yourself. (`release_task` is called for you as part of cleanup; call it directly only if you hand off without integrating.)
 
 Generated task files stay byte-for-byte compatible with Backlog.md, so the board remains
 readable by the upstream tools if they are installed.

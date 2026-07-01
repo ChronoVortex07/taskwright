@@ -55,6 +55,24 @@ export function upsertScalarField(content: string, key: string, value: string): 
 }
 
 /**
+ * Set the `status` field in place, **unquoted** — Backlog.md serializes status
+ * as a plain scalar even when it contains spaces (`status: In Progress`), so
+ * quoting it would break the byte-for-byte frontmatter contract. Replaces the
+ * existing `status:` line (preserving field order); returns `content` unchanged
+ * when there is no frontmatter block or no existing status line.
+ */
+export function setStatusField(content: string, status: string): string {
+  const split = splitFrontmatter(content);
+  if (!split) return content;
+  const re = fieldKeyRe('status');
+  const idx = split.fields.findIndex((f) => re.test(f));
+  if (idx < 0) return content;
+  const fields = [...split.fields];
+  fields[idx] = `status: ${status}`;
+  return [...split.before, ...fields, ...split.after].join('\n');
+}
+
+/**
  * Remove a field from the frontmatter. Idempotent: returns the exact input
  * string when the field (or frontmatter) is absent.
  */

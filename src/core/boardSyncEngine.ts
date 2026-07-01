@@ -8,6 +8,7 @@ import {
   readClaim,
   type Claim,
 } from './claims';
+import { setStatusField } from './frontmatterEdit';
 import { detectCRLF, normalizeToLF, restoreLineEndings } from './BacklogWriter';
 import {
   fetchRef as realFetchRef,
@@ -75,6 +76,7 @@ export interface SyncEngineDeps {
   readTaskClaim: (filePath: string) => Claim | undefined;
   writeClaimToFile: (filePath: string, claim: Claim) => void;
   clearClaimInFile: (filePath: string) => void;
+  writeStatusToFile: (filePath: string, status: string) => void;
   findTaskFile: (repoRoot: string, backlogDir: string, taskId: string) => string | null;
   /** The board-ref sha last materialized into this worktree, or null if unknown. */
   readMaterialized: (target: SyncTarget) => string | null;
@@ -124,6 +126,7 @@ export const defaultSyncEngineDeps: SyncEngineDeps = {
   },
   writeClaimToFile: (filePath, claim) => rewriteFile(filePath, (c) => applyClaim(c, claim)),
   clearClaimInFile: (filePath) => rewriteFile(filePath, clearClaim),
+  writeStatusToFile: (filePath, status) => rewriteFile(filePath, (c) => setStatusField(c, status)),
   findTaskFile,
   readMaterialized: (target) => {
     try {
@@ -224,12 +227,21 @@ export async function claimTaskSynced(
   return { status: 'failed', reason: 'exhausted retries (remote kept advancing)' };
 }
 
-export async function releaseTaskSynced(
+/**
+ * Shared CAS loop for an unconditional single-file board mutation: fetch →
+ * fast-forward local → materialize → locate the task file → `mutate` it →
+ * snapshot → ff-only push, retrying when the remote advances. Unlike
+ * `claimTaskSynced` there is no surrender check — the caller already owns the
+ * right to write (e.g. releasing its own claim, or `request_merge` driving the
+ * task it holds through the merge). Returns the new commit on success.
+ */
+async function mutateTaskSynced(
   target: SyncTarget,
   taskId: string,
-  opts: { deps?: Partial<SyncEngineDeps> } = {}
-): Promise<{ status: 'released' } | { status: 'failed'; reason: string }> {
-  const d: SyncEngineDeps = { ...defaultSyncEngineDeps, ...opts.deps };
+  message: string,
+  mutate: (filePath: string, d: SyncEngineDeps) => void,
+  d: SyncEngineDeps
+): Promise<{ status: 'ok'; commit: string } | { status: 'failed'; reason: string }> {
   const backlogDir = target.backlogDir ?? 'backlog';
 
   for (let attempt = 1; attempt <= MAX_SYNC_ATTEMPTS; attempt += 1) {
@@ -238,29 +250,68 @@ export async function releaseTaskSynced(
     const file = d.findTaskFile(target.repoRoot, backlogDir, taskId);
     if (!file) return { status: 'failed', reason: `Task ${taskId} not found on the board` };
 
-    d.clearClaimInFile(file);
+    mutate(file, d);
     const snap = await d.snapshot({
       repoRoot: target.repoRoot,
       ref: target.ref,
       indexFile: target.indexFile,
-      message: `release ${taskId}`,
+      message,
       parent: base,
       backlogDir,
     });
 
     if (!target.remote) {
       d.writeMaterialized(target, snap.commit);
-      return { status: 'released' };
+      return { status: 'ok', commit: snap.commit };
     }
     const push = await d.pushRef(target.repoRoot, target.remote, target.ref);
     if (push.ok) {
       d.writeMaterialized(target, snap.commit);
-      return { status: 'released' };
+      return { status: 'ok', commit: snap.commit };
     }
     if (!push.rejected) return { status: 'failed', reason: push.stderr || 'push failed' };
     await d.sleep(backoffMs(attempt));
   }
   return { status: 'failed', reason: 'exhausted retries (remote kept advancing)' };
+}
+
+export async function releaseTaskSynced(
+  target: SyncTarget,
+  taskId: string,
+  opts: { deps?: Partial<SyncEngineDeps> } = {}
+): Promise<{ status: 'released' } | { status: 'failed'; reason: string }> {
+  const d: SyncEngineDeps = { ...defaultSyncEngineDeps, ...opts.deps };
+  const result = await mutateTaskSynced(
+    target,
+    taskId,
+    `release ${taskId}`,
+    (file, deps) => deps.clearClaimInFile(file),
+    d
+  );
+  return result.status === 'ok' ? { status: 'released' } : result;
+}
+
+/**
+ * Set a task's board status on the shared ref (the synced-mode counterpart to a
+ * plain working-tree status write). `request_merge` routes its status writes —
+ * the intermediate "Awaiting Merge"/"Pending Review" park, the abort rollback to
+ * "In Progress", and the final "Done" — through here so they land on the board
+ * ref and survive the next materialize, instead of being lost as working-tree-only edits.
+ */
+export async function setStatusSynced(
+  target: SyncTarget,
+  taskId: string,
+  status: string,
+  opts: { deps?: Partial<SyncEngineDeps> } = {}
+): Promise<{ status: 'ok'; commit: string } | { status: 'failed'; reason: string }> {
+  const d: SyncEngineDeps = { ...defaultSyncEngineDeps, ...opts.deps };
+  return mutateTaskSynced(
+    target,
+    taskId,
+    `set-status ${taskId} → ${status}`,
+    (file, deps) => deps.writeStatusToFile(file, status),
+    d
+  );
 }
 
 /**

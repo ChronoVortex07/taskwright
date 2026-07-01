@@ -32,7 +32,9 @@ import {
 import {
   claimTaskSynced,
   releaseTaskSynced,
+  setStatusSynced,
   type SyncTarget,
+  type SyncEngineDeps,
   type ClaimOutcome,
 } from '../core/boardSyncEngine';
 import {
@@ -196,9 +198,6 @@ export function makePrimaryBoard(primaryRoot: string, exec: GitExecFn): BoardOps
     async setStatus(taskId, status) {
       await writer.updateTask(taskId, { status } as Partial<Task>, parser);
     },
-    async complete(taskId) {
-      await writer.completeTask(taskId, parser);
-    },
     async release(taskId) {
       await claims.releaseTask(taskId, parser);
     },
@@ -211,6 +210,39 @@ export function makePrimaryBoard(primaryRoot: string, exec: GitExecFn): BoardOps
       } catch {
         // best-effort: if it fails, the ff-merge will abort cleanly on the dirty file
       }
+    },
+  };
+}
+
+/**
+ * A BoardOps for the synced board (sync mode `local`/`github`). Routes each
+ * mutation through the CAS engine so it lands on the shared `taskwright-board`
+ * ref (and origin) instead of being a working-tree-only edit that the next
+ * materialize would discard. `resetTaskFile` is a no-op: board files are
+ * git-ignored on code branches, so the intermediate-status write never enters
+ * the primary tree's index and cannot collide with the ff-merge.
+ */
+export function makeSyncedBoard(
+  target: SyncTarget,
+  engineDeps?: Partial<SyncEngineDeps>
+): BoardOps {
+  return {
+    async setStatus(taskId, status) {
+      const r = await setStatusSynced(target, taskId, status, { deps: engineDeps });
+      if (r.status !== 'ok') {
+        throw new Error(
+          `request_merge could not set ${taskId} status to "${status}" on the board: ${r.reason}`
+        );
+      }
+    },
+    async release(taskId) {
+      const r = await releaseTaskSynced(target, taskId, { deps: engineDeps });
+      if (r.status !== 'released') {
+        throw new Error(`request_merge could not release ${taskId} on the board: ${r.reason}`);
+      }
+    },
+    async resetTaskFile() {
+      // no-op — see doc comment
     },
   };
 }
@@ -248,6 +280,18 @@ export async function requestMergeHandler(
 
   const fsDeps = deps.fsDeps ?? nodeQueueFs;
   const config = readMergeConfig(mergeConfigPath(facts.commonDir), fsDeps);
+
+  // On a synced board the source of truth is the shared ref, and the primary
+  // tree's `backlog/` is materialized from it — so route board writes through the
+  // sync engine (fetch → mutate → snapshot → push) rather than editing the
+  // materialized files directly, which the next poll would clobber.
+  const syncCfg = await resolveSyncConfig(deps);
+  const board =
+    deps.board ??
+    (syncCfg.mode !== 'off'
+      ? makeSyncedBoard(syncTargetFor(deps.root, syncCfg))
+      : makePrimaryBoard(facts.primaryRoot, exec));
+
   return requestMerge(
     {
       root: deps.root,
@@ -256,7 +300,7 @@ export async function requestMergeHandler(
       worktreeRel: `.worktrees/${facts.branch}`,
       config,
       queue: queueStoreFor(facts.commonDir, fsDeps),
-      board: deps.board ?? makePrimaryBoard(facts.primaryRoot, exec),
+      board,
       exec,
       run,
       now: deps.now ?? (() => new Date()),

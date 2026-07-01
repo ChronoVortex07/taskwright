@@ -29,19 +29,14 @@ function memQueue(): { store: MergeQueueStore; file: () => string } {
 
 function board(): BoardOps & {
   statuses: string[];
-  completed: string[];
   released: string[];
   resetTaskFile: MockedFunction<(taskId: string) => Promise<void>>;
 } {
   const rec = {
     statuses: [] as string[],
-    completed: [] as string[],
     released: [] as string[],
     setStatus: async (_id: string, s: string) => {
       rec.statuses.push(s);
-    },
-    complete: async (id: string) => {
-      rec.completed.push(id);
     },
     release: async (id: string) => {
       rec.released.push(id);
@@ -126,7 +121,7 @@ describe('requestMerge — abort before enqueue', () => {
 });
 
 describe('requestMerge — auto-merge happy path', () => {
-  it('merges immediately as sole head, completes, and dequeues', async () => {
+  it('merges immediately as sole head, marks Done, and dequeues', async () => {
     const q = memQueue();
     const b = board();
     const cfg: MergeConfig = { ...DEFAULT_MERGE_CONFIG, mode: 'auto-merge' };
@@ -149,7 +144,9 @@ describe('requestMerge — auto-merge happy path', () => {
     const r = await requestMerge(d, 'TASK-7');
     expect(r.status).toBe('merged');
     expect(b.statuses[0]).toBe('Awaiting Merge');
-    expect(b.completed).toEqual(['TASK-7']);
+    // The merge marks the task Done on the board but does NOT file it into
+    // completed/ — that is a separate, opt-in action now.
+    expect(b.statuses.at(-1)).toBe('Done');
     expect(b.released).toEqual(['TASK-7']);
     expect(q.store.read().entries).toHaveLength(0); // dequeued
     // Fix 1: resetTaskFile called with taskId, and before the ff-merge

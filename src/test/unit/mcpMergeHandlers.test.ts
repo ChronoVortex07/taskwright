@@ -16,9 +16,15 @@ import { BacklogParser } from '../../core/BacklogParser';
 import { BacklogWriter } from '../../core/BacklogWriter';
 import { ClaimService } from '../../core/ClaimService';
 import { PlanService } from '../../core/PlanService';
-import { requestMergeHandler, getActiveTask, type McpHandlerDeps } from '../../mcp/handlers';
+import {
+  requestMergeHandler,
+  getActiveTask,
+  makeSyncedBoard,
+  type McpHandlerDeps,
+} from '../../mcp/handlers';
 import type { GitExecFn, RunFn } from '../../core/finishTask';
 import type { QueueFsDeps } from '../../core/mergeQueue';
+import type { SyncTarget, SyncEngineDeps } from '../../core/boardSyncEngine';
 
 /** In-memory QueueFsDeps backed by a plain object — no vi.mock needed. */
 function makeMemFsDeps(store: Record<string, string> = {}): QueueFsDeps {
@@ -172,19 +178,93 @@ describe('requestMergeHandler', () => {
     });
     const fsDeps = makeMemFsDeps(memStore);
 
-    const completed: string[] = [];
+    const statuses: string[] = [];
+    const released: string[] = [];
     const board = {
-      setStatus: async () => {},
-      complete: async (id: string) => {
-        completed.push(id);
+      setStatus: async (_id: string, s: string) => {
+        statuses.push(s);
       },
-      release: async () => {},
+      release: async (id: string) => {
+        released.push(id);
+      },
       resetTaskFile: async () => {},
     };
 
     const r = await requestMergeHandler(makeDeps(root, { board, fsDeps }), { taskId: 'TASK-7' });
     expect(r.status).toBe('merged');
-    expect(completed).toEqual(['TASK-7']);
+    // Marked Done on the board and released, but not filed into completed/.
+    expect(statuses.at(-1)).toBe('Done');
+    expect(released).toEqual(['TASK-7']);
+  });
+});
+
+describe('makeSyncedBoard', () => {
+  const target: SyncTarget = {
+    repoRoot: '/repo',
+    ref: 'taskwright-board',
+    remote: 'origin',
+    indexFile: '/repo/.taskwright/board.index',
+    backlogDir: 'backlog',
+  };
+
+  /** Minimal engine deps with every git/fs-touching function faked. */
+  function engineDeps(over: Partial<SyncEngineDeps> = {}): Partial<SyncEngineDeps> {
+    return {
+      fetchRef: async () => 'tip',
+      setLocalRef: async () => {},
+      refTip: async () => 'tip',
+      materialize: async () => {},
+      snapshot: async () => ({ commit: 'c' }),
+      pushRef: async () => ({ ok: true, rejected: false, stderr: '' }),
+      findTaskFile: () => '/repo/backlog/tasks/task-7 - Sample.md',
+      writeStatusToFile: () => {},
+      clearClaimInFile: () => {},
+      readMaterialized: () => null,
+      writeMaterialized: () => {},
+      sleep: async () => {},
+      ...over,
+    };
+  }
+
+  it('routes setStatus through the sync engine so it lands on the board ref', async () => {
+    let wrote: [string, string] | undefined;
+    const board = makeSyncedBoard(
+      target,
+      engineDeps({
+        writeStatusToFile: (f, s) => {
+          wrote = [f, s];
+        },
+      })
+    );
+    await board.setStatus('TASK-7', 'Done');
+    expect(wrote).toEqual(['/repo/backlog/tasks/task-7 - Sample.md', 'Done']);
+  });
+
+  it('routes release through the sync engine', async () => {
+    let cleared = false;
+    const board = makeSyncedBoard(
+      target,
+      engineDeps({
+        clearClaimInFile: () => {
+          cleared = true;
+        },
+      })
+    );
+    await board.release('TASK-7');
+    expect(cleared).toBe(true);
+  });
+
+  it('throws when the synced write cannot complete (surfaces the failure)', async () => {
+    const board = makeSyncedBoard(
+      target,
+      engineDeps({ pushRef: async () => ({ ok: false, rejected: false, stderr: 'boom' }) })
+    );
+    await expect(board.setStatus('TASK-7', 'Done')).rejects.toThrow(/could not set TASK-7 status/);
+  });
+
+  it('resetTaskFile is a no-op on a synced board', async () => {
+    const board = makeSyncedBoard(target, engineDeps());
+    await expect(board.resetTaskFile('TASK-7')).resolves.toBeUndefined();
   });
 });
 

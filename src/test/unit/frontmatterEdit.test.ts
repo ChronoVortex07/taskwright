@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   quoteValue,
   removeField,
+  setStatusField,
   splitFrontmatter,
   upsertScalarField,
 } from '../../core/frontmatterEdit';
@@ -59,6 +60,48 @@ describe('upsertScalarField', () => {
 
   it('returns content unchanged when there is no frontmatter', () => {
     expect(upsertScalarField('body only', 'plan', 'x.md')).toBe('body only');
+  });
+});
+
+describe('setStatusField', () => {
+  const withStatus = [
+    '---',
+    'id: TASK-1',
+    'status: To Do',
+    'title: Example',
+    '---',
+    '',
+    'Body.',
+  ].join('\n');
+
+  it('replaces the status value in place, preserving field order', () => {
+    const out = setStatusField(withStatus, 'In Progress');
+    expect(splitFrontmatter(out)!.fields).toEqual([
+      'id: TASK-1',
+      'status: In Progress',
+      'title: Example',
+    ]);
+  });
+
+  it('writes multi-word statuses unquoted (Backlog.md byte-for-byte contract)', () => {
+    const out = setStatusField(withStatus, 'Pending Review');
+    expect(out).toContain('status: Pending Review');
+    expect(out).not.toContain("status: 'Pending Review'");
+  });
+
+  it('leaves the body and other fields untouched', () => {
+    const out = setStatusField(withStatus, 'Done');
+    expect(out).toBe(
+      ['---', 'id: TASK-1', 'status: Done', 'title: Example', '---', '', 'Body.'].join('\n')
+    );
+  });
+
+  it('returns content unchanged when there is no status line', () => {
+    expect(setStatusField(doc, 'Done')).toBe(doc);
+  });
+
+  it('returns content unchanged when there is no frontmatter', () => {
+    expect(setStatusField('body only', 'Done')).toBe('body only');
   });
 });
 

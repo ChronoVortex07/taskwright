@@ -125,18 +125,20 @@ describe('requestMerge integration — Fix 1: resetTaskFile enables ff-merge aft
     // Assert: merged successfully
     expect(result.status).toBe('merged');
 
-    // Assert: completed dir contains the task file
+    // Assert: the task stays on the board in tasks/ (NOT filed into completed/) —
+    // request_merge marks it Done but no longer auto-completes.
+    const tasksDirAfter = path.join(primary, 'backlog', 'tasks');
+    const taskFilesAfter = fs.existsSync(tasksDirAfter) ? fs.readdirSync(tasksDirAfter) : [];
+    expect(taskFilesAfter.some((f) => f.includes('task-7'))).toBe(true);
+
     const completedDir = path.join(primary, 'backlog', 'completed');
     const completedFiles = fs.existsSync(completedDir) ? fs.readdirSync(completedDir) : [];
-    expect(completedFiles.some((f) => f.includes('task-7'))).toBe(true);
+    expect(completedFiles.some((f) => f.includes('task-7'))).toBe(false);
 
-    // Assert: the completed file has status: Done
-    const completedFile = path.join(
-      completedDir,
-      completedFiles.find((f) => f.includes('task-7'))!
-    );
-    const completedContent = fs.readFileSync(completedFile, 'utf-8');
-    expect(completedContent).toMatch(/^status:\s*Done/m);
+    // Assert: the task file (still in tasks/) has status: Done
+    const taskFile = path.join(tasksDirAfter, taskFilesAfter.find((f) => f.includes('task-7'))!);
+    const taskContent = fs.readFileSync(taskFile, 'utf-8');
+    expect(taskContent).toMatch(/^status:\s*Done/m);
 
     // Assert: the branch commit is on main (ff actually happened)
     const mainLog = await git(primary, 'log', '--oneline', 'main');

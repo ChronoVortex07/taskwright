@@ -8,6 +8,7 @@ import {
   findTaskFile,
   claimTaskSynced,
   releaseTaskSynced,
+  setStatusSynced,
   refreshBoard,
   MAX_SYNC_ATTEMPTS,
   type SyncEngineDeps,
@@ -69,6 +70,7 @@ function fakeDeps(over: Partial<SyncEngineDeps> = {}): SyncEngineDeps {
     clearClaimInFile: () => {
       claimOnDisk = undefined;
     },
+    writeStatusToFile: () => {},
     findTaskFile: () => '/repo/backlog/tasks/task-1 - A.md',
     readMaterialized: () => materializedMarker,
     writeMaterialized: (_t, sha) => {
@@ -184,6 +186,75 @@ describe('releaseTaskSynced', () => {
     });
     expect(out).toEqual({ status: 'released' });
     expect(claim).toBeUndefined();
+  });
+});
+
+describe('setStatusSynced', () => {
+  it('writes the status, snapshots, and pushes', async () => {
+    let status = 'To Do';
+    let snapshotted = false;
+    let pushed = false;
+    const out = await setStatusSynced(TARGET, 'TASK-1', 'Done', {
+      deps: fakeDeps({
+        writeStatusToFile: (_f, s) => {
+          status = s;
+        },
+        snapshot: async () => {
+          snapshotted = true;
+          return { commit: 'status-commit' };
+        },
+        pushRef: async () => {
+          pushed = true;
+          return { ok: true, rejected: false, stderr: '' };
+        },
+      }),
+    });
+    expect(out).toEqual({ status: 'ok', commit: 'status-commit' });
+    expect(status).toBe('Done');
+    expect(snapshotted).toBe(true);
+    expect(pushed).toBe(true);
+  });
+
+  it('materializes the latest ref before writing (CAS ordering)', async () => {
+    const order: string[] = [];
+    await setStatusSynced(TARGET, 'TASK-1', 'Done', {
+      deps: fakeDeps({
+        materialize: async () => {
+          order.push('materialize');
+        },
+        writeStatusToFile: () => {
+          order.push('write');
+        },
+        snapshot: async () => {
+          order.push('snapshot');
+          return { commit: 'c' };
+        },
+      }),
+    });
+    expect(order).toEqual(['materialize', 'write', 'snapshot']);
+  });
+
+  it('retries on a rejected push, then succeeds', async () => {
+    let pushes = 0;
+    const out = await setStatusSynced(TARGET, 'TASK-1', 'Done', {
+      deps: fakeDeps({
+        pushRef: async () => {
+          pushes += 1;
+          return pushes === 1
+            ? { ok: false, rejected: true, stderr: 'non-fast-forward' }
+            : { ok: true, rejected: false, stderr: '' };
+        },
+      }),
+    });
+    expect(out.status).toBe('ok');
+    expect(pushes).toBe(2);
+  });
+
+  it('returns failed when the task file is missing', async () => {
+    const out = await setStatusSynced(TARGET, 'TASK-1', 'Done', {
+      deps: fakeDeps({ findTaskFile: () => null }),
+    });
+    expect(out).toEqual({ status: 'failed', reason: 'Task TASK-1 not found on the board' });
   });
 });
 
