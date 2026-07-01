@@ -112,6 +112,30 @@ describe('MergeQueueStore', () => {
     expect(fs.existsSync(p)).toBe(true);
     fs.rmSync(dir, { recursive: true, force: true });
   });
+
+  it('read() returns an independent object, not the shared EMPTY_QUEUE', () => {
+    const store = new MergeQueueStore('/nope.json', {
+      exists: () => false,
+      read: () => '',
+      writeAtomic: () => {},
+    });
+    const a = store.read();
+    expect(a).not.toBe(EMPTY_QUEUE);
+    a.entries.push(entry('X')); // must not throw and must not affect EMPTY_QUEUE
+    expect(EMPTY_QUEUE.entries).toHaveLength(0);
+  });
+
+  it('EMPTY_QUEUE cannot be mutated', () => {
+    expect(() => (EMPTY_QUEUE.entries as QueueEntry[]).push(entry('X'))).toThrow();
+  });
+
+  it('reads a file with an unexpected version as the empty queue', () => {
+    const store = new MergeQueueStore(
+      '/q.json',
+      memFs({ '/q.json': JSON.stringify({ version: 2, entries: [entry('Z')] }) })
+    );
+    expect(store.read().entries).toHaveLength(0);
+  });
 });
 
 function memFs(files: Record<string, string>): QueueFsDeps {

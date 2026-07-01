@@ -26,7 +26,10 @@ export interface MergeQueue {
   entries: QueueEntry[];
 }
 
-export const EMPTY_QUEUE: MergeQueue = { version: 1, entries: [] };
+export const EMPTY_QUEUE: MergeQueue = Object.freeze({
+  version: 1,
+  entries: Object.freeze([]) as QueueEntry[],
+}) as MergeQueue;
 
 /** Append `entry` unless its taskId is already queued (idempotent). */
 export function enqueueEntry(queue: MergeQueue, entry: QueueEntry): MergeQueue {
@@ -115,15 +118,15 @@ export class MergeQueueStore {
   ) {}
 
   read(): MergeQueue {
-    if (!this.fsDeps.exists(this.filePath)) return EMPTY_QUEUE;
+    if (!this.fsDeps.exists(this.filePath)) return { version: 1, entries: [] };
     try {
       const data = JSON.parse(this.fsDeps.read(this.filePath)) as Partial<MergeQueue>;
-      if (Array.isArray(data?.entries))
+      if (data?.version === 1 && Array.isArray(data.entries))
         return { version: 1, entries: data.entries as QueueEntry[] };
     } catch {
       // fall through — treat as empty
     }
-    return EMPTY_QUEUE;
+    return { version: 1, entries: [] };
   }
 
   mutate(fn: (queue: MergeQueue) => MergeQueue): MergeQueue {
