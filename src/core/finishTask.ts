@@ -1,3 +1,16 @@
+import {
+  MergeQueueStore,
+  enqueueEntry,
+  removeEntry,
+  approveEntry, // re-exported for callers/tests convenience
+  headEntry,
+  markEntryActive,
+  isHeadStale,
+  positionOf,
+  type QueueEntry,
+} from './mergeQueue';
+import { intermediateStatusForMode, type MergeConfig } from './mergeConfig';
+
 /** Runs a git subcommand in `cwd`, resolving with its captured output. */
 export type GitExecFn = (
   cwd: string,
@@ -224,20 +237,6 @@ export async function deleteBranch(
   }
 }
 
-// --- append: BoardOps + requestMerge orchestrator ---
-import {
-  MergeQueueStore,
-  enqueueEntry,
-  removeEntry,
-  approveEntry, // re-exported for callers/tests convenience
-  headEntry,
-  markEntryActive,
-  isHeadStale,
-  positionOf,
-  type QueueEntry,
-} from './mergeQueue';
-import { intermediateStatusForMode, type MergeConfig } from './mergeConfig';
-
 /** Board mutations `request_merge` performs against the PRIMARY tree's board. */
 export interface BoardOps {
   setStatus(taskId: string, status: string): Promise<void>;
@@ -391,6 +390,8 @@ async function waitForTurn(deps: FinishDeps, taskId: string): Promise<'proceed' 
   const base = deps.pollIntervalMs ?? 1000;
   for (;;) {
     const q = queue.read();
+    // positionOf returns 0 only when our entry is absent — a reviewer's Send back
+    // removed it, so the task must return to In Progress rather than merge.
     if (positionOf(q, taskId) === 0) return 'sent_back';
 
     // Reclaim a stale foreign head so a crashed agent can't wedge the queue.

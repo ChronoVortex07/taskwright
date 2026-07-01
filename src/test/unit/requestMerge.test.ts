@@ -10,6 +10,7 @@ import {
 import {
   MergeQueueStore,
   enqueueEntry,
+  removeEntry,
   EMPTY_QUEUE,
   type QueueFsDeps,
 } from '../../core/mergeQueue';
@@ -181,6 +182,35 @@ describe('requestMerge — manual-review gate', () => {
   });
 });
 
+describe('requestMerge — waits behind a fresh head', () => {
+  it('sleeps behind a non-stale foreign head, then proceeds once it dequeues', async () => {
+    const q = memQueue();
+    // TASK-1 is the active head but only ~1m old → NOT stale, so we must wait.
+    q.store.mutate((cur) =>
+      enqueueEntry(cur, {
+        taskId: 'TASK-1',
+        branch: 'task-1-y',
+        worktree: '.worktrees/task-1-y',
+        mode: 'auto-merge',
+        submittedAt: '2026-07-01T11:59:00.000Z',
+        approved: false,
+        active: true,
+        activeAt: '2026-07-01T11:59:00.000Z', // ~1m before now → not stale
+      })
+    );
+    const cfg: MergeConfig = { ...DEFAULT_MERGE_CONFIG, mode: 'auto-merge' };
+    let polls = 0;
+    const sleep = vi.fn(async () => {
+      polls++;
+      if (polls === 1) q.store.mutate((cur) => removeEntry(cur, 'TASK-1')); // head finishes
+    });
+    const r = await requestMerge(deps({ queue: q.store, config: cfg, sleep }), 'TASK-7');
+    expect(r.status).toBe('merged');
+    expect(sleep).toHaveBeenCalledTimes(1); // waited exactly one poll behind the fresh head
+    expect(q.store.read().entries).toHaveLength(0);
+  });
+});
+
 describe('requestMerge — stale head reclaim', () => {
   it('reclaims a stale foreign head and proceeds', async () => {
     const q = memQueue();
@@ -241,16 +271,11 @@ describe('requestMerge — abort at ff-merge resets status and dequeues', () => 
       queue: q.store,
       board: b,
       config: cfg,
+      // Worktree checks stay green (okGit); only the primary ff-merge fails.
       exec: okGit((a) => {
-        // primary status dirty with code; worktree status (also 'status') must stay clean
-        if (a[0] === 'status') return { stdout: '' }; // keep worktree clean check happy
+        if (a[0] === 'merge') return new Error('not possible to fast-forward');
         return undefined;
       }),
-    });
-    // Override just the primary ff-merge path: make symbolic-ref ok but merge fail.
-    d.exec = okGit((a) => {
-      if (a[0] === 'merge') return new Error('not possible to fast-forward');
-      return undefined;
     });
     const r = await requestMerge(d, 'TASK-7');
     expect(r.status).toBe('aborted');
