@@ -185,6 +185,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "taskwright.enableSync",
+        "title": "Taskwright: Enable Board Sync (move board off code branches)",
+        "category": "Taskwright"
+      },
+      {
         "command": "taskwright.openTaskDetail",
         "title": "Taskwright: Open Task Detail"
       },

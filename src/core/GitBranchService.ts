@@ -1,5 +1,6 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import * as path from 'path';
 
 const execFileAsync = promisify(execFile);
 
@@ -259,6 +260,19 @@ export class GitBranchService {
     }
 
     return result;
+  }
+
+  /**
+   * Absolute path of the shared git common dir (identical from every worktree),
+   * or null when not a git repo. Used to locate `.git/taskwright/*` shared state.
+   */
+  async getCommonDir(): Promise<string | null> {
+    try {
+      const out = (await this.execGit(['rev-parse', '--git-common-dir'])).trim();
+      return path.resolve(this.workspaceRoot, out);
+    } catch {
+      return null;
+    }
   }
 
   /**

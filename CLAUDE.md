@@ -80,6 +80,21 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   Kanban cards show an active-task indicator and a stale-claim badge (amber), enriched in
   `TasksController` (`isActiveTask`/`claimStale`). Cross-worktree board is inherited (Backlog.md
   `check_active_branches` via `CrossBranchTaskLoader`). Proof: `e2e/board-indicators.spec.ts`.
+- **Synced board (GitHub-only, opt-in)** ✅: `taskwright.sync.mode` (`off` default | `local` |
+  `github`) moves the board **off code branches** onto a dedicated `taskwright-board` ref, killing the
+  read-only cross-branch "ghost" cards at the root (the board no longer lives on `task-*`/worktree
+  branches, so there is nothing to cross-scan — `BacklogParser.getTasksWithCrossBranch` goes local-only
+  when sync is on and excludes the board ref by name). Pure cores: `src/core/boardRef.ts` (isolated-index
+  `snapshotBoardToRef`/`materializeRefToWorktree` — never touches the user's HEAD/index/branch),
+  `src/core/boardSyncEngine.ts` (fetch→materialize→check→snapshot→**ff-only push** CAS loop:
+  `claimTaskSynced`/`releaseTaskSynced`/`refreshBoard`; two racers can't both claim because `git push` is
+  an atomic ref compare-and-swap), `src/core/boardLifecycle.ts` (`reconcileBoardRef` auto setup/heal +
+  lease-guarded `compactBoardRef`), `src/core/syncConfig.ts` (shared `<commonDir>/taskwright/sync-config.json`,
+  MCP-readable), `src/core/boardMigration.ts` (gitignore block + rm-cached paths). Wire-in:
+  `BoardSyncController` (reconcile/poll/status bar), `publishSyncConfig` + `taskwright.enableSync` command
+  (one-consent migration) in `extension.ts`, MCP `claim_task`/`release_task` and the UI `claimActions`
+  both route through the engine when `mode !== 'off'`. Merge queue stays per-clone (documented boundary).
+  Design: `docs/superpowers/specs/2026-07-01-github-synced-board-design.md`; plans: `docs/superpowers/plans/2026-07-01-synced-board-phase-{1..4}-*.md`.
 
 ## Conventions
 

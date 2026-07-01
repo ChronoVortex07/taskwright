@@ -42,6 +42,15 @@ import {
   mergeConfigPath,
 } from './core/mergeConfig';
 import { nodeQueueFs, MergeQueueStore, mergeQueuePath, type MergeQueue } from './core/mergeQueue';
+import {
+  resolveSyncConfigFromSettings,
+  writeSyncConfig,
+  syncConfigPath,
+  type SyncMode,
+} from './core/syncConfig';
+import { applyBoardIgnore, boardTrackedPaths } from './core/boardMigration';
+import { reconcileBoardRef } from './core/boardLifecycle';
+import { BoardSyncController } from './providers/BoardSyncController';
 import { planStatusSync, parseStatusesLine, rewriteStatusesLine } from './core/mergeStatusConfig';
 import type { MergeMode } from './core/mergeQueue';
 
@@ -114,6 +123,82 @@ async function syncMergeConfig(repoRoot: string): Promise<void> {
     staleMinutes: cfg.get('mergeQueueStaleMinutes'),
   });
   writeMergeConfig(mergeConfigPath(commonDir), merged, nodeQueueFs);
+}
+
+/**
+ * Publish taskwright.sync.* to the shared config the out-of-process MCP server
+ * reads, so agents' claim_task/release_task route through the sync engine.
+ * (Manifest key `sync.pollIntervalSeconds` maps to the config field `pollSeconds`.)
+ */
+async function publishSyncConfig(repoRoot: string): Promise<void> {
+  const commonDir = await resolveCommonDir(repoRoot);
+  if (!commonDir) return;
+  const cfg = vscode.workspace.getConfiguration('taskwright');
+  const merged = resolveSyncConfigFromSettings({
+    mode: cfg.get('sync.mode'),
+    ref: cfg.get('sync.ref'),
+    remote: cfg.get('sync.remote'),
+    pollSeconds: cfg.get('sync.pollIntervalSeconds'),
+  });
+  writeSyncConfig(syncConfigPath(commonDir), merged, nodeQueueFs);
+}
+
+/**
+ * The one-time, one-consent "move board off code branches" migration + enable.
+ * Adds the gitignore block, untracks the board dirs in a single commit, sets the
+ * chosen sync mode, publishes the shared config, and seeds/pushes the board ref.
+ * Returns the chosen mode, or undefined when the user cancels.
+ */
+async function runEnableSync(repoRoot: string): Promise<SyncMode | undefined> {
+  const pick = await vscode.window.showWarningMessage(
+    'Enable Taskwright board sync? This makes ONE commit that moves board task files off your code branches (they will live on the "taskwright-board" ref instead). This removes the read-only cross-branch "ghost" cards. You can pick GitHub sharing or local-only.',
+    { modal: true },
+    'Enable (GitHub sharing)',
+    'Enable (local only)'
+  );
+  if (!pick) return undefined;
+  const mode: SyncMode = pick === 'Enable (GitHub sharing)' ? 'github' : 'local';
+
+  const git = (args: string[]) => execFileAsync('git', args, { cwd: repoRoot, timeout: 30_000 });
+
+  // 1. Idempotently add the board .gitignore block.
+  const gitignorePath = path.join(repoRoot, '.gitignore');
+  const existing = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, 'utf-8') : '';
+  fs.writeFileSync(gitignorePath, applyBoardIgnore(existing), 'utf-8');
+
+  // 2. Untrack the board dirs (no-op when already untracked) + commit the move.
+  try {
+    await git(['rm', '-r', '--cached', '--ignore-unmatch', ...boardTrackedPaths()]);
+    await git(['add', '.gitignore']);
+    await git(['commit', '-m', 'chore(taskwright): move board off code branches (synced)']);
+  } catch (err) {
+    // A "nothing to commit" case is fine (already migrated); surface other errors.
+    console.warn('[Taskwright] enableSync migration commit skipped/failed:', err);
+  }
+
+  // 3. Persist the setting + publish the shared config for the MCP server.
+  await vscode.workspace
+    .getConfiguration('taskwright')
+    .update('sync.mode', mode, vscode.ConfigurationTarget.Workspace);
+  await publishSyncConfig(repoRoot);
+
+  // 4. Seed + push the board ref.
+  const cfg = vscode.workspace.getConfiguration('taskwright');
+  try {
+    await reconcileBoardRef({
+      repoRoot,
+      ref: cfg.get('sync.ref') ?? 'taskwright-board',
+      remote: mode === 'github' ? (cfg.get('sync.remote') ?? 'origin') : undefined,
+      indexFile: path.join(repoRoot, '.taskwright', 'board.index'),
+      backlogDir: 'backlog',
+    });
+  } catch (err) {
+    console.error('[Taskwright] enableSync reconcile failed:', err);
+    void vscode.window.showWarningMessage(
+      'Board sync enabled locally, but seeding the shared ref failed (check your git remote/credentials). It will retry on the next poll.'
+    );
+  }
+  return mode;
 }
 
 /** Resolve the shared git common dir (identical from every worktree). */
@@ -281,7 +366,39 @@ export function activate(context: vscode.ExtensionContext) {
   if (workspaceRootPath) {
     syncWorktreeGuard(workspaceRootPath, context.extensionUri);
     void syncMergeConfig(workspaceRootPath);
+    void publishSyncConfig(workspaceRootPath);
   }
+
+  // Synced-board controller: reconcile the board ref, poll the shared remote to
+  // reflect teammates' changes, and reflect state in the status bar. No-ops when
+  // taskwright.sync.mode is 'off'. Refreshing the board hosts materializes any
+  // incoming changes into the UI.
+  let boardSync: BoardSyncController | undefined;
+  if (workspaceRootPath) {
+    boardSync = new BoardSyncController(workspaceRootPath, () =>
+      tasksHosts.forEach((host) => host.refresh())
+    );
+    context.subscriptions.push(boardSync);
+    void boardSync.start();
+  }
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('taskwright.enableSync', async () => {
+      if (!workspaceRootPath) {
+        void vscode.window.showWarningMessage('Open a Taskwright workspace folder first.');
+        return;
+      }
+      const mode = await runEnableSync(workspaceRootPath);
+      if (!mode) return;
+      await boardSync?.start(); // restart with the new mode
+      tasksHosts.forEach((host) => host.refresh());
+      void vscode.window.showInformationMessage(
+        mode === 'github'
+          ? 'Taskwright board sync enabled (GitHub). Claims are now collision-proof across sessions and machines.'
+          : 'Taskwright board sync enabled (local). Cross-branch ghost cards are gone; enable GitHub sharing later to sync with others.'
+      );
+    })
+  );
 
   // Merge-queue board enrichment: resolve the shared queue location once, inject
   // a reader into both board hosts, and watch the queue file so out-of-process
@@ -1268,6 +1385,15 @@ export function activate(context: vscode.ExtensionContext) {
           affectsTaskwrightConfig(event, 'mergeQueueStaleMinutes'))
       ) {
         void syncMergeConfig(workspaceRootPath);
+      }
+      if (
+        workspaceRootPath &&
+        (affectsTaskwrightConfig(event, 'sync.mode') ||
+          affectsTaskwrightConfig(event, 'sync.ref') ||
+          affectsTaskwrightConfig(event, 'sync.remote') ||
+          affectsTaskwrightConfig(event, 'sync.pollIntervalSeconds'))
+      ) {
+        void publishSyncConfig(workspaceRootPath).then(() => boardSync?.start());
       }
       if (affectsTaskwrightConfig(event, 'mergeMode')) {
         const backlogForStatus = manager.getActiveRoot()?.backlogPath;

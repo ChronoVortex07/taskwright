@@ -24,6 +24,14 @@ external CLI. At the start of a task session:
 Generated task files stay byte-for-byte compatible with Backlog.md, so the board remains
 readable by the upstream tools if they are installed.
 
+**Synced board (when `taskwright.sync.mode` is `local`/`github`).** The board lives on a dedicated
+`taskwright-board` ref (off code branches), not in `backlog/tasks` on your branch — those dirs are
+git-ignored and materialized from the ref. `claim_task`/`release_task` route through the sync engine:
+a claim does an atomic fetch→push, so if another session/machine already holds the task your claim
+**surrenders** (`claimed: false, surrendered: true, heldBy: …`) — pick a different task. Do not edit or
+commit `backlog/tasks` files by hand in this mode; use the MCP write tools. The cross-branch board view
+is disabled (nothing to scan), which is what removes the read-only "ghost" cards.
+
 </CRITICAL_INSTRUCTION>
 
 ## Task granularity

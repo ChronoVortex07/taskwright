@@ -35,6 +35,13 @@ Taskwright additions (all implemented):
   `claude -p`.
 - **"Categorize with Claude"** intake — turn a raw bug dump into labeled, prioritized tasks.
 - **Superpowers bridge** — attach a plan/spec to a task (`attach_plan`) and see its checkbox progress.
+- **Board sync (GitHub-only, optional)** — run **Taskwright: Enable Board Sync** to move board tasks
+  **off your code branches** onto a dedicated `taskwright-board` ref. This eliminates the read-only
+  cross-branch "ghost" cards that transient worktree branches produce, and — in `github` mode — shares
+  the board through your existing git remote (no server, no account) for near-real-time, **collision-proof
+  claims**: two people or agents can't both claim the same task, because a claim is an atomic `git push`.
+  Uses your existing push credentials; the board ref is created, seeded, healed, and compacted
+  automatically. See `docs/superpowers/specs/2026-07-01-github-synced-board-design.md`.
 
 ## Requirements
 
@@ -67,6 +74,14 @@ To install Taskwright into your own VS Code (no dev host), or to publish it:
 ```bash
 bun run package    # builds, then emits taskwright-<version>.vsix
 code --install-extension taskwright-0.0.1.vsix
+```
+
+Auto versioning
+
+```bash
+bunx @vscode/vsce publish patch    # 0.0.1 → 0.0.2
+bunx @vscode/vsce publish minor    # 0.0.1 → 0.1.0
+bunx @vscode/vsce publish major    # 0.0.1 → 1.0.0
 ```
 
 See **[`docs/building-and-publishing.md`](docs/building-and-publishing.md)** for the full build,
