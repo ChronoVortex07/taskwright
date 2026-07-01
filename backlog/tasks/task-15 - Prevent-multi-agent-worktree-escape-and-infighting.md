@@ -16,6 +16,7 @@ references:
     docs/superpowers/specs/2026-07-01-safe-concurrent-agents-merge-queue-design.md
   - docs/superpowers/plans/2026-07-01-worktree-isolation-guard.md
 priority: high
+plan: docs/superpowers/plans/2026-07-01-merge-queue-request-merge.md
 ---
 
 ## Description
