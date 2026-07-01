@@ -48,8 +48,18 @@ export async function sendBackMerge(
   fsDeps: QueueFsDeps = nodeQueueFs
 ): Promise<void> {
   sendBackInQueue(commonDir, taskId, fsDeps);
-  const task = await parser.getTask(taskId);
-  if (task) {
-    await writer.updateTask(taskId, { status: IN_PROGRESS }, parser);
+  // The dequeue above is the authoritative "send back" action and has already
+  // happened. The status reset is just a convenience so the board reflects it
+  // immediately — a blocked agent's own `request_merge` also resets the status
+  // to `In Progress`. So treat this as best-effort: if the task file vanished
+  // or the write fails for any reason, swallow the error rather than letting
+  // it surface as a misleading "Failed to send back".
+  try {
+    const task = await parser.getTask(taskId);
+    if (task) {
+      await writer.updateTask(taskId, { status: IN_PROGRESS }, parser);
+    }
+  } catch {
+    // best-effort; dequeue already succeeded
   }
 }
