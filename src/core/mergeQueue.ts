@@ -28,7 +28,7 @@ export interface MergeQueue {
 
 export const EMPTY_QUEUE: MergeQueue = Object.freeze({
   version: 1,
-  entries: Object.freeze([]) as QueueEntry[],
+  entries: Object.freeze([]) as unknown as QueueEntry[],
 }) as MergeQueue;
 
 /** Append `entry` unless its taskId is already queued (idempotent). */
