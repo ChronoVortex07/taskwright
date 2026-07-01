@@ -67,3 +67,19 @@ export async function registerTaskwrightMcp(
   }
   await exec('claude', buildAddArgs(serverPath));
 }
+
+/**
+ * Best-effort removal of the user-scope registration, used on extension
+ * deactivate so a disabled or reloaded extension doesn't leave a `taskwright`
+ * entry pointing at a `dist/mcp/server.js` that may later be deleted. Never
+ * throws — a missing `claude` CLI or an absent registration simply resolves
+ * `false`. Returns `true` when the remove command ran successfully.
+ */
+export async function unregisterTaskwrightMcp(exec: ExecFn = defaultExec): Promise<boolean> {
+  try {
+    await exec('claude', buildRemoveArgs());
+    return true;
+  } catch {
+    return false;
+  }
+}

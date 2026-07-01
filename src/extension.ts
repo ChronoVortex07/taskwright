@@ -30,6 +30,7 @@ import {
   isClaudeCliAvailable,
   isTaskwrightMcpRegistered,
   registerTaskwrightMcp,
+  unregisterTaskwrightMcp,
 } from './core/claudeMcp';
 import { injectConvention } from './core/agentConvention';
 import { affectsTaskwrightConfig, getTaskwrightConfig } from './config';
@@ -59,6 +60,9 @@ const execFileAsync = promisify(execFile);
 let fileWatcher: FileWatcher | undefined;
 let crossBranchStatusBarItem: vscode.StatusBarItem | undefined;
 let workspaceStatusBarItem: vscode.StatusBarItem | undefined;
+// True once this session has (re-)registered the Taskwright MCP server with
+// Claude Code, so deactivate only attempts cleanup for users who set it up.
+let claudeMcpRegistered = false;
 
 const GUARD_REL = '.taskwright/hooks/worktree-guard.js';
 
@@ -1269,6 +1273,9 @@ export function activate(context: vscode.ExtensionContext) {
   // Claude Code (user scope, via its CLI) and offer to add the agent convention
   // to CLAUDE.md so sessions actually call get_active_task / claim_task.
   const CLAUDE_SETUP_DISMISSED_KEY = 'taskwright.claudeSetupDismissed';
+  // Set once the user opts into MCP integration; drives the deactivate cleanup
+  // and the on-activate refresh below.
+  const CLAUDE_MCP_REGISTERED_KEY = 'taskwright.mcpRegistered';
   const mcpServerPath = path.join(context.extensionPath, 'dist', 'mcp', 'server.js');
   const setUpClaudeIntegration = async (): Promise<void> => {
     const root = activeRootDir();
@@ -1289,6 +1296,8 @@ export function activate(context: vscode.ExtensionContext) {
         await registerTaskwrightMcp(mcpServerPath);
         // Stop the activation prompt from re-checking the CLI on every launch.
         await context.globalState.update(CLAUDE_SETUP_DISMISSED_KEY, true);
+        await context.globalState.update(CLAUDE_MCP_REGISTERED_KEY, true);
+        claudeMcpRegistered = true;
         vscode.window.showInformationMessage(
           'Registered the Taskwright MCP server with Claude Code (user scope). Restart Claude Code to load it.'
         );
@@ -1334,6 +1343,24 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('taskwright.setupClaudeIntegration', setUpClaudeIntegration)
   );
+
+  // Once the user has opted into MCP integration, refresh the registration on
+  // every activation. This (a) re-points it at the current build after an
+  // extension update moves the install directory, and (b) restores it after a
+  // window reload — deactivate best-effort-removes the entry, and this re-adds
+  // it. Fire-and-forget so it never blocks activation.
+  if (context.globalState.get<boolean>(CLAUDE_MCP_REGISTERED_KEY)) {
+    claudeMcpRegistered = true;
+    void (async () => {
+      if (!fs.existsSync(mcpServerPath)) return;
+      if (!(await isClaudeCliAvailable())) return;
+      try {
+        await registerTaskwrightMcp(mcpServerPath);
+      } catch {
+        // Best-effort refresh; a failure just leaves the prior registration in place.
+      }
+    })();
+  }
 
   // One-time prompt: in a backlog repo where Claude Code is installed but the
   // MCP server isn't registered yet, offer to set it up. Fire-and-forget so it
@@ -1415,7 +1442,7 @@ export function activate(context: vscode.ExtensionContext) {
   console.log('[Taskwright] Extension activation complete!');
 }
 
-export function deactivate() {
+export function deactivate(): Thenable<void> | undefined {
   if (fileWatcher) {
     fileWatcher.dispose();
   }
@@ -1425,6 +1452,17 @@ export function deactivate() {
   if (workspaceStatusBarItem) {
     workspaceStatusBarItem.dispose();
   }
+  // Best-effort cleanup: remove the user-scope MCP registration so a disabled or
+  // reloaded extension doesn't leave a `taskwright` entry pointing at a
+  // `dist/mcp/server.js` that may later be deleted. `unregisterTaskwrightMcp`
+  // never throws. On a window reload this entry is re-added on the next
+  // activation (see CLAUDE_MCP_REGISTERED_KEY). Limitation: VS Code does NOT run
+  // deactivate on *uninstall*, so an uninstall can leave a stale entry behind —
+  // remove it manually with `claude mcp remove taskwright -s user`.
+  if (claudeMcpRegistered) {
+    return unregisterTaskwrightMcp().then(() => undefined);
+  }
+  return undefined;
 }
 
 /**

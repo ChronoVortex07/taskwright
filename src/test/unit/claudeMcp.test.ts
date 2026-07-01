@@ -5,6 +5,7 @@ import {
   isClaudeCliAvailable,
   isTaskwrightMcpRegistered,
   registerTaskwrightMcp,
+  unregisterTaskwrightMcp,
   type ExecFn,
 } from '../../core/claudeMcp';
 
@@ -74,6 +75,20 @@ describe('claudeMcp', () => {
       };
       await registerTaskwrightMcp('/ext/dist/mcp/server.js', exec);
       expect(calls.some((a) => a[1] === 'add')).toBe(true);
+    });
+  });
+
+  describe('unregisterTaskwrightMcp', () => {
+    it('removes the user-scope registration via buildRemoveArgs', async () => {
+      const exec = vi.fn<ExecFn>(() => ok());
+      await expect(unregisterTaskwrightMcp(exec)).resolves.toBe(true);
+      expect(exec).toHaveBeenCalledWith('claude', buildRemoveArgs());
+    });
+
+    it('is best-effort: resolves false (never throws) when the CLI is missing or nothing is registered', async () => {
+      const exec = vi.fn<ExecFn>(() => fail());
+      await expect(unregisterTaskwrightMcp(exec)).resolves.toBe(false);
+      expect(exec).toHaveBeenCalledWith('claude', buildRemoveArgs());
     });
   });
 });

@@ -61,6 +61,19 @@ Two command-palette commands set up _different_ integrations — run the one tha
 
 In short: **Set Up Backlog.md CLI** is about the optional upstream CLI; **Set Up Claude Code Integration** is about wiring Claude Code to Taskwright's MCP server.
 
+### MCP registration lifecycle
+
+The **Set Up Claude Code Integration** command registers the MCP server at **user scope** (`claude mcp add taskwright -s user …`). Taskwright manages that entry for you:
+
+- **On activation**, if you previously set it up, Taskwright refreshes the registration so it always points at the current build — this heals a stale entry after an extension update moves the install directory.
+- **On deactivation** (disabling the extension or reloading the window), Taskwright best-effort-removes the entry so nothing is left pointing at a `dist/mcp/server.js` that may later be deleted. After a window reload the entry is re-added on the next activation, so the integration keeps working.
+
+> **Uninstall limitation:** VS Code does **not** run an extension's `deactivate` hook on uninstall, only on disable/reload. So uninstalling Taskwright can leave a stale user-scope `taskwright` entry behind. Remove it manually with:
+>
+> ```bash
+> claude mcp remove taskwright -s user
+> ```
+
 ## Development
 
 ```bash
