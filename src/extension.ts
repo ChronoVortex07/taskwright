@@ -41,6 +41,8 @@ import {
   mergeConfigPath,
 } from './core/mergeConfig';
 import { nodeQueueFs } from './core/mergeQueue';
+import { planStatusSync, parseStatusesLine, rewriteStatusesLine } from './core/mergeStatusConfig';
+import type { MergeMode } from './core/mergeQueue';
 
 const execFileAsync = promisify(execFile);
 
@@ -111,6 +113,46 @@ async function syncMergeConfig(repoRoot: string): Promise<void> {
     staleMinutes: cfg.get('mergeQueueStaleMinutes'),
   });
   writeMergeConfig(mergeConfigPath(commonDir), merged, nodeQueueFs);
+}
+
+/**
+ * Ensure `backlog/config.yml` carries the intermediate board status that matches
+ * the current `taskwright.mergeMode`, renaming it (and migrating any in-flight
+ * task parked in the old intermediate status) when the mode changes. Idempotent:
+ * writes only when the statuses line actually differs. Best-effort — never throws
+ * into activation.
+ */
+async function syncMergeStatus(
+  backlogPath: string,
+  parser: BacklogParser | undefined,
+  writer: BacklogWriter,
+  onChanged: () => void
+): Promise<void> {
+  try {
+    const configPath = path.join(backlogPath, 'config.yml');
+    if (!fs.existsSync(configPath)) return;
+    const mode = getTaskwrightConfig<MergeMode>('mergeMode', 'manual-review');
+    const text = fs.readFileSync(configPath, 'utf-8');
+    const current = parseStatusesLine(text);
+    if (current.length === 0) return;
+    const plan = planStatusSync(current, mode);
+    if (!plan.changed) return;
+
+    fs.writeFileSync(configPath, rewriteStatusesLine(text, plan.statuses), 'utf-8');
+
+    // Migrate any task currently sitting in the old intermediate status.
+    if (plan.migrateFrom && plan.migrateTo && parser) {
+      const tasks = await parser.getTasks();
+      for (const task of tasks) {
+        if (task.status === plan.migrateFrom) {
+          await writer.updateTask(task.id, { status: plan.migrateTo }, parser);
+        }
+      }
+    }
+    onChanged();
+  } catch (e) {
+    console.warn('[Taskwright] Merge status sync failed:', e);
+  }
 }
 
 /**
@@ -757,6 +799,12 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register create task command (opens form to create a draft)
   const writer = new BacklogWriter();
+  const activeBacklogForStatus = manager.getActiveRoot()?.backlogPath;
+  if (activeBacklogForStatus) {
+    void syncMergeStatus(activeBacklogForStatus, parser, writer, () =>
+      tasksHosts.forEach((host) => host.refresh())
+    );
+  }
   context.subscriptions.push(
     vscode.commands.registerCommand('taskwright.createTask', () => {
       const activeBacklogPath = manager.getActiveRoot()?.backlogPath;
@@ -1133,6 +1181,14 @@ export function activate(context: vscode.ExtensionContext) {
           affectsTaskwrightConfig(event, 'mergeQueueStaleMinutes'))
       ) {
         void syncMergeConfig(workspaceRootPath);
+      }
+      if (affectsTaskwrightConfig(event, 'mergeMode')) {
+        const backlogForStatus = manager.getActiveRoot()?.backlogPath;
+        if (backlogForStatus) {
+          void syncMergeStatus(backlogForStatus, parser, writer, () =>
+            tasksHosts.forEach((host) => host.refresh())
+          );
+        }
       }
     })
   );

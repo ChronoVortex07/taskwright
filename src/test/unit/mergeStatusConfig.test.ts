@@ -106,3 +106,12 @@ describe('planStatusSync', () => {
     expect(plan.migrateFrom).toBeUndefined();
   });
 });
+
+describe('planStatusSync — auto-pr from a fresh 3-status board', () => {
+  it('inserts Awaiting PR with no rename migration', () => {
+    const plan = planStatusSync(['To Do', 'In Progress', 'Done'], 'auto-pr');
+    expect(plan.statuses).toEqual(['To Do', 'In Progress', 'Awaiting PR', 'Done']);
+    expect(plan.changed).toBe(true);
+    expect(plan.migrateFrom).toBeUndefined();
+  });
+});
