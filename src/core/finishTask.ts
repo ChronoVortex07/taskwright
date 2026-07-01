@@ -223,3 +223,190 @@ export async function deleteBranch(
     // non-fatal — the merge already succeeded
   }
 }
+
+// --- append: BoardOps + requestMerge orchestrator ---
+import {
+  MergeQueueStore,
+  enqueueEntry,
+  removeEntry,
+  approveEntry, // re-exported for callers/tests convenience
+  headEntry,
+  markEntryActive,
+  isHeadStale,
+  positionOf,
+  type QueueEntry,
+} from './mergeQueue';
+import { intermediateStatusForMode, type MergeConfig } from './mergeConfig';
+
+/** Board mutations `request_merge` performs against the PRIMARY tree's board. */
+export interface BoardOps {
+  setStatus(taskId: string, status: string): Promise<void>;
+  complete(taskId: string): Promise<void>;
+  release(taskId: string): Promise<void>;
+}
+
+export interface FinishDeps {
+  /** The worktree cwd the agent runs in. */
+  root: string;
+  /** The primary working tree root (ff-merge target, branch/worktree cleanup). */
+  primaryRoot: string;
+  /** The current branch of the worktree. */
+  branch: string;
+  /** Repo-root-relative worktree path, e.g. `.worktrees/task-7-x`. */
+  worktreeRel: string;
+  config: MergeConfig;
+  queue: MergeQueueStore;
+  board: BoardOps;
+  exec: GitExecFn;
+  run: RunFn;
+  now: () => Date;
+  sleep: (ms: number) => Promise<void>;
+  /** Base long-poll interval; jittered per iteration. Default 1000ms. */
+  pollIntervalMs?: number;
+}
+
+export type RequestMergeResult =
+  | { status: 'merged'; taskId: string; branch: string }
+  | { status: 'pr_opened'; taskId: string; url: string }
+  | { status: 'sent_back'; taskId: string; reason: string }
+  | { status: 'aborted'; reason: string; detail?: string };
+
+const IN_PROGRESS = 'In Progress';
+
+/**
+ * The full `request_merge` lifecycle. One blocking call: it suspends on the
+ * long-poll until this task is the head AND (auto-mode OR human-approved), then
+ * integrates and cleans up. Aborts before enqueue never touch the queue; aborts
+ * after enqueue reset the board status and always dequeue.
+ */
+export async function requestMerge(deps: FinishDeps, taskId: string): Promise<RequestMergeResult> {
+  const { exec, run, queue, board, config, root, primaryRoot, branch, worktreeRel } = deps;
+
+  // 1. Validate + verify up front (aborts here never enqueue).
+  if (!(await isWorktreeClean(exec, root))) {
+    return {
+      status: 'aborted',
+      reason: 'Your worktree has uncommitted changes; commit or discard them first.',
+    };
+  }
+  const base = await resolveBaseBranch(exec, root);
+  const preRebase = await rebaseOntoBase(exec, root, base);
+  if (!preRebase.ok) {
+    return {
+      status: 'aborted',
+      reason: `Rebase onto ${base} hit conflicts; resolve them, then call request_merge again.`,
+      detail: (preRebase.conflicts ?? []).join(', '),
+    };
+  }
+  const preVerify = await runVerifyCommands(run, root, config.verifyCommands);
+  if (!preVerify.ok) {
+    return {
+      status: 'aborted',
+      reason: `Verification failed on \`${preVerify.failedCommand}\`; fix it and call request_merge again.`,
+      detail: preVerify.output,
+    };
+  }
+
+  // 2. Enqueue + park in the mode's intermediate status.
+  const entry: QueueEntry = {
+    taskId,
+    branch,
+    worktree: worktreeRel,
+    mode: config.mode,
+    submittedAt: deps.now().toISOString(),
+    approved: false,
+    active: false,
+    activeAt: null,
+  };
+  queue.mutate((q) => enqueueEntry(q, entry));
+  await board.setStatus(taskId, intermediateStatusForMode(config.mode));
+
+  try {
+    // 3. Wait for the green light.
+    const waited = await waitForTurn(deps, taskId);
+    if (waited === 'sent_back') {
+      await board.setStatus(taskId, IN_PROGRESS);
+      return { status: 'sent_back', taskId, reason: 'A reviewer sent this task back for changes.' };
+    }
+
+    // Mark active so the stale-head reclaim protects us while we merge.
+    queue.mutate((q) => markEntryActive(q, taskId, deps.now().toISOString()));
+
+    // 4. Re-validate — `main` may have advanced while we waited.
+    const reRebase = await rebaseOntoBase(exec, root, base);
+    if (!reRebase.ok) {
+      await board.setStatus(taskId, IN_PROGRESS);
+      return {
+        status: 'aborted',
+        reason: `Rebase onto ${base} hit conflicts after waiting; resolve them and call request_merge again.`,
+        detail: (reRebase.conflicts ?? []).join(', '),
+      };
+    }
+    const reVerify = await runVerifyCommands(run, root, config.verifyCommands);
+    if (!reVerify.ok) {
+      await board.setStatus(taskId, IN_PROGRESS);
+      return {
+        status: 'aborted',
+        reason: `Verification failed on \`${reVerify.failedCommand}\` after waiting; fix it and call request_merge again.`,
+        detail: reVerify.output,
+      };
+    }
+
+    // 5-6. Perform the action, then complete + clean up.
+    if (config.mode === 'auto-pr') {
+      const pr = await openPullRequest(exec, run, root, branch, base);
+      if (!pr.ok) {
+        await board.setStatus(taskId, IN_PROGRESS);
+        return { status: 'aborted', reason: pr.reason ?? 'Opening the pull request failed.' };
+      }
+      await board.complete(taskId);
+      await board.release(taskId);
+      await removeWorktree(exec, primaryRoot, worktreeRel); // keep the branch for the PR
+      return { status: 'pr_opened', taskId, url: pr.url ?? '' };
+    }
+
+    const merge = await ffMergeToBase(exec, primaryRoot, base, branch);
+    if (!merge.ok) {
+      await board.setStatus(taskId, IN_PROGRESS);
+      return { status: 'aborted', reason: merge.reason ?? 'Fast-forward merge failed.' };
+    }
+    await board.complete(taskId);
+    await board.release(taskId);
+    await deleteBranch(exec, primaryRoot, branch);
+    await removeWorktree(exec, primaryRoot, worktreeRel);
+    return { status: 'merged', taskId, branch };
+  } finally {
+    // 7. Dequeue — unblocks the next head. Safe/no-op if already removed.
+    queue.mutate((q) => removeEntry(q, taskId));
+  }
+}
+
+/**
+ * Long-poll the shared queue until this task may proceed. Returns 'proceed' when
+ * it is the head and (auto-mode or approved); 'sent_back' when its entry vanished
+ * (a reviewer's Send back). Reclaims a stale foreign head each iteration.
+ */
+async function waitForTurn(deps: FinishDeps, taskId: string): Promise<'proceed' | 'sent_back'> {
+  const { queue, config, now } = deps;
+  const base = deps.pollIntervalMs ?? 1000;
+  for (;;) {
+    const q = queue.read();
+    if (positionOf(q, taskId) === 0) return 'sent_back';
+
+    // Reclaim a stale foreign head so a crashed agent can't wedge the queue.
+    const head = headEntry(q);
+    if (head && head.taskId !== taskId && isHeadStale(q, config.staleMinutes, now())) {
+      queue.mutate((cur) => removeEntry(cur, head.taskId));
+      continue;
+    }
+
+    const isHead = head?.taskId === taskId;
+    const gated = config.mode !== 'manual-review';
+    const approved = q.entries.find((e) => e.taskId === taskId)?.approved === true;
+    if (isHead && (gated || approved)) return 'proceed';
+
+    await deps.sleep(base + Math.floor(Math.random() * base)); // jittered
+  }
+}
+
+export { positionOf, approveEntry };
