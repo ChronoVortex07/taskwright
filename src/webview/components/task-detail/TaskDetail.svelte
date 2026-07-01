@@ -43,10 +43,26 @@
   let planProgress:
     | { total: number; done: number; percent: number; exists: boolean }
     | undefined = $state(undefined);
+  let mergeState:
+    | { queued: boolean; position: number; approved: boolean; active: boolean; mode: string }
+    | undefined = $state(undefined);
+  let mergeMode: string | undefined = $state(undefined);
 
   let isClaimed = $derived(!!claimedBy);
   let claimedByMe = $derived(!!claimedBy && claimedBy === claimIdentity);
   let planName = $derived(planPath ? (planPath.split('/').pop() ?? planPath) : '');
+  let inManualReview = $derived(
+    !!mergeState && mergeState.mode === 'manual-review' && !mergeState.approved && !mergeState.active
+  );
+  let mergeStatusText = $derived(
+    !mergeState
+      ? ''
+      : mergeState.active
+        ? 'Merging…'
+        : mergeState.approved
+          ? 'Approved — the agent is integrating it'
+          : `In the merge queue · position #${mergeState.position}`
+  );
 
   // Handle messages from extension
   onMessage((message) => {
@@ -80,6 +96,8 @@
           isActiveTask = data.isActiveTask ?? false;
           planPath = data.task.plan;
           planProgress = data.planProgress;
+          mergeState = data.mergeState;
+          mergeMode = data.mergeMode;
           viewState = 'ready';
         }
         break;
@@ -247,6 +265,18 @@
     }
   }
 
+  function handleApproveMerge() {
+    if (task) {
+      vscode.postMessage({ type: 'approveMerge', taskId: task.id });
+    }
+  }
+
+  function handleSendBackMerge() {
+    if (task) {
+      vscode.postMessage({ type: 'sendBackMerge', taskId: task.id });
+    }
+  }
+
   function handleAttachPlan() {
     if (task) {
       vscode.postMessage({ type: 'attachPlan', taskId: task.id });
@@ -355,6 +385,19 @@
         <button class="claim-btn" data-testid="dispatch-task-btn" onclick={handleDispatch}>Dispatch</button>
       </div>
     </div>
+
+    {#if mergeState}
+      <div class="claim-banner merge-review-banner" data-testid="merge-review-banner">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>
+        <span class="claim-info">{mergeStatusText}</span>
+        {#if inManualReview}
+          <div class="claim-banner-actions">
+            <button class="claim-btn" data-testid="approve-merge-btn" onclick={handleApproveMerge}>Approve &amp; merge</button>
+            <button class="claim-release-btn" data-testid="send-back-merge-btn" onclick={handleSendBackMerge}>Send back</button>
+          </div>
+        {/if}
+      </div>
+    {/if}
 
     <div class="claim-banner plan-banner" class:claimed={!!planPath} data-testid="plan-banner">
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m9 15 2 2 4-4"/></svg>

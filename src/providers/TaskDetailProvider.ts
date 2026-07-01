@@ -1,9 +1,17 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { BacklogParser, computeSubtasks } from '../core/BacklogParser';
 import { BacklogWriter, computeContentHash, FileConflictError } from '../core/BacklogWriter';
-import { isReadOnlyTask, getReadOnlyTaskContext, type Task, type TaskSource } from '../core/types';
+import {
+  isReadOnlyTask,
+  getReadOnlyTaskContext,
+  type Task,
+  type TaskSource,
+  type MergeTaskState,
+} from '../core/types';
 import { StatusCallbackRunner } from '../core/StatusCallbackRunner';
 import { openWorkspaceFile, isValidLinkString } from '../core/openWorkspaceFile';
 import { parseMarkdown } from '../core/parseMarkdown';
@@ -12,6 +20,11 @@ import { dispatchTask } from './dispatchActions';
 import { attachPlanForTask, detachPlanForTask, openPlanForTask } from './planActions';
 import { readActiveTask, writeActiveTask, clearActiveTask } from '../core/activeTask';
 import { loadPlanProgress } from '../core/loadPlanProgress';
+import { mergeStateForTask } from '../core/mergeBoard';
+import { MergeQueueStore, mergeQueuePath, nodeQueueFs, type MergeMode } from '../core/mergeQueue';
+import { getTaskwrightConfig } from '../config';
+
+const execFileAsyncDetail = promisify(execFile);
 
 /**
  * Task detail data structure sent to the webview
@@ -43,6 +56,10 @@ interface TaskDetailData {
   isActiveTask?: boolean;
   /** Checkbox progress of the task's attached superpowers plan, if any. */
   planProgress?: { total: number; done: number; percent: number; exists: boolean };
+  /** Merge-queue state for this task, when it is awaiting integration. */
+  mergeState?: MergeTaskState;
+  /** Active merge mode (drives which review controls show). */
+  mergeMode?: MergeMode;
 }
 
 interface OpenTaskRequest {
@@ -321,6 +338,29 @@ export class TaskDetailProvider {
   }
 
   /**
+   * Best-effort resolution of this task's place in the shared merge queue.
+   * Resolves the git common dir (identical from every worktree) and reads the
+   * queue file directly; any failure (not a git repo, queue unreadable) yields
+   * `undefined` rather than breaking the rest of the task-detail payload.
+   */
+  private async resolveMergeState(
+    taskId: string,
+    repoRoot: string
+  ): Promise<MergeTaskState | undefined> {
+    try {
+      const { stdout } = await execFileAsyncDetail('git', ['rev-parse', '--git-common-dir'], {
+        cwd: repoRoot,
+        timeout: 15_000,
+      });
+      const commonDir = path.resolve(repoRoot, stdout.trim());
+      const store = new MergeQueueStore(mergeQueuePath(commonDir), nodeQueueFs);
+      return mergeStateForTask(store.read(), taskId);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * Send task data to the webview
    */
   private async sendTaskData(webview: vscode.Webview, task: Task): Promise<void> {
@@ -439,10 +479,11 @@ export class TaskDetailProvider {
         }
       }
 
-      // Active-task state and plan progress are auxiliary metadata; a lookup
-      // failure must not break rendering the task itself.
+      // Active-task state, plan progress, and merge-queue state are auxiliary
+      // metadata; a lookup failure must not break rendering the task itself.
       let isActiveTask = false;
       let planProgress: TaskDetailData['planProgress'];
+      let mergeState: MergeTaskState | undefined;
       try {
         const repoRoot = path.dirname(this.parser.getBacklogPath());
         isActiveTask = readActiveTask(repoRoot)?.taskId === contextTask.id;
@@ -455,9 +496,11 @@ export class TaskDetailProvider {
             exists: loaded.exists,
           };
         }
+        mergeState = await this.resolveMergeState(contextTask.id, repoRoot);
       } catch {
         isActiveTask = false;
       }
+      const mergeMode = getTaskwrightConfig<MergeMode>('mergeMode', 'manual-review');
 
       const data: TaskDetailData = {
         task: contextTask,
@@ -485,6 +528,8 @@ export class TaskDetailProvider {
         claimIdentity: getClaimIdentity(),
         isActiveTask,
         planProgress,
+        mergeState,
+        mergeMode,
       };
 
       webview.postMessage({ type: 'taskData', data });
@@ -860,6 +905,26 @@ export class TaskDetailProvider {
           }
         } catch (error) {
           vscode.window.showErrorMessage(`Failed to dispatch task: ${error}`);
+        }
+        break;
+      }
+
+      case 'approveMerge': {
+        if (TaskDetailProvider.currentTaskId) {
+          vscode.commands.executeCommand(
+            'taskwright.approveMerge',
+            TaskDetailProvider.currentTaskId
+          );
+        }
+        break;
+      }
+
+      case 'sendBackMerge': {
+        if (TaskDetailProvider.currentTaskId) {
+          vscode.commands.executeCommand(
+            'taskwright.sendBackMerge',
+            TaskDetailProvider.currentTaskId
+          );
         }
         break;
       }

@@ -34,8 +34,10 @@ export type {
   WebviewMessage,
   ExtensionMessage,
   DataSourceMode,
+  MergeTaskState,
 } from '../../core/types';
 export { isReadOnlyTask, getReadOnlyTaskContext } from '../../core/types';
+export type { MergeMode } from '../../core/mergeQueue';
 
 /**
  * Dashboard statistics data structure
@@ -81,4 +83,8 @@ export interface TaskDetailData {
   claimIdentity?: string;
   isActiveTask?: boolean;
   planProgress?: { total: number; done: number; percent: number; exists: boolean };
+  /** Merge-queue state for this task, when it is awaiting integration. */
+  mergeState?: MergeTaskState;
+  /** Active merge mode (drives which review controls show). */
+  mergeMode?: MergeMode;
 }
