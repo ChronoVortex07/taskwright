@@ -100,6 +100,34 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Install a managed `pre-commit` git hook that blocks committing a dispatched task branch from the primary working tree — the failure mode where a parallel agent escapes its `.worktrees/<branch>` and clobbers a sibling branch. Bypass a single commit with `git commit --no-verify`. Set to `false` to remove the hook. When enabled, adds a managed fenced block to the project's `.husky/pre-commit` (or `.git/hooks/pre-commit` when husky is absent) and copies a small guard script into the gitignored `.taskwright/hooks/`."
+        },
+        "taskwright.mergeMode": {
+          "type": "string",
+          "enum": [
+            "manual-review",
+            "auto-merge",
+            "auto-pr"
+          ],
+          "default": "manual-review",
+          "markdownDescription": "How `request_merge` integrates a finished task once it reaches the head of the merge queue. `manual-review` (default) parks it in **Pending Review** and waits for you to Approve on the board before fast-forward-merging to `main`. `auto-merge` (**Awaiting Merge**) fast-forward-merges with no review. `auto-pr` (**Awaiting PR**) pushes the branch and opens a GitHub pull request instead. The mode also names the intermediate board column."
+        },
+        "taskwright.mergeVerifyCommands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "bun run test",
+            "bun run lint",
+            "bun run typecheck"
+          ],
+          "markdownDescription": "Commands `request_merge` runs (in order, in the worktree) to verify a task before and after it reaches the head of the merge queue. Any non-zero exit aborts the merge and returns the failing output to the agent. Set to `[]` to skip verification."
+        },
+        "taskwright.mergeQueueStaleMinutes": {
+          "type": "number",
+          "default": 30,
+          "minimum": 0,
+          "markdownDescription": "Minutes after which the active head of the merge queue (a task mid-merge) is treated as abandoned — a crashed agent — and reclaimed so the next task can proceed. Set to `0` to reclaim immediately (not recommended)."
         }
       }
     },
