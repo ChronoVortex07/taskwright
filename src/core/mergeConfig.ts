@@ -18,6 +18,9 @@ export function intermediateStatusForMode(mode: MergeMode): string {
   return STATUS_BY_MODE[mode];
 }
 
+/** All three mode-named intermediate statuses (order follows MERGE_MODES). */
+export const INTERMEDIATE_STATUSES: string[] = MERGE_MODES.map(intermediateStatusForMode);
+
 export const DEFAULT_VERIFY_COMMANDS = ['bun run test', 'bun run lint', 'bun run typecheck'];
 export const DEFAULT_STALE_MINUTES = 30;
 
