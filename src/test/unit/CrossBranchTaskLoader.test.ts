@@ -131,6 +131,19 @@ status: ${status}
     }
   });
 
+  describe('excludeBranches', () => {
+    it('omits tasks that only exist on an excluded branch (e.g. the board ref)', async () => {
+      const config = await parser.getConfig();
+      const loader = new CrossBranchTaskLoader(gitService, parser, config, backlogDir, 'backlog', [
+        'feature/new-feature',
+      ]);
+
+      const taskIds = (await loader.loadTasksAcrossBranches()).map((t) => t.id);
+      expect(taskIds).toContain('TASK-1'); // main, not excluded
+      expect(taskIds).not.toContain('TASK-2'); // only on the excluded branch
+    });
+  });
+
   describe('loadTasksAcrossBranches', () => {
     it('should load tasks from multiple branches', async () => {
       const config = await parser.getConfig();

@@ -24,6 +24,18 @@ import {
 } from '../core/mergeQueue';
 import { mergeConfigPath, readMergeConfig } from '../core/mergeConfig';
 import {
+  readSyncConfig,
+  syncConfigPath,
+  DEFAULT_SYNC_CONFIG,
+  type SyncConfig,
+} from '../core/syncConfig';
+import {
+  claimTaskSynced,
+  releaseTaskSynced,
+  type SyncTarget,
+  type ClaimOutcome,
+} from '../core/boardSyncEngine';
+import {
   requestMerge,
   type BoardOps,
   type GitExecFn,
@@ -55,6 +67,20 @@ export interface McpHandlerDeps {
   board?: BoardOps;
   /** Injectable fs adapter for queue/config I/O (defaults to nodeQueueFs). Tests override. */
   fsDeps?: QueueFsDeps;
+  /** Injectable synced-board claim (defaults to the real engine). Tests override. */
+  claimSynced?: (
+    target: SyncTarget,
+    taskId: string,
+    claimedBy: string,
+    opts?: { worktree?: string; stalenessMs?: number }
+  ) => Promise<ClaimOutcome>;
+  /** Injectable synced-board release (defaults to the real engine). Tests override. */
+  releaseSynced?: (
+    target: SyncTarget,
+    taskId: string
+  ) => Promise<{ status: 'released' } | { status: 'failed'; reason: string }>;
+  /** Injectable sync-config resolver (defaults to reading sync-config.json). Tests override. */
+  syncConfigForRoot?: (root: string) => Promise<SyncConfig>;
 }
 
 export interface PlanProgressSummary {
@@ -92,11 +118,15 @@ export interface ActiveTaskResult {
 }
 
 export interface ClaimResult {
-  claimed: true;
+  claimed: boolean;
   taskId: string;
-  claimedBy: string;
+  claimedBy?: string;
   worktree?: string;
-  claimedAt: string;
+  claimedAt?: string;
+  /** True when the synced board shows the task is already held by someone else. */
+  surrendered?: boolean;
+  /** Who holds the task when `surrendered` is true. */
+  heldBy?: string;
 }
 
 export interface ReleaseResult {
@@ -301,12 +331,63 @@ export async function getActiveTask(deps: McpHandlerDeps): Promise<ActiveTaskRes
   return { active: true, task: toSummary(task, deps.root), queuePosition };
 }
 
+/**
+ * Resolve the synced-board config for this session (from sync-config.json under
+ * the common dir). Degrades to `off` (legacy claim path) when the directory is
+ * not a git repo or the config can't be read — sync is strictly opt-in.
+ */
+async function resolveSyncConfig(deps: McpHandlerDeps): Promise<SyncConfig> {
+  if (deps.syncConfigForRoot) return deps.syncConfigForRoot(deps.root);
+  try {
+    const exec = deps.gitExec ?? defaultGitExec;
+    const fsDeps = deps.fsDeps ?? nodeQueueFs;
+    const commonDir = path.resolve(
+      (await exec(deps.root, ['rev-parse', '--git-common-dir'])).stdout.trim()
+    );
+    return readSyncConfig(syncConfigPath(commonDir), fsDeps);
+  } catch {
+    return DEFAULT_SYNC_CONFIG;
+  }
+}
+
+function syncTargetFor(root: string, cfg: SyncConfig): SyncTarget {
+  return {
+    repoRoot: root,
+    ref: cfg.ref,
+    remote: cfg.mode === 'github' ? cfg.remote : undefined,
+    indexFile: path.join(root, '.taskwright', 'board.index'),
+    backlogDir: 'backlog',
+  };
+}
+
 /** Place an advisory claim on a task so other sessions can see it is in progress. */
 export async function claimTaskHandler(
   deps: McpHandlerDeps,
   args: { taskId: string; claimedBy?: string; worktree?: string }
 ): Promise<ClaimResult> {
   const claimedBy = args.claimedBy?.trim() || '@agent';
+  const cfg = await resolveSyncConfig(deps);
+
+  if (cfg.mode !== 'off') {
+    const claim = deps.claimSynced ?? claimTaskSynced;
+    const outcome = await claim(syncTargetFor(deps.root, cfg), args.taskId, claimedBy, {
+      worktree: args.worktree,
+    });
+    if (outcome.status === 'claimed') {
+      return {
+        claimed: true,
+        taskId: args.taskId,
+        claimedBy: outcome.claim.claimedBy,
+        worktree: outcome.claim.worktree,
+        claimedAt: outcome.claim.claimedAt,
+      };
+    }
+    if (outcome.status === 'surrendered') {
+      return { claimed: false, taskId: args.taskId, surrendered: true, heldBy: outcome.by };
+    }
+    return { claimed: false, taskId: args.taskId };
+  }
+
   const claim = await deps.claimService.claimTask(args.taskId, claimedBy, deps.parser, {
     worktree: args.worktree,
   });
@@ -324,6 +405,12 @@ export async function releaseTaskHandler(
   deps: McpHandlerDeps,
   args: { taskId: string }
 ): Promise<ReleaseResult> {
+  const cfg = await resolveSyncConfig(deps);
+  if (cfg.mode !== 'off') {
+    const release = deps.releaseSynced ?? releaseTaskSynced;
+    await release(syncTargetFor(deps.root, cfg), args.taskId);
+    return { released: true, taskId: args.taskId };
+  }
   await deps.claimService.releaseTask(args.taskId, deps.parser);
   return { released: true, taskId: args.taskId };
 }

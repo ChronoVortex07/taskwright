@@ -87,7 +87,8 @@ export class CrossBranchTaskLoader {
     private parser: BacklogParser,
     config: BacklogConfig,
     projectRoot: string,
-    backlogDir: string = 'backlog'
+    backlogDir: string = 'backlog',
+    private readonly excludeBranches: string[] = []
   ) {
     this.gitService = gitService;
     this.config = config;
@@ -247,7 +248,9 @@ export class CrossBranchTaskLoader {
       return b.lastCommitDate.getTime() - a.lastCommitDate.getTime();
     });
 
-    return branches;
+    if (this.excludeBranches.length === 0) return branches;
+    const excluded = new Set(this.excludeBranches);
+    return branches.filter((b) => !excluded.has(b.name));
   }
 
   /**
