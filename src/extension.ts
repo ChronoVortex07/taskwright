@@ -296,12 +296,17 @@ export function activate(context: vscode.ExtensionContext) {
       tasksHosts.forEach((host) => host.setMergeQueueReader(reader));
       tasksHosts.forEach((host) => host.refresh());
 
-      const watcher = vscode.workspace.createFileSystemWatcher(mergeQueuePath(commonDir));
+      const queueFile = mergeQueuePath(commonDir);
       const onQueueChange = () => tasksHosts.forEach((host) => host.refresh());
-      watcher.onDidChange(onQueueChange);
-      watcher.onDidCreate(onQueueChange);
-      watcher.onDidDelete(onQueueChange);
-      context.subscriptions.push(watcher);
+      // The queue lives inside .git (outside the workspace + in VS Code's default
+      // watcher-exclude), so vscode.workspace.createFileSystemWatcher never fires for
+      // it. Poll it with fs.watchFile instead — it also tolerates the file not
+      // existing until the first enqueue. Refreshes the board when another session's
+      // request_merge mutates the queue out-of-process.
+      fs.watchFile(queueFile, { interval: 1000 }, (curr, prev) => {
+        if (curr.mtimeMs !== prev.mtimeMs) onQueueChange();
+      });
+      context.subscriptions.push({ dispose: () => fs.unwatchFile(queueFile) });
     })();
   }
 
