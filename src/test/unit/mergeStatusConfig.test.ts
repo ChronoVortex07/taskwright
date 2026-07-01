@@ -42,10 +42,14 @@ describe('desiredStatuses', () => {
     const s = ['To Do', 'In Progress', 'Awaiting PR', 'Done'];
     expect(desiredStatuses(s, 'auto-pr')).toEqual(s);
   });
-  it('normalizes a misplaced intermediate to before-done', () => {
+  it('renames a misplaced intermediate in place without reordering', () => {
     expect(
-      desiredStatuses(['To Do', 'Pending Review', 'In Progress', 'Done'], 'manual-review')
-    ).toEqual(['To Do', 'In Progress', 'Pending Review', 'Done']);
+      desiredStatuses(['To Do', 'Pending Review', 'In Progress', 'Done'], 'auto-merge')
+    ).toEqual(['To Do', 'Awaiting Merge', 'In Progress', 'Done']);
+  });
+  it('leaves a custom board unchanged when it does not end in Done', () => {
+    const s = ['To Do', 'In Progress', 'Done', 'Archived'];
+    expect(desiredStatuses(s, 'manual-review')).toEqual(s);
   });
 });
 
@@ -112,6 +116,14 @@ describe('planStatusSync — auto-pr from a fresh 3-status board', () => {
     const plan = planStatusSync(['To Do', 'In Progress', 'Done'], 'auto-pr');
     expect(plan.statuses).toEqual(['To Do', 'In Progress', 'Awaiting PR', 'Done']);
     expect(plan.changed).toBe(true);
+    expect(plan.migrateFrom).toBeUndefined();
+  });
+});
+
+describe('planStatusSync — custom board not ending in Done', () => {
+  it('no-ops rather than mutating an unrecognized board shape', () => {
+    const plan = planStatusSync(['To Do', 'In Progress', 'Done', 'Archived'], 'manual-review');
+    expect(plan.changed).toBe(false);
     expect(plan.migrateFrom).toBeUndefined();
   });
 });

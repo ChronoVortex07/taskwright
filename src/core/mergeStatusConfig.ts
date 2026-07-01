@@ -1,7 +1,14 @@
 import type { MergeMode } from './mergeQueue';
 import { INTERMEDIATE_STATUSES, intermediateStatusForMode } from './mergeConfig';
 
-/** Parse the `statuses: ["A", "B", ...]` line from raw config.yml text. */
+const DONE_STATUS = 'Done';
+
+/**
+ * Parse the `statuses: ["A", "B", ...]` line from raw config.yml text.
+ * Only recognizes a SINGLE-LINE `statuses: [...]` array — Taskwright's own
+ * writer always emits single-line — so callers must not assume multi-line
+ * YAML array syntax is parsed.
+ */
 export function parseStatusesLine(configText: string): string[] {
   const m = configText.match(/^statuses:\s*\[(.*)\]\s*$/m);
   if (!m) return [];
@@ -12,18 +19,29 @@ export function parseStatusesLine(configText: string): string[] {
 }
 
 /**
- * The canonical statuses list for `mode`: exactly one intermediate status (the
- * mode's), placed immediately before the last (done) status. Any pre-existing
- * intermediate is removed first, so this both inserts (none present) and renames
- * (a different one present) in one pass.
+ * The canonical statuses list for `mode`. Renames an existing intermediate
+ * status in place (never reordering the user's board); otherwise inserts the
+ * mode's intermediate immediately before the terminal "Done" column. A custom
+ * board that does not end in "Done" is left untouched — Taskwright must not
+ * silently rewrite a status list whose shape it doesn't recognize.
  */
 export function desiredStatuses(current: string[], mode: MergeMode): string[] {
   const target = intermediateStatusForMode(mode);
-  const withoutIntermediate = current.filter((s) => !INTERMEDIATE_STATUSES.includes(s));
-  if (withoutIntermediate.length === 0) return [target];
-  const result = [...withoutIntermediate];
-  result.splice(result.length - 1, 0, target); // before the done (last) status
-  return result;
+  const existingIdx = current.findIndex((s) => INTERMEDIATE_STATUSES.includes(s));
+  if (existingIdx >= 0) {
+    if (current[existingIdx] === target) return current;
+    const next = [...current];
+    next[existingIdx] = target;
+    return next;
+  }
+  // Insertion precondition: only a board ending in the standard "Done" column
+  // gets an intermediate auto-inserted; anything else is left as-is.
+  if (current.length === 0 || current[current.length - 1] !== DONE_STATUS) {
+    return current;
+  }
+  const next = [...current];
+  next.splice(next.length - 1, 0, target); // before the done (last) status
+  return next;
 }
 
 /** The active intermediate status in a list, or undefined when none. */

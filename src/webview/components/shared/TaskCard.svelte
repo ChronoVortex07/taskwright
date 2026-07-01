@@ -4,6 +4,7 @@
     getReadOnlyTaskContext,
     type Task,
     type TaskIdDisplayMode,
+    type MergeTaskState,
   } from '../../lib/types';
   import { formatTaskIdForDisplay } from '../../lib/taskIdDisplay';
   import PriorityIcon from './PriorityIcon.svelte';
@@ -14,6 +15,7 @@
       subtaskProgress?: { total: number; done: number };
       isActiveTask?: boolean;
       claimStale?: boolean;
+      mergeState?: MergeTaskState;
     };
     taskIdDisplay: TaskIdDisplayMode;
     isActiveEdited?: boolean;
