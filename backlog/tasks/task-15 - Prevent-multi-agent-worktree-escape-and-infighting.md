@@ -3,10 +3,10 @@ id: TASK-15
 title: >-
   Prevent multi-agent worktree escape and infighting (isolation + auto-merge +
   merge right-of-way)
-status: Done
+status: In Progress
 assignee: []
 created_date: '2026-06-30 17:24'
-updated_date: '2026-07-01 06:32'
+updated_date: '2026-07-01 07:10'
 labels:
   - bug
   - agent-orchestration
@@ -51,23 +51,25 @@ Design TBD — implementation plan to be attached after a design brainstorm. Thi
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Worktree isolation enforced: agents cannot commit a dispatched task branch from the primary tree (pre-commit guard + hardened dispatch prompt/AGENTS.md)
-- [ ] #2 Auto-merge + cleanup at task end via a blocking request_merge MCP tool (rebase -> verify -> integrate -> cleanup)
-- [ ] #3 Merge right-of-way: a shared FIFO merge queue whose head is the only one that may integrate to main (one at a time)
-- [ ] #4 Review-gated modes with a mode-named intermediate status: Pending Review (default) / Awaiting Merge / Awaiting PR, plus approval UI
+- [x] #2 Auto-merge + cleanup at task end via a blocking request_merge MCP tool (rebase -> verify -> integrate -> cleanup)
+- [x] #3 Merge right-of-way: a shared FIFO merge queue whose head is the only one that may integrate to main (one at a time)
+- [ ] #4 Review-gated modes with a mode-named intermediate status: Pending Review (default) / Awaiting Merge / Awaiting PR, plus approval UI (Component C)
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Component A (worktree isolation guard) shipped to main (commits 2a5f36a..081e03f). New: src/core/worktreeGuard.ts (pure block/allow decision), src/core/hookInstaller.ts (husky-aware idempotent fenced pre-commit installer), src/hooks/worktree-guard.ts (bundled entrypoint -> dist/hooks/worktree-guard.js), extension activation wiring + taskwright.enforceWorktreeIsolation setting (default true, applied live via onDidChangeConfiguration), and dispatch-prompt/AGENTS.md hardening. The guard fence is committed into .husky/pre-commit (byte-identical to hookInstaller.guardBlock so runtime install is a no-op) and is existence-guarded so linked worktrees skip it. Full suite 1110 pass, lint + typecheck clean. Built subagent-driven per docs/superpowers/plans/2026-07-01-worktree-isolation-guard.md; design in docs/superpowers/specs/2026-07-01-safe-concurrent-agents-merge-queue-design.md.
+Component A (worktree isolation guard) shipped to main (2a5f36a..081e03f): src/core/worktreeGuard.ts, hookInstaller.ts, src/hooks/worktree-guard.ts (bundled), extension wiring + taskwright.enforceWorktreeIsolation, dispatch/AGENTS hardening. Deferred: advisory post-checkout warn-hook (spec 4.2).
 
-Deferred follow-up: the advisory post-checkout warn-hook (spec section 4.2) was intentionally out of Component A scope.
+Component B (merge queue + request_merge) shipped to main (6dca086..946d006), built subagent-driven per docs/superpowers/plans/2026-07-01-merge-queue-request-merge.md (8 tasks, each spec+quality reviewed; opus whole-branch review + fixes). New cores: src/core/mergeQueue.ts (shared FIFO queue at <git-common-dir>/taskwright/merge-queue.json, atomic writes, right-of-way head, stale-head reclaim), mergeConfig.ts (modes -> intermediate status names + shared merge-config.json), finishTask.ts (the request_merge lifecycle: clean-check -> rebase -> verify -> enqueue+status -> long-poll until head AND (auto OR approved) -> re-rebase+re-verify -> ff-merge or open-PR -> complete/cleanup -> dequeue). MCP request_merge tool + queuePosition in get_active_task (src/mcp). Extension publishes merge settings to the shared config for the out-of-process MCP. Three settings: taskwright.mergeMode / mergeVerifyCommands / mergeQueueStaleMinutes. Dispatch/AGENTS closing step now request_merge.
 
-Remaining: Component B (merge queue + request_merge) and Component C (board status + approval UI + modes) — plans not yet written.
+Critical fix from the final review: the intermediate-status write to the primary tree's task file collided with git merge --ff-only (dirty file); fixed with BoardOps.resetTaskFile discarding that one file's uncommitted edit before merge, proven by a real-git integration test. Full suite 1175 pass / 1 skip, lint + typecheck clean, MCP bundle builds.
+
+Remaining: Component C (mode-named board status column in config.yml with rename+migrate on mode change, kanban Approve/Send-back controls writing approved/removal to the shared queue, mergeMode plumbing) — meets B only at the shared queue file. Until C ships, manual-review approval is granted by writing approved:true into the queue file (or selecting auto-merge/auto-pr).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Component B (Task 6) complete: `request_merge` MCP tool registered in server.ts; `requestMergeHandler` wired in handlers.ts with full gitFacts resolution, isPrimaryTree guard, detached-HEAD guard, injected fsDeps/board/exec/run/now/sleep seams, and `makePrimaryBoard` factory. `getActiveTask` extended with best-effort `queuePosition` via positionOf. Added `fsDeps?: QueueFsDeps` to McpHandlerDeps so tests inject in-memory queue/config without vi.mock('fs') (avoids a vitest v4.1.8 + Node v24 + SWC transformer OOM that occurs with complex factory closures). All 3 new tests GREEN (temp-dir pattern), 1172 total tests pass, lint clean, typecheck clean.
+Not final — Component C (board status column + Approve/Send-back UI + mode plumbing) remains. Components A (worktree isolation guard) and B (merge queue + request_merge) are shipped to main and green.
 <!-- SECTION:FINAL_SUMMARY:END -->
