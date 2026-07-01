@@ -33,6 +33,16 @@ import {
 import { injectConvention } from './core/agentConvention';
 import { affectsTaskwrightConfig, getTaskwrightConfig } from './config';
 import { installGuard, uninstallGuard, type HookFsDeps } from './core/hookInstaller';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import {
+  resolveMergeConfigFromSettings,
+  writeMergeConfig,
+  mergeConfigPath,
+} from './core/mergeConfig';
+import { nodeQueueFs } from './core/mergeQueue';
+
+const execFileAsync = promisify(execFile);
 
 let fileWatcher: FileWatcher | undefined;
 let crossBranchStatusBarItem: vscode.StatusBarItem | undefined;
@@ -77,6 +87,30 @@ function syncWorktreeGuard(repoRoot: string, extensionUri: vscode.Uri): void {
   } catch (e) {
     console.warn('[Taskwright] Worktree guard sync failed:', e);
   }
+}
+
+/**
+ * Publish the merge settings to the shared config file the out-of-process MCP
+ * server reads. Written under the git common dir so every worktree sees it.
+ */
+async function syncMergeConfig(repoRoot: string): Promise<void> {
+  let commonDir: string;
+  try {
+    const { stdout } = await execFileAsync('git', ['rev-parse', '--git-common-dir'], {
+      cwd: repoRoot,
+      timeout: 15_000,
+    });
+    commonDir = path.resolve(repoRoot, stdout.trim());
+  } catch {
+    return; // not a git repo — nothing to publish
+  }
+  const cfg = vscode.workspace.getConfiguration('taskwright');
+  const merged = resolveMergeConfigFromSettings({
+    mode: cfg.get('mergeMode'),
+    verifyCommands: cfg.get('mergeVerifyCommands'),
+    staleMinutes: cfg.get('mergeQueueStaleMinutes'),
+  });
+  writeMergeConfig(mergeConfigPath(commonDir), merged, nodeQueueFs);
 }
 
 /**
@@ -189,6 +223,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   if (workspaceRootPath) {
     syncWorktreeGuard(workspaceRootPath, context.extensionUri);
+    void syncMergeConfig(workspaceRootPath);
   }
 
   const taskPreviewProvider = new TaskPreviewViewProvider(
@@ -1090,6 +1125,14 @@ export function activate(context: vscode.ExtensionContext) {
       }
       if (affectsTaskwrightConfig(event, 'enforceWorktreeIsolation') && workspaceRootPath) {
         syncWorktreeGuard(workspaceRootPath, context.extensionUri);
+      }
+      if (
+        workspaceRootPath &&
+        (affectsTaskwrightConfig(event, 'mergeMode') ||
+          affectsTaskwrightConfig(event, 'mergeVerifyCommands') ||
+          affectsTaskwrightConfig(event, 'mergeQueueStaleMinutes'))
+      ) {
+        void syncMergeConfig(workspaceRootPath);
       }
     })
   );
