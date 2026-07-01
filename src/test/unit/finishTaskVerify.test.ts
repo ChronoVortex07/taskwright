@@ -51,6 +51,10 @@ describe('resolveBaseBranch', () => {
     );
     expect(await resolveBaseBranch(exec, '/wt')).toBe('master');
   });
+  it('falls back to main when neither branch exists', async () => {
+    const exec = gitExec(() => new Error('no branch'));
+    expect(await resolveBaseBranch(exec, '/wt')).toBe('main');
+  });
 });
 
 describe('rebaseOntoBase', () => {
@@ -62,6 +66,7 @@ describe('rebaseOntoBase', () => {
     });
     expect(await rebaseOntoBase(exec, '/wt', 'main')).toEqual({ ok: true });
     expect(calls).toContainEqual(['rebase', 'main']);
+    expect(calls).not.toContainEqual(['rebase', '--abort']); // no abort on success
   });
 
   it('captures conflicts and aborts on failure', async () => {
@@ -77,6 +82,23 @@ describe('rebaseOntoBase', () => {
     expect(result.ok).toBe(false);
     expect(result.conflicts).toEqual(['src/a.ts', 'src/b.ts']);
     expect(calls).toContainEqual(['rebase', '--abort']);
+    // The conflict list MUST be captured before the abort wipes the unmerged paths.
+    const diffIdx = calls.findIndex((a) => a.join(' ') === 'diff --name-only --diff-filter=U');
+    const abortIdx = calls.findIndex((a) => a.join(' ') === 'rebase --abort');
+    expect(diffIdx).toBeGreaterThan(-1);
+    expect(abortIdx).toBeGreaterThan(-1);
+    expect(diffIdx).toBeLessThan(abortIdx);
+  });
+
+  it('returns empty conflicts (not undefined) when the diff capture itself throws', async () => {
+    const exec = gitExec((a) => {
+      if (a[0] === 'rebase' && a[1] === 'main') return new Error('conflict');
+      if (a[0] === 'diff') return new Error('diff failed');
+      return { stdout: '' };
+    });
+    const result = await rebaseOntoBase(exec, '/wt', 'main');
+    expect(result.ok).toBe(false);
+    expect(result.conflicts).toEqual([]);
   });
 });
 
