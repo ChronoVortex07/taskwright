@@ -8,6 +8,7 @@
   }
 
   const primaryTabs: Tab[] = [
+    { mode: 'tree', label: 'Tree' },
     { mode: 'kanban', label: 'Kanban' },
     { mode: 'list', label: 'List' },
     { mode: 'dashboard', label: 'Dashboard' },
@@ -118,7 +119,11 @@
       data-testid="tab-{tab.mode}"
       onclick={() => onTabChange(tab.mode)}
     >
-      {#if tab.mode === 'kanban'}
+      {#if tab.mode === 'tree'}
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9"/><path d="M12 12v3"/>
+        </svg>
+      {:else if tab.mode === 'kanban'}
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="M15 3v18"/>
         </svg>

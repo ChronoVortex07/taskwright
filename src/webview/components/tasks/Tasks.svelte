@@ -6,6 +6,7 @@
   import Dashboard from '../dashboard/Dashboard.svelte';
   import DocumentsList from '../docs/DocumentsList.svelte';
   import DecisionsList from '../decisions/DecisionsList.svelte';
+  import TechTreeCanvas from '../tree/TechTreeCanvas.svelte';
   import TabBar from '../shared/TabBar.svelte';
   import AgentSetupBanner from '../shared/AgentSetupBanner.svelte';
   import Toast from '../shared/Toast.svelte';
@@ -19,7 +20,7 @@
   }
 
   // State
-  let activeTab = $state<TabMode>('kanban');
+  let activeTab = $state<TabMode>('tree');
   let tasks = $state<TaskWithBlocks[]>([]);
   let columns = $state<StatusColumn[]>([
     { status: 'To Do', label: 'To Do' },
@@ -32,6 +33,11 @@
   let collapsedColumns = $state(new Set<string>());
   let collapsedMilestones = $state(new Set<string>());
   let noBacklog = $state(false);
+
+  // Tech-tree layout vocabulary (from the controller's treeLayoutUpdated).
+  let laneOrder = $state<string[]>([]);
+  let bandOrder = $state<string[]>([]);
+  let treeWarnings = $state<string[]>([]);
 
   // Dashboard state
   let dashboardStats = $state<DashboardStats | null>(null);
@@ -84,6 +90,12 @@
       case 'tasksUpdated':
         tasks = message.tasks;
         noBacklog = false;
+        break;
+
+      case 'treeLayoutUpdated':
+        laneOrder = message.laneOrder;
+        bandOrder = message.bandOrder;
+        treeWarnings = message.warnings;
         break;
 
       case 'activeTabChanged':
@@ -480,6 +492,18 @@
     <p class="init-hint">
       Or run <code>Taskwright: Initialize Backlog</code> from the Command Palette
     </p>
+  </div>
+{:else if activeTab === 'tree'}
+  <div id="tree-view" class="view-content">
+    <TechTreeCanvas
+      {tasks}
+      {laneOrder}
+      {bandOrder}
+      warnings={treeWarnings}
+      {statuses}
+      {taskIdDisplay}
+      onSelectTask={handleSelectTask}
+    />
   </div>
 {:else if activeTab === 'kanban'}
   <div id="kanban-view" class="view-content">

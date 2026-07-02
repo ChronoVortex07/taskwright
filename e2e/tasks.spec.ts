@@ -889,7 +889,8 @@ test.describe('Tasks View', () => {
       await setupTasksView(page);
     });
 
-    test('only 3 primary tabs visible plus overflow trigger', async ({ page }) => {
+    test('primary tabs visible plus overflow trigger', async ({ page }) => {
+      await expect(page.locator('[data-testid="tab-tree"]')).toBeVisible();
       await expect(page.locator('[data-testid="tab-kanban"]')).toBeVisible();
       await expect(page.locator('[data-testid="tab-list"]')).toBeVisible();
       await expect(page.locator('[data-testid="tab-dashboard"]')).toBeVisible();

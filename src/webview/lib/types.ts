@@ -2,6 +2,7 @@
  * Tab modes for the unified Tasks view
  */
 export type TabMode =
+  | 'tree'
   | 'kanban'
   | 'list'
   | 'drafts'
@@ -38,6 +39,7 @@ export type {
 } from '../../core/types';
 export { isReadOnlyTask, getReadOnlyTaskContext } from '../../core/types';
 export type { MergeMode } from '../../core/mergeQueue';
+export type { TreeLayout } from '../../core/treeLayout';
 
 /**
  * Dashboard statistics data structure
