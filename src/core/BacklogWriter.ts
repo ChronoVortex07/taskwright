@@ -737,15 +737,6 @@ export class BacklogWriter {
     }
     body += '\n## Acceptance Criteria\n<!-- AC:BEGIN -->\n<!-- AC:END -->\n';
 
-    // Add Definition of Done from config defaults
-    if (config.definition_of_done && config.definition_of_done.length > 0) {
-      body += '\n## Definition of Done\n<!-- DOD:BEGIN -->\n';
-      config.definition_of_done.forEach((item, index) => {
-        body += `- [ ] #${index + 1} ${item}\n`;
-      });
-      body += '<!-- DOD:END -->\n';
-    }
-
     // Build content
     const content = this.reconstructFile(frontmatter, body);
     fs.writeFileSync(filePath, content, 'utf-8');
@@ -899,16 +890,7 @@ export class BacklogWriter {
     const descBlock = opts?.description
       ? `<!-- SECTION:DESCRIPTION:BEGIN -->\n${opts.description}\n<!-- SECTION:DESCRIPTION:END -->`
       : '<!-- SECTION:DESCRIPTION:BEGIN -->\n<!-- SECTION:DESCRIPTION:END -->';
-    let body = `\n## Description\n\n${descBlock}\n\n## Acceptance Criteria\n<!-- AC:BEGIN -->\n<!-- AC:END -->\n`;
-
-    // Add Definition of Done from config defaults
-    if (config.definition_of_done && config.definition_of_done.length > 0) {
-      body += '\n## Definition of Done\n<!-- DOD:BEGIN -->\n';
-      config.definition_of_done.forEach((item, index) => {
-        body += `- [ ] #${index + 1} ${item}\n`;
-      });
-      body += '<!-- DOD:END -->\n';
-    }
+    const body = `\n## Description\n\n${descBlock}\n\n## Acceptance Criteria\n<!-- AC:BEGIN -->\n<!-- AC:END -->\n`;
 
     const content = this.reconstructFile(frontmatter, body);
     fs.writeFileSync(filePath, content, 'utf-8');

@@ -833,41 +833,6 @@ test.describe('Task Detail', () => {
     });
   });
 
-  test.describe('Definition of Done', () => {
-    test('displays progress indicator', async ({ page }) => {
-      await expect(page.locator('[data-testid="definitionOfDone-progress"]')).toContainText(
-        '0 of 1 complete'
-      );
-    });
-
-    test('sends toggle message when clicking checkbox', async ({ page }) => {
-      await clearPostedMessages(page);
-
-      await page.locator('[data-testid="definitionOfDone-toggle-1"]').click();
-
-      const message = await getLastPostedMessage(page);
-      expect(message).toEqual({
-        type: 'toggleChecklistItem',
-        listType: 'definitionOfDone',
-        itemId: 1,
-      });
-    });
-
-    test('adds new item via add input', async ({ page }) => {
-      const addInput = page.locator('[data-testid="definitionOfDone-add-input"]');
-      await addInput.fill('Code reviewed');
-      await clearPostedMessages(page);
-      await addInput.press('Enter');
-
-      const message = await getLastPostedMessage(page);
-      expect(message).toEqual({
-        type: 'updateField',
-        field: 'definitionOfDone',
-        value: '- [ ] #1 Tests pass\n- [ ] #2 Code reviewed',
-      });
-    });
-  });
-
   test.describe('Implementation Plan', () => {
     test('shows empty placeholder when plan is absent', async ({ page }) => {
       await expect(page.locator('[data-testid="implementationPlan-view"]')).toContainText(

@@ -776,7 +776,7 @@ Old description
       expect(frontmatter.reporter).toBe('@pm');
     });
 
-    it('should include DoD section when definition_of_done configured', async () => {
+    it('should not inject DoD section even when definition_of_done configured', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(true);
       mockReaddirSync([]);
 
@@ -789,9 +789,12 @@ Old description
       await writer.createTask('/fake/backlog', { title: 'With DoD' }, mockParserWithConfig);
 
       const writtenContent = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
-      expect(writtenContent).toContain('## Definition of Done');
-      expect(writtenContent).toContain('- [ ] #1 Tests pass');
-      expect(writtenContent).toContain('- [ ] #2 Code reviewed');
+      // DoD is no longer created on new tasks (removed from the UI; parsing/serialization
+      // of existing DoD sections stays intact for Backlog.md compat).
+      expect(writtenContent).not.toContain('## Definition of Done');
+      expect(writtenContent).not.toContain('<!-- DOD:BEGIN -->');
+      // The Description and Acceptance Criteria sections still render.
+      expect(writtenContent).toContain('## Acceptance Criteria');
     });
 
     it('should not include DoD section when definition_of_done not configured', async () => {
