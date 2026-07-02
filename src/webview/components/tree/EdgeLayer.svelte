@@ -8,10 +8,11 @@
     doneStatus: string;
     hoveredId: string | null;
     selectedId: string | null;
+    fadedIds: Set<string>;
     width: number;
     height: number;
   }
-  let { nodes, tasks, doneStatus, hoveredId, selectedId, width, height }: Props = $props();
+  let { nodes, tasks, doneStatus, hoveredId, selectedId, fadedIds, width, height }: Props = $props();
 
   interface Edge {
     id: string;
@@ -99,6 +100,7 @@
         class="tree-edge tree-edge-{e.kind}"
         class:incident={activeId !== null && incident(e, activeId)}
         class:faded={activeId !== null && !incident(e, activeId)}
+        class:nav-faded={fadedIds.has(e.from) || fadedIds.has(e.to)}
         data-testid="tree-edge-{e.from}-{e.to}"
         d={e.d}
         marker-end={e.kind === 'bug'
@@ -142,6 +144,9 @@
   }
   .tree-edge.faded {
     opacity: 0.15;
+  }
+  .tree-edge.nav-faded {
+    opacity: 0.1;
   }
   .tw-arrow-satisfied {
     fill: var(--vscode-charts-lines, var(--vscode-editorIndentGuide-activeBackground, #888));

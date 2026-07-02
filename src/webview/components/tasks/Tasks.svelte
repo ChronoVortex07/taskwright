@@ -40,6 +40,13 @@
   let treeWarnings = $state<string[]>([]);
   let milestoneData = $state<Extract<ExtensionMessage, { type: 'milestoneData' }> | null>(null);
 
+  // Navigator-driven canvas state (relayed from the sidebar navigator via the extension).
+  let navSearch = $state('');
+  let navPriority = $state('');
+  let collapsedLanes = $state<string[]>([]);
+  let jumpBand = $state('');
+  let jumpNonce = $state(0);
+
   // True while the board is in cross-branch mode (no local tree layout is computed).
   let crossBranch = $state(false);
   let priorities = $state<string[]>(['high', 'medium', 'low']);
@@ -113,6 +120,22 @@
 
       case 'milestoneData':
         milestoneData = message;
+        break;
+
+      case 'navigatorFilterChanged':
+        navSearch = message.search;
+        navPriority = message.priority;
+        break;
+
+      case 'navigatorLaneToggle':
+        collapsedLanes = collapsedLanes.includes(message.lane)
+          ? collapsedLanes.filter((l) => l !== message.lane)
+          : [...collapsedLanes, message.lane];
+        break;
+
+      case 'navigatorJump':
+        jumpBand = message.band;
+        jumpNonce += 1;
         break;
 
       case 'activeTabChanged':
@@ -523,6 +546,11 @@
       {taskIdDisplay}
       {crossBranch}
       {milestoneData}
+      {navSearch}
+      {navPriority}
+      {collapsedLanes}
+      {jumpBand}
+      {jumpNonce}
       onSelectTask={handleSelectTask}
     />
   </div>

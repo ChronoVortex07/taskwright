@@ -463,6 +463,15 @@ export function activate(context: vscode.ExtensionContext) {
   );
   console.log('[Taskwright] Tree navigator view provider registered');
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'taskwright.navigatorMinimap',
+      (x: number, y: number, w: number, h: number) => {
+        treeNavigatorProvider.postMessage({ type: 'minimapViewport', x, y, w, h });
+      }
+    )
+  );
+
   // Create Task Detail provider for opening task details in editor
   const taskDetailProvider = new TaskDetailProvider(context.extensionUri, parser);
   if (backlogFolder) {

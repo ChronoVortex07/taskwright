@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { installVsCodeMock, postMessageToWebview } from './fixtures/vscode-mock';
+import { installVsCodeMock, postMessageToWebview, getPostedMessages } from './fixtures/vscode-mock';
 import type { Task } from '../src/webview/lib/types';
 import { deriveGeometry, type GeometryNode } from '../src/webview/lib/treeGeometry';
 
@@ -264,5 +264,74 @@ test.describe('Tech tree canvas', () => {
       document.activeElement?.getAttribute('data-testid')
     );
     expect(focusedId).toMatch(/^tree-node-/);
+  });
+
+  test('navigatorFilterChanged dims non-matching nodes', async ({ page }) => {
+    await postMessageToWebview(page, {
+      type: 'navigatorFilterChanged',
+      search: 'Root',
+      priority: '',
+    });
+    await page.waitForTimeout(60);
+    await expect(page.locator('[data-testid="tree-node-TASK-1"]')).not.toHaveClass(/nav-dimmed/);
+    await expect(page.locator('[data-testid="tree-node-TASK-2"]')).toHaveClass(/nav-dimmed/);
+  });
+
+  test('navigatorLaneToggle hides the lane and shows a counts summary strip', async ({ page }) => {
+    await postMessageToWebview(page, { type: 'navigatorLaneToggle', lane: 'Bugs' });
+    await page.waitForTimeout(60);
+    await expect(page.locator('[data-testid="tree-node-TASK-5"]')).toHaveClass(/nav-hidden/);
+    // Q3: the collapsed lane renders a summary strip with counts. TASK-5 is the only
+    // Bugs-lane node and it is not Done → "1 tasks · 0 done".
+    const strip = page.locator('[data-testid="tree-lane-collapsed-Bugs"]');
+    await expect(strip).toBeVisible();
+    await expect(strip).toContainText('1 tasks · 0 done');
+    // toggling again restores the nodes and removes the strip
+    await postMessageToWebview(page, { type: 'navigatorLaneToggle', lane: 'Bugs' });
+    await page.waitForTimeout(60);
+    await expect(page.locator('[data-testid="tree-node-TASK-5"]')).not.toHaveClass(/nav-hidden/);
+    await expect(page.locator('[data-testid="tree-lane-collapsed-Bugs"]')).toHaveCount(0);
+  });
+
+  test('navigatorJump scrolls the surface toward a populated band', async ({ page }) => {
+    // `deriveGeometry` omits empty bands and the shared fixture leaves 'Backburner'
+    // empty — APPEND a Backburner node to the full treeTasks() fixture. Do NOT replace
+    // the fixture with a smaller one: the board must keep its three columns (content
+    // width 1088px) so the zoomed surface actually overflows the 1280px viewport —
+    // with a narrow 2-band board (560px), clampViewport (treeGeometry.ts:195-212) pins
+    // tx to one deterministic value, the style stays byte-identical, and the
+    // assertion below can never pass.
+    await postMessageToWebview(page, {
+      type: 'tasksUpdated',
+      tasks: [
+        ...treeTasks(),
+        {
+          id: 'TASK-9', title: 'Backburner node', status: 'To Do', labels: [], assignee: [],
+          dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
+          filePath: '/b/tasks/task-9.md', category: 'Features', milestone: 'Backburner',
+          layout: { lane: 'Features', band: 'Backburner', depth: 0, subRow: 0 },
+        } as Task,
+      ],
+    });
+    await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder, bandOrder, warnings: [] });
+    await page.waitForTimeout(80);
+    // Zoom in so the surface overflows the viewport; otherwise clampViewport pins the
+    // translate and the jump delta is nulled.
+    await page.locator('[data-testid="tree-zoom-in"]').click();
+    await page.locator('[data-testid="tree-zoom-in"]').click();
+    await page.waitForTimeout(40);
+    const surface = page.locator('[data-testid="tree-surface"]');
+    const before = await surface.getAttribute('style');
+    await postMessageToWebview(page, { type: 'navigatorJump', band: 'Backburner' });
+    await page.waitForTimeout(60);
+    expect(await surface.getAttribute('style')).not.toBe(before);
+  });
+
+  test('canvas emits minimapViewport', async ({ page }) => {
+    // Nudge the viewport so the debounced effect fires with a real rect.
+    await page.locator('[data-testid="tree-zoom-in"]').click();
+    await page.waitForTimeout(150);
+    const msgs = await getPostedMessages(page);
+    expect(msgs.some((m) => m.type === 'minimapViewport')).toBe(true);
   });
 });

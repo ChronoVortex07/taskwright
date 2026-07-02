@@ -18,11 +18,15 @@
     taskIdDisplay: TaskIdDisplayMode;
     selected: boolean;
     hovered: boolean;
+    dimmed?: boolean;
+    hidden?: boolean;
     onSelect: (id: string, meta?: Pick<Task, 'filePath' | 'source' | 'branch'>) => void;
     onHover: (id: string | null) => void;
   }
-  let { task, x, y, w, h, lod, statuses, taskIdDisplay, selected, hovered, onSelect, onHover }: Props =
-    $props();
+  let {
+    task, x, y, w, h, lod, statuses, taskIdDisplay, selected, hovered,
+    dimmed = false, hidden = false, onSelect, onHover,
+  }: Props = $props();
 
   const doneStatus = $derived(statuses.length > 0 ? statuses[statuses.length - 1] : 'Done');
   const isDone = $derived(
@@ -94,6 +98,8 @@
   class:pending-review={isPendingReview}
   class:selected
   class:hovered
+  class:nav-dimmed={dimmed}
+  class:nav-hidden={hidden}
   class:lod-near={lod === 'near'}
   class:lod-mid={lod === 'mid'}
   class:lod-far={lod === 'far'}
@@ -330,6 +336,12 @@
   }
   .tree-node.has-active-bug {
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--vscode-editorError-foreground, #f14c4c) 40%, transparent);
+  }
+  .tree-node.nav-dimmed {
+    opacity: 0.16;
+  }
+  .tree-node.nav-hidden {
+    display: none;
   }
 
   /* --- LOD tiers --- */

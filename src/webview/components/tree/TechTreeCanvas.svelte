@@ -34,6 +34,11 @@
       lanes: Array<{ name: string; total: number; done: number }>;
       checklist: import('../../lib/types').ChecklistItem[];
     } | null;
+    navSearch?: string;
+    navPriority?: string;
+    collapsedLanes?: string[];
+    jumpBand?: string;
+    jumpNonce?: number;
     onSelectTask: (taskId: string, meta?: Pick<Task, 'filePath' | 'source' | 'branch'>) => void;
   }
   let {
@@ -46,6 +51,11 @@
     taskIdDisplay,
     crossBranch = false,
     milestoneData = null,
+    navSearch = '',
+    navPriority = '',
+    collapsedLanes = [],
+    jumpBand = '',
+    jumpNonce = 0,
     onSelectTask,
   }: Props = $props();
 
@@ -80,6 +90,79 @@
       popoverX = a.x;
       popoverY = a.y;
     }
+  });
+
+  const collapsedSet = $derived(new Set(collapsedLanes));
+  function matchesFilter(t: Task): boolean {
+    const s = navSearch.trim().toLowerCase();
+    if (s && !`${t.id} ${t.title}`.toLowerCase().includes(s)) return false;
+    if (navPriority && (t.priority ?? '') !== navPriority) return false;
+    return true;
+  }
+  const hiddenIds = $derived.by(() => {
+    const set = new Set<string>();
+    if (collapsedSet.size === 0) return set;
+    for (const t of layoutNodes) if (t.layout && collapsedSet.has(t.layout.lane)) set.add(t.id);
+    return set;
+  });
+  const dimmedIds = $derived.by(() => {
+    const set = new Set<string>();
+    if (!navSearch.trim() && !navPriority) return set;
+    for (const t of layoutNodes) if (!matchesFilter(t)) set.add(t.id);
+    return set;
+  });
+  const fadedIds = $derived(new Set<string>([...dimmedIds, ...hiddenIds]));
+
+  // Q3: per-collapsed-lane summary (name + task counts) for the overlay strip. Uses the
+  // existing geometry.lanes (y/height) — NO relayout; done = the last configured status.
+  const laneSummaries = $derived.by(() => {
+    if (collapsedSet.size === 0)
+      return [] as Array<{ name: string; y: number; height: number; total: number; done: number }>;
+    return geometry.lanes
+      .filter((l) => collapsedSet.has(l.name))
+      .map((l) => {
+        const inLane = layoutNodes.filter((t) => t.layout?.lane === l.name);
+        const done = inLane.filter(
+          (t) => t.status === doneStatus || t.folder === 'completed' || t.folder === 'archive'
+        ).length;
+        return { name: l.name, y: l.y, height: l.height, total: inLane.length, done };
+      });
+  });
+
+  // Jump to a band when the navigator asks (nonce lets the same band re-trigger).
+  let lastJumpNonce = 0;
+  $effect(() => {
+    if (jumpNonce === lastJumpNonce) return;
+    lastJumpNonce = jumpNonce;
+    const b = geometry.bands.find((bnd) => bnd.name === jumpBand);
+    if (b && viewportEl) {
+      setViewport({ scale: vp.scale, tx: -b.x * vp.scale + 40, ty: vp.ty });
+    }
+  });
+
+  // Feed the navigator minimap with the current normalized viewport rect (debounced).
+  let minimapTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    const w = geometry.width;
+    const h = geometry.height;
+    const s = vp.scale;
+    const tx = vp.tx;
+    const ty = vp.ty;
+    if (!viewportEl || w <= 0 || h <= 0) return;
+    const vw = viewportEl.clientWidth;
+    const vh = viewportEl.clientHeight;
+    const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+    const rect = {
+      x: clamp01(-tx / s / w),
+      y: clamp01(-ty / s / h),
+      w: clamp01(vw / s / w),
+      h: clamp01(vh / s / h),
+    };
+    if (minimapTimer) clearTimeout(minimapTimer);
+    minimapTimer = setTimeout(
+      () => vscode.postMessage({ type: 'minimapViewport', ...rect }),
+      100
+    );
   });
 
   let milestoneBand = $state<string | null>(null);
@@ -347,6 +430,7 @@
           {doneStatus}
           {hoveredId}
           {selectedId}
+          {fadedIds}
           width={geometry.width}
           height={geometry.height}
         />
@@ -364,10 +448,22 @@
               {taskIdDisplay}
               selected={selectedId === task.id}
               hovered={hoveredId === task.id}
+              dimmed={dimmedIds.has(task.id)}
+              hidden={hiddenIds.has(task.id)}
               onSelect={handleSelect}
               onHover={(id) => (hoveredId = id)}
             />
           {/if}
+        {/each}
+
+        {#each laneSummaries as ls (ls.name)}
+          <div
+            class="tree-lane-collapsed"
+            data-testid="tree-lane-collapsed-{ls.name}"
+            style="top:{ls.y}px; left:0; width:{geometry.width}px; height:{ls.height}px;"
+          >
+            <span class="tree-lane-collapsed-label">{ls.name} · {ls.total} tasks · {ls.done} done</span>
+          </div>
         {/each}
       </div>
     </div>
@@ -435,6 +531,24 @@
     left: 0;
     transform-origin: 0 0;
     will-change: transform;
+  }
+  .tree-lane-collapsed {
+    position: absolute;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    box-sizing: border-box;
+    border-top: 1px solid var(--vscode-panel-border, transparent);
+    border-bottom: 1px solid var(--vscode-panel-border, transparent);
+    background: color-mix(in srgb, var(--vscode-editor-background) 82%, var(--vscode-foreground));
+  }
+  .tree-lane-collapsed-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+    white-space: nowrap;
   }
   .tree-toolbar {
     position: absolute;

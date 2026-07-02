@@ -870,6 +870,17 @@ export class TasksController {
         break;
       }
 
+      case 'minimapViewport': {
+        vscode.commands.executeCommand(
+          'taskwright.navigatorMinimap',
+          message.x,
+          message.y,
+          message.w,
+          message.h
+        );
+        break;
+      }
+
       case 'claimTask': {
         vscode.commands.executeCommand('taskwright.claimTask', message.taskId);
         break;
