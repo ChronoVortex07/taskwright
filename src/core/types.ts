@@ -105,6 +105,11 @@ export interface Task {
   // Taskwright merge-review board enrichment: this task's place in the shared
   // merge queue (Component C), or undefined when not queued.
   mergeState?: MergeTaskState;
+
+  /** Board-bus enrichment: plan checkbox progress for the tree node + popover. */
+  planProgress?: { done: number; total: number };
+  /** Board-bus enrichment: true when `claimedBy` equals the current claim identity. */
+  claimedByMe?: boolean;
 }
 
 /**
@@ -322,6 +327,7 @@ export type ExtensionMessage =
       tab: 'tree' | 'kanban' | 'list' | 'drafts' | 'archived' | 'dashboard' | 'docs' | 'decisions';
     }
   | { type: 'treeLayoutUpdated'; laneOrder: string[]; bandOrder: string[]; warnings: string[] }
+  | { type: 'prioritiesUpdated'; priorities: string[] }
   | { type: 'draftCountUpdated'; count: number }
   | { type: 'settingsUpdated'; settings: TasksViewSettings }
   | {

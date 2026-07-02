@@ -20,11 +20,13 @@ import { detectIntegration } from '../core/AgentIntegrationDetector';
 import { BacklogCli } from '../core/BacklogCli';
 import { readActiveTask } from '../core/activeTask';
 import { isClaimStale } from '../core/claims';
-import { getClaimStalenessMs } from './claimActions';
+import { getClaimStalenessMs, getClaimIdentity } from './claimActions';
 import { getTaskwrightConfig } from '../config';
 import { mergeStateForTask, type MergeTaskState } from '../core/mergeBoard';
 import type { MergeQueue, MergeMode } from '../core/mergeQueue';
 import { loadTreeBoardFromParser } from '../core/treeDerived';
+import { loadPlanProgress } from '../core/loadPlanProgress';
+import { resolvePriorities } from '../core/priorityOrder';
 
 export type TasksViewMode =
   | 'tree'
@@ -293,6 +295,16 @@ export class TasksController {
         activeTaskId = undefined;
       }
       const stalenessMs = getClaimStalenessMs();
+      const claimIdentity = getClaimIdentity();
+      // Repo root for plan-progress lookups. Best-effort: mirror the guarded
+      // active-task read above — a missing/failing getBacklogPath must not break
+      // loading the board (plan-progress enrichment is simply skipped).
+      let repoRoot = '';
+      try {
+        repoRoot = path.dirname(this.parser.getBacklogPath());
+      } catch {
+        repoRoot = '';
+      }
 
       // Merge-queue enrichment for the board's review badge. Best-effort: a
       // reader failure (e.g. corrupt/missing shared queue file) must not break
@@ -311,14 +323,29 @@ export class TasksController {
           blockingDependencyIds?: string[];
           isActiveTask?: boolean;
           claimStale?: boolean;
+          claimedByMe?: boolean;
+          planProgress?: { done: number; total: number };
           mergeState?: MergeTaskState;
         } = {
           ...task,
           blocksTaskIds: reverseDeps.get(task.id) || [],
           isActiveTask: !!activeTaskId && task.id === activeTaskId,
           claimStale: !!task.claimedBy && isClaimStale(task.claimedAt, stalenessMs),
+          claimedByMe: !!task.claimedBy && task.claimedBy === claimIdentity,
           mergeState: mergeQueue ? mergeStateForTask(mergeQueue, task.id) : undefined,
         };
+        // Plan-progress for the tree node bar + popover. Synchronous, never throws
+        // (missing plan file → exists:false, zeros). Only set when a plan is linked.
+        if (task.plan) {
+          try {
+            const loaded = loadPlanProgress(repoRoot, task.plan);
+            if (loaded.progress.total > 0) {
+              enhanced.planProgress = { done: loaded.progress.done, total: loaded.progress.total };
+            }
+          } catch {
+            /* best-effort */
+          }
+        }
         const derived = treeBoard?.states.get(task.id.trim().toUpperCase());
         if (derived) {
           enhanced.locked = derived.locked;
@@ -371,6 +398,7 @@ export class TasksController {
       });
       this.host.postMessage({ type: 'milestoneGroupingChanged', enabled: this.milestoneGrouping });
       this.host.postMessage({ type: 'statusesUpdated', statuses });
+      this.host.postMessage({ type: 'prioritiesUpdated', priorities: resolvePriorities(config) });
       this.host.postMessage({ type: 'milestonesUpdated', milestones });
       this.host.postMessage({ type: 'tasksUpdated', tasks: tasksWithBlocks });
       this.host.postMessage({
@@ -530,11 +558,14 @@ export class TasksController {
         if (typeof message.updates.status === 'string') {
           updates.status = message.updates.status;
         }
+        // Priority: accept any configured priority (P1 §10 made priority a user-defined
+        // list); `undefined` clears it; unknown strings are rejected (no write).
+        const configuredPriorities = resolvePriorities(await this.parser.getConfig());
         if (
-          message.updates.priority === 'high' ||
-          message.updates.priority === 'medium' ||
-          message.updates.priority === 'low' ||
-          message.updates.priority === undefined
+          message.updates.priority === undefined ||
+          configuredPriorities.some(
+            (p) => p.toLowerCase() === String(message.updates.priority).toLowerCase()
+          )
         ) {
           updates.priority = message.updates.priority;
         }

@@ -5,6 +5,9 @@ import { TasksController, TasksHost } from '../../providers/TasksController';
 import { TaskDetailProvider } from '../../providers/TaskDetailProvider';
 import { BacklogParser } from '../../core/BacklogParser';
 import { ExtensionMessage, Task } from '../../core/types';
+import { getClaimIdentity } from '../../providers/claimActions';
+import { BacklogWriter } from '../../core/BacklogWriter';
+const currentIdentity = () => getClaimIdentity();
 
 /**
  * Direct unit tests for the host-agnostic TasksController, driven through a mock
@@ -345,6 +348,83 @@ describe('TasksController', () => {
       'taskwright.sendBackMerge',
       'TASK-6'
     );
+  });
+
+  describe('TasksController — P2b board-bus enrichment', () => {
+    it('emits prioritiesUpdated from config priorities', async () => {
+      (mockParser.getConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+        statuses: ['To Do', 'In Progress', 'Done'],
+        priorities: ['P0', 'P1', 'P2'],
+      });
+      const controller = new TasksController(host, mockParser, mockContext);
+      await controller.refresh();
+      expect(posted).toContainEqual({ type: 'prioritiesUpdated', priorities: ['P0', 'P1', 'P2'] });
+    });
+
+    it('marks claimedByMe true only for tasks claimed by the current identity', async () => {
+      (mockParser.getTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: 'TASK-1', title: 'Mine', status: 'In Progress', labels: [], assignee: [],
+          dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
+          filePath: '/fake/backlog/tasks/task-1.md', claimedBy: currentIdentity(),
+        } as Task,
+        {
+          id: 'TASK-2', title: 'Theirs', status: 'In Progress', labels: [], assignee: [],
+          dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
+          filePath: '/fake/backlog/tasks/task-2.md', claimedBy: 'someone-else',
+        } as Task,
+      ]);
+      const controller = new TasksController(host, mockParser, mockContext);
+      await controller.refresh();
+      const upd = posted.find((m) => m.type === 'tasksUpdated') as Extract<
+        ExtensionMessage, { type: 'tasksUpdated' }
+      >;
+      const byId = new Map(upd.tasks.map((t) => [t.id, t]));
+      expect((byId.get('TASK-1') as Task).claimedByMe).toBe(true);
+      expect((byId.get('TASK-2') as Task).claimedByMe).toBe(false);
+    });
+  });
+
+  // Q1 (adjudicated): widen the updateTask priority write path. P1 §10 made priority a
+  // user-configured list; the popover/detail quick-edit must persist any configured value
+  // and keep rejecting unknown strings. TDD — these fail until Step 6b lands.
+  describe('TasksController — updateTask priority write path (Q1)', () => {
+    it('persists any configured priority (not just high/medium/low)', async () => {
+      const updateSpy = vi
+        .spyOn(BacklogWriter.prototype, 'updateTask')
+        .mockResolvedValue(undefined as never);
+      (mockParser.getConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+        statuses: ['To Do', 'In Progress', 'Done'],
+        priorities: ['P0', 'P1', 'P2'],
+      });
+      (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [],
+        dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
+        filePath: '/fake/backlog/tasks/task-1.md',
+      } as Task);
+      const controller = new TasksController(host, mockParser, mockContext);
+      await controller.handleMessage({
+        type: 'updateTask', taskId: 'TASK-1', updates: { priority: 'P0' },
+      });
+      expect(updateSpy).toHaveBeenCalledWith('TASK-1', { priority: 'P0' }, mockParser);
+    });
+
+    it('rejects an unknown priority string (no write)', async () => {
+      const updateSpy = vi
+        .spyOn(BacklogWriter.prototype, 'updateTask')
+        .mockResolvedValue(undefined as never);
+      (mockParser.getConfig as ReturnType<typeof vi.fn>).mockResolvedValue({ priorities: ['P0', 'P1', 'P2'] });
+      (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [],
+        dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
+        filePath: '/fake/backlog/tasks/task-1.md',
+      } as Task);
+      const controller = new TasksController(host, mockParser, mockContext);
+      await controller.handleMessage({
+        type: 'updateTask', taskId: 'TASK-1', updates: { priority: 'nope' },
+      });
+      expect(updateSpy).not.toHaveBeenCalled();
+    });
   });
 });
 
