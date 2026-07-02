@@ -21,8 +21,9 @@ import {
   clickInWebview,
   setSelectValueInWebview,
   clearWebviewSessionCache,
+  elementExistsInWebview,
 } from './lib/webview-helpers';
-import { dismissNotifications, resetEditorState, executeCommand } from './lib/cdp-helpers';
+import { dismissNotifications, resetEditorState, executeCommand, sleep } from './lib/cdp-helpers';
 
 const CDP_PORT = 9341;
 
@@ -41,7 +42,24 @@ async function waitForFileGone(filePath: string, timeoutMs = 10_000): Promise<vo
 
 async function openTree(instance: VsCodeInstance): Promise<void> {
   await clickInWebview(instance.cdp, 'tasks', '[data-testid="tab-tree"]');
-  await waitForWebviewContent(instance.cdp, 'tasks', 'TASK-', { timeoutMs: 10_000 });
+  // The zoomed-out (far-LOD) tree renders status glyphs, not task-id text, so
+  // wait for the TASK-1 node element itself rather than webview text content.
+  await waitForTreeNode(instance, 'TASK-1');
+}
+
+async function waitForTreeNode(
+  instance: VsCodeInstance,
+  taskId: string,
+  timeoutMs = 10_000
+): Promise<void> {
+  const selector = `[data-testid="tree-node-${taskId}"]`;
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const exists = await elementExistsInWebview(instance.cdp, 'tasks', selector);
+    if (exists) return;
+    await sleep(200);
+  }
+  throw new Error(`Tree node "${selector}" not found in tasks webview within ${timeoutMs}ms`);
 }
 
 describe('Tree popover cross-view (CDP)', () => {
@@ -68,6 +86,10 @@ describe('Tree popover cross-view (CDP)', () => {
     await resetEditorState(instance.cdp);
     await dismissNotifications(instance.cdp);
     await executeCommand(instance.cdp, 'taskwright.refresh');
+    // A previous test may have left the board on the tree tab (which renders no
+    // task-id text when zoomed out) — force kanban so the 'TASK-' readiness
+    // signal below is meaningful. openTree() switches back per-test.
+    await executeCommand(instance.cdp, 'taskwright.showKanbanView');
     await waitForWebviewContent(instance.cdp, 'tasks', 'TASK-', { timeoutMs: 10_000 });
   }, 30_000);
 

@@ -64,14 +64,14 @@ export async function waitForExtensionReady(cdp: CdpClient, timeoutMs = 60_000):
   await executeCommand(cdp, 'workbench.action.closeAuxiliaryBar');
   await sleep(300);
 
-  // Focus the Backlog sidebar by clicking its activity bar icon.
+  // Focus the Backlog/Taskwright sidebar by clicking its activity bar icon.
   await cdpEval(
     cdp,
     `(() => {
       const items = document.querySelectorAll('.activitybar .action-item a');
       for (const item of items) {
         const label = item.getAttribute('aria-label') || item.getAttribute('title') || '';
-        if (label.includes('Backlog')) {
+        if (label.includes('Backlog') || label.includes('Taskwright')) {
           item.click();
           return true;
         }
@@ -83,6 +83,11 @@ export async function waitForExtensionReady(cdp: CdpClient, timeoutMs = 60_000):
   // Open kanban via keybinding (much faster than command palette)
   await sleep(500);
   await executeCommand(cdp, 'taskwright.openKanban');
+  // openKanban only focuses the view; since the tech-tree became the default
+  // tab, explicitly switch the board to the kanban tab — the readiness signal
+  // below ('TASK-' text) only renders on kanban/list, not the zoomed-out tree.
+  await sleep(300);
+  await executeCommand(cdp, 'taskwright.showKanbanView');
 
   // Wait for tasks to render in the webview iframe.
   // Note: the old .pane-body textContent check never worked because webview

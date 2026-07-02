@@ -192,6 +192,30 @@ function downloadMacVsCode(): string {
 export function findVsCodeBinary(): string {
   const isMac = process.platform === 'darwin';
   const isLinux = process.platform === 'linux';
+  const isWindows = process.platform === 'win32';
+
+  if (isWindows) {
+    // The `code`/`code.cmd` shims resolved by `which` are scripts that spawn()
+    // cannot exec directly (and `which` returns a POSIX-style path under Git
+    // Bash that realpathSync can't resolve), so probe the standard install
+    // locations for the real Electron binary instead.
+    const winCandidates = [
+      path.join(
+        process.env.LOCALAPPDATA ?? '',
+        'Programs',
+        'Microsoft VS Code',
+        'Code.exe'
+      ),
+      path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'Microsoft VS Code', 'Code.exe'),
+    ];
+    for (const candidate of winCandidates) {
+      if (fs.existsSync(candidate)) return candidate;
+    }
+    throw new Error(
+      'Could not find VS Code binary for win32. Install VS Code (user or system setup) — ' +
+        `looked in: ${winCandidates.join(', ')}`
+    );
+  }
 
   if (isMac) {
     const macBin = path.join(
@@ -252,12 +276,30 @@ export async function launchVsCode(opts: LaunchOptions): Promise<VsCodeInstance>
     autoUpgrade: opts.autoUpgradeBinary ?? true,
   });
   const cdpPort = opts.cdpPort ?? 9340;
-  const userDataDir =
-    opts.userDataDir ?? path.join(PROJECT_ROOT, '.vscode-test/settings/cdp-tests');
+  let userDataDir = opts.userDataDir ?? path.join(PROJECT_ROOT, '.vscode-test/settings/cdp-tests');
 
-  // Clean user-data-dir to eliminate cached state
-  if (fs.existsSync(userDataDir)) {
-    fs.rmSync(userDataDir, { recursive: true, force: true });
+  // Clean user-data-dir to eliminate cached state. On Windows the previous
+  // (just-killed) VS Code instance can hold file locks for a few seconds, so
+  // retry EPERM/EBUSY manually (fs.rmSync's own maxRetries is not honored by
+  // every JS runtime), and fall back to a unique directory rather than failing
+  // the launch outright.
+  for (let attempt = 0; attempt < 20; attempt++) {
+    try {
+      if (fs.existsSync(userDataDir)) {
+        fs.rmSync(userDataDir, { recursive: true, force: true });
+      }
+      break;
+    } catch (err) {
+      if (attempt === 19) {
+        const fallback = `${userDataDir}-${Date.now()}`;
+        console.warn(
+          `[vscode-launcher] could not clean user-data-dir (${String(err)}); using ${fallback}`
+        );
+        userDataDir = fallback;
+        break;
+      }
+      await sleep(500);
+    }
   }
 
   // Write minimal settings and keybindings
@@ -300,6 +342,12 @@ export async function launchVsCode(opts: LaunchOptions): Promise<VsCodeInstance>
   if (process.platform === 'linux') {
     env.ELECTRON_DISABLE_GPU = '1';
   }
+  // When the test runner itself lives inside an Electron-descended process
+  // (e.g. a VS Code integrated terminal), ELECTRON_RUN_AS_NODE=1 is inherited
+  // and makes the spawned Code binary boot as plain Node — it then tries to
+  // `require()` the workspace path and exits. Strip it so VS Code starts as an
+  // Electron app.
+  delete env.ELECTRON_RUN_AS_NODE;
 
   const args = [
     opts.workspacePath,

@@ -11,14 +11,17 @@ set -e
 CMD="vitest run --config vitest.cdp.config.ts"
 
 # Check if we need xvfb:
-# - Not on macOS (darwin) - macOS doesn't use X11
+# - Not on macOS (darwin) or Windows (MINGW/MSYS/Cygwin) - neither uses X11
 # - Only in CI, devcontainer, or when no DISPLAY is set on Linux
 NEEDS_XVFB=false
-if [ "$(uname)" != "Darwin" ]; then
-  if [ -n "$DEVCONTAINER" ] || [ -n "$CI" ] || [ -z "$DISPLAY" ]; then
-    NEEDS_XVFB=true
-  fi
-fi
+case "$(uname)" in
+  Darwin | MINGW* | MSYS* | CYGWIN*) ;;
+  *)
+    if [ -n "$DEVCONTAINER" ] || [ -n "$CI" ] || [ -z "$DISPLAY" ]; then
+      NEEDS_XVFB=true
+    fi
+    ;;
+esac
 
 if [ "$NEEDS_XVFB" = true ]; then
   echo "Running CDP cross-view tests with virtual display (xvfb)..."
