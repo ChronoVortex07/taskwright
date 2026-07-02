@@ -1,7 +1,7 @@
 # Vision: Tech-tree overhaul (board presentation, dependency gating, agent authoring)
 
 **Date:** 2026-07-01
-**Status:** Approved (brainstorm) — umbrella vision; each sub-project has its own spec → plan → build
+**Status:** Approved (brainstorm) — umbrella vision; all six sub-project specs written (2026-07-02); each has its own spec → plan → build
 
 This is the **north-star** document for a multi-sub-project overhaul. It records the shared
 metaphor, the model decisions every piece inherits, and the decomposition into buildable
@@ -91,4 +91,7 @@ existing subscription-safe dispatch); P6 comes last (it needs the P1 model and t
   (adds a P2 amendment §15 for draft/proposed nodes).
 - **P5 (`/execute-task`):** `docs/superpowers/specs/2026-07-02-tech-tree-p5-execute-task-skill-design.md`
   (clarifies `get_active_task` as init-only; task-scoped cancellation).
-- P6: to be written when brainstormed, following the same spec → plan → build cycle.
+- **P6 (codebase indexing):** `docs/superpowers/specs/2026-07-02-tech-tree-p6-codebase-indexing-design.md`
+
+**All six sub-project specs are written.** Implementation follows the recommended order (P1 → P2 → P3
+→ P4 → P5, P6), each turning its spec into a plan before building.
