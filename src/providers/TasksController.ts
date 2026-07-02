@@ -18,7 +18,7 @@ import { TaskDetailProvider } from './TaskDetailProvider';
 import { StatusCallbackRunner } from '../core/StatusCallbackRunner';
 import { detectIntegration } from '../core/AgentIntegrationDetector';
 import { BacklogCli } from '../core/BacklogCli';
-import { readActiveTask } from '../core/activeTask';
+import { readActiveTask, writeActiveTask, clearActiveTask } from '../core/activeTask';
 import { isClaimStale } from '../core/claims';
 import { getClaimStalenessMs, getClaimIdentity } from './claimActions';
 import { getTaskwrightConfig } from '../config';
@@ -809,6 +809,46 @@ export class TasksController {
 
       case 'sendBackMerge': {
         vscode.commands.executeCommand('taskwright.sendBackMerge', message.taskId);
+        break;
+      }
+
+      // Q6 (adjudicated, accepted for v1): a full refresh() on every open/close keeps
+      // the isActiveTask board indicator correct and matches the existing setActiveTask
+      // flow; on rapid node-clicking this re-emits the whole board. Accepted debt — a
+      // targeted taskUpdated-style patch is a later optimization if it reads janky.
+      case 'popoverActiveChanged': {
+        if (!this.parser) break;
+        try {
+          const root = path.dirname(this.parser.getBacklogPath());
+          if (message.taskId) {
+            writeActiveTask(root, message.taskId);
+          } else {
+            clearActiveTask(root);
+          }
+          await this.refresh();
+        } catch (error) {
+          console.error('[Taskwright] popoverActiveChanged failed:', error);
+        }
+        break;
+      }
+
+      case 'claimTask': {
+        vscode.commands.executeCommand('taskwright.claimTask', message.taskId);
+        break;
+      }
+
+      case 'dispatchTask': {
+        vscode.commands.executeCommand('taskwright.dispatchTask', message.taskId);
+        break;
+      }
+
+      case 'forceClaimTask': {
+        vscode.commands.executeCommand('taskwright.forceClaimTask', message.taskId);
+        break;
+      }
+
+      case 'releaseTask': {
+        vscode.commands.executeCommand('taskwright.releaseTask', message.taskId);
         break;
       }
 

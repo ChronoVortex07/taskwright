@@ -14,6 +14,7 @@
   import EdgeLayer from './EdgeLayer.svelte';
   import AgeBandHeader from './AgeBandHeader.svelte';
   import LaneBand from './LaneBand.svelte';
+  import DetailPopover, { type PopoverActionKind } from './DetailPopover.svelte';
 
   interface Props {
     tasks: Task[];
@@ -51,6 +52,25 @@
   let hoveredId = $state<string | null>(null);
   let selectedId = $state<string | null>(null);
   const lod = $derived(lodTier(vp.scale));
+
+  let popoverTaskId = $state<string | null>(null);
+  let popoverX = $state(0);
+  let popoverY = $state(0);
+  const popoverTask = $derived(
+    popoverTaskId ? layoutNodes.find((t) => t.id === popoverTaskId) : undefined
+  );
+  // Close the popover if its task vanished from the board (e.g. completed/archived).
+  $effect(() => {
+    if (popoverTaskId && !popoverTask) closePopover();
+  });
+  // Keep the popover glued to its node while panning/zooming.
+  $effect(() => {
+    if (popoverTaskId) {
+      const a = anchorFor(popoverTaskId);
+      popoverX = a.x;
+      popoverY = a.y;
+    }
+  });
 
   let restored = false;
   $effect(() => {
@@ -107,7 +127,9 @@
   let panStart = { x: 0, y: 0, tx: 0, ty: 0 };
   function onPointerDown(e: PointerEvent) {
     const target = e.target as HTMLElement;
-    if (target.closest('.tree-node') || target.closest('.tree-toolbar')) return;
+    if (target.closest('.tree-toolbar') || target.closest('.tree-popover')) return;
+    if (target.closest('.tree-node')) return;
+    closePopover();
     panning = true;
     panStart = { x: e.clientX, y: e.clientY, tx: vp.tx, ty: vp.ty };
     viewportEl?.setPointerCapture(e.pointerId);
@@ -157,9 +179,64 @@
     nodes[next]?.focus();
   }
 
-  function handleSelect(id: string, meta?: Pick<Task, 'filePath' | 'source' | 'branch'>) {
+  function anchorFor(id: string): { x: number; y: number } {
+    const box = geometry.nodes.get(id);
+    if (!box || !viewportEl) return { x: 8, y: 8 };
+    const POP_W = 300;
+    const vw = viewportEl.clientWidth;
+    let px = box.x * vp.scale + vp.tx + box.width * vp.scale + 8;
+    if (px + POP_W > vw) px = Math.max(8, box.x * vp.scale + vp.tx - POP_W - 8);
+    const py = Math.max(8, box.y * vp.scale + vp.ty);
+    return { x: px, y: py };
+  }
+
+  function handleSelect(id: string) {
     selectedId = id;
-    onSelectTask(id, meta);
+    popoverTaskId = id;
+    const a = anchorFor(id);
+    popoverX = a.x;
+    popoverY = a.y;
+    vscode.postMessage({ type: 'popoverActiveChanged', taskId: id });
+  }
+
+  function closePopover() {
+    if (popoverTaskId === null) return;
+    popoverTaskId = null;
+    vscode.postMessage({ type: 'popoverActiveChanged', taskId: null });
+  }
+
+  function onPopoverAction(kind: PopoverActionKind, id: string) {
+    switch (kind) {
+      case 'claim':
+        vscode.postMessage({ type: 'claimTask', taskId: id });
+        break;
+      case 'dispatch':
+        vscode.postMessage({ type: 'dispatchTask', taskId: id });
+        break;
+      case 'forceClaim':
+        vscode.postMessage({ type: 'forceClaimTask', taskId: id });
+        break;
+      case 'release':
+        vscode.postMessage({ type: 'releaseTask', taskId: id });
+        break;
+      case 'cancelDispatch':
+        vscode.postMessage({ type: 'cancelDispatch', taskId: id });
+        break;
+      case 'approve':
+        vscode.postMessage({ type: 'approveMerge', taskId: id });
+        break;
+      case 'sendBack':
+        vscode.postMessage({ type: 'sendBackMerge', taskId: id });
+        break;
+      case 'markDone':
+        vscode.postMessage({ type: 'updateTask', taskId: id, updates: { status: doneStatus } });
+        break;
+    }
+  }
+
+  function onPopoverExpand(id: string) {
+    const t = layoutNodes.find((n) => n.id === id);
+    onSelectTask(id, t ? { filePath: t.filePath, source: t.source, branch: t.branch } : undefined);
   }
 </script>
 
@@ -256,6 +333,21 @@
         {/each}
       </div>
     </div>
+
+    {#if popoverTask}
+      <DetailPopover
+        task={popoverTask}
+        {statuses}
+        {priorities}
+        {taskIdDisplay}
+        x={popoverX}
+        y={popoverY}
+        onClose={closePopover}
+        onExpand={onPopoverExpand}
+        onQuickEdit={(u) => vscode.postMessage({ type: 'updateTask', taskId: popoverTask.id, updates: u })}
+        onAction={onPopoverAction}
+      />
+    {/if}
 
     {#if warnings.length > 0}
       <div class="tree-warnings" data-testid="tree-warnings" title={warnings.join('\n')}>

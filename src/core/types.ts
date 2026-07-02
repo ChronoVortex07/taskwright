@@ -294,7 +294,13 @@ export type WebviewMessage =
   | { type: 'setupAgentIntegration' }
   | { type: 'dismissIntegrationBanner' }
   | { type: 'approveMerge'; taskId: string }
-  | { type: 'sendBackMerge'; taskId: string };
+  | { type: 'sendBackMerge'; taskId: string }
+  | { type: 'popoverActiveChanged'; taskId: string | null }
+  | { type: 'claimTask'; taskId: string }
+  | { type: 'dispatchTask'; taskId: string }
+  | { type: 'forceClaimTask'; taskId: string }
+  | { type: 'releaseTask'; taskId: string }
+  | { type: 'cancelDispatch'; taskId: string };
 
 /**
  * Data source mode for task viewing

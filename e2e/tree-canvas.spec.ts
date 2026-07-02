@@ -1,9 +1,5 @@
 import { test, expect } from '@playwright/test';
-import {
-  installVsCodeMock,
-  postMessageToWebview,
-  getLastPostedMessage,
-} from './fixtures/vscode-mock';
+import { installVsCodeMock, postMessageToWebview } from './fixtures/vscode-mock';
 import type { Task } from '../src/webview/lib/types';
 import { deriveGeometry, type GeometryNode } from '../src/webview/lib/treeGeometry';
 
@@ -151,12 +147,6 @@ test.describe('Tech tree canvas', () => {
     await page.locator('[data-testid="tree-node-TASK-2"]').hover();
     await expect(page.locator('[data-testid="tree-edge-TASK-1-TASK-2"]')).toHaveClass(/incident/);
     await expect(page.locator('[data-testid="tree-edge-TASK-2-TASK-3"]')).toHaveClass(/incident/);
-  });
-
-  test('clicking a node sends selectTask (no popover in P2a)', async ({ page }) => {
-    await page.locator('[data-testid="tree-node-TASK-2"]').click();
-    const last = await getLastPostedMessage(page);
-    expect(last).toMatchObject({ type: 'selectTask', taskId: 'TASK-2' });
   });
 
   test('ctrl-wheel zooms and switches LOD tiers', async ({ page }) => {
