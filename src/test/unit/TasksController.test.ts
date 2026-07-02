@@ -426,6 +426,41 @@ describe('TasksController', () => {
       expect(updateSpy).not.toHaveBeenCalled();
     });
   });
+
+  describe('TasksController — P3a create case', () => {
+    it('createTask routes through the shared writer sequence, then refreshes', async () => {
+      const createSpy = vi
+        .spyOn(BacklogWriter.prototype, 'createTask')
+        .mockResolvedValue({ id: 'TASK-9', filePath: '/fake/backlog/tasks/task-9.md' });
+      (mockParser.getBacklogPath as ReturnType<typeof vi.fn>).mockReturnValue('/fake/backlog');
+      const controller = new TasksController(host, mockParser, mockContext);
+      await controller.handleMessage({
+        type: 'createTask',
+        title: 'Brand new task',
+        priority: 'high',
+      });
+      expect(createSpy).toHaveBeenCalledWith(
+        '/fake/backlog',
+        expect.objectContaining({ title: 'Brand new task', priority: 'high' }),
+        mockParser
+      );
+      // refresh() re-emitted the board:
+      expect(posted.some((m) => m.type === 'tasksUpdated')).toBe(true);
+    });
+
+    it('createTask with openAfter opens the new task detail', async () => {
+      vi.spyOn(BacklogWriter.prototype, 'createTask').mockResolvedValue({
+        id: 'TASK-9',
+        filePath: '/fake/backlog/tasks/task-9.md',
+      });
+      (mockParser.getBacklogPath as ReturnType<typeof vi.fn>).mockReturnValue('/fake/backlog');
+      const execSpy = vscode.commands.executeCommand as ReturnType<typeof vi.fn>;
+      execSpy.mockClear();
+      const controller = new TasksController(host, mockParser, mockContext);
+      await controller.handleMessage({ type: 'createTask', title: 'Open me', openAfter: true });
+      expect(execSpy).toHaveBeenCalledWith('taskwright.openTaskDetail', { taskId: 'TASK-9' });
+    });
+  });
 });
 
 describe('TasksController — tree tab', () => {

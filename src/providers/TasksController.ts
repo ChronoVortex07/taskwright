@@ -14,6 +14,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { BacklogParser, computeSubtasks } from '../core/BacklogParser';
 import { BacklogWriter } from '../core/BacklogWriter';
+import { TreeFieldService } from '../core/TreeFieldService';
+import { createTaskWithTreeFields } from '../core/createTaskCore';
 import { TaskDetailProvider } from './TaskDetailProvider';
 import { StatusCallbackRunner } from '../core/StatusCallbackRunner';
 import { detectIntegration } from '../core/AgentIntegrationDetector';
@@ -83,6 +85,7 @@ export class TasksController {
   private collapsedMilestones: Set<string> = new Set();
   private activeEditedTaskId: string | null = null;
   private readonly writer = new BacklogWriter();
+  private readonly treeFieldService = new TreeFieldService();
   private workspaceRoot: string | undefined;
   private onSelectTask?: (taskRef: TaskSelectionRef) => void | Promise<void>;
   private mergeQueueReader?: () => MergeQueue | undefined;
@@ -921,6 +924,46 @@ export class TasksController {
 
       case 'requestCreateTask': {
         vscode.commands.executeCommand('taskwright.createTask');
+        break;
+      }
+
+      case 'createTask': {
+        if (!this.parser) break;
+        try {
+          const { id } = await createTaskWithTreeFields(
+            {
+              parser: this.parser,
+              writer: this.writer,
+              backlogPath: this.parser.getBacklogPath(),
+              treeFieldService: this.treeFieldService,
+            },
+            {
+              title: message.title,
+              description: message.description,
+              status: message.status,
+              priority: message.priority,
+              category: message.category,
+              milestone: message.milestone,
+              // Q1: the wire field is `taskType` (message.type is the envelope discriminant);
+              // the core arg keeps the canonical name `type` (MCP parity).
+              type: message.taskType,
+              causedBy: message.causedBy,
+              dependencies: message.dependencies,
+              // linkTo is built for P3b; the P3a form never sets it. When P3b feeds it,
+              // re-validate with wouldCreateCycle extension-side before this call.
+              linkTo: message.linkTo,
+            }
+          );
+          await this.refresh();
+          if (message.openAfter) {
+            vscode.commands.executeCommand('taskwright.openTaskDetail', { taskId: id });
+          }
+        } catch (error) {
+          console.error('[Taskwright] createTask failed:', error);
+          vscode.window.showErrorMessage(
+            `Failed to create task: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
         break;
       }
 

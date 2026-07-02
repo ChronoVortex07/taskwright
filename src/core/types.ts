@@ -251,7 +251,22 @@ export type WebviewMessage =
       additionalOrdinalUpdates?: Array<{ taskId: string; ordinal: number }>;
     }
   | { type: 'updateTask'; taskId: string; updates: Partial<Task> }
-  | { type: 'createTask'; task: Partial<Task> }
+  | {
+      type: 'createTask';
+      title: string;
+      description?: string;
+      status?: string;
+      priority?: string;
+      category?: string;
+      milestone?: string;
+      /** Q1 blessed deviation: the task-type wire field is `taskType`, NOT `type` —
+       * `type` is the union discriminant (TS2300 otherwise). The core arg stays `type`. */
+      taskType?: 'bug';
+      causedBy?: string;
+      dependencies?: string[];
+      linkTo?: { taskId: string; direction: 'needs' | 'unlocks' };
+      openAfter?: boolean;
+    }
   | { type: 'archiveTask'; taskId: string }
   | { type: 'openFile'; filePath: string }
   | { type: 'openWorkspaceFile'; relativePath: string; fragment: string | null }
@@ -340,6 +355,14 @@ export type ExtensionMessage =
     }
   | { type: 'treeLayoutUpdated'; laneOrder: string[]; bandOrder: string[]; warnings: string[] }
   | { type: 'prioritiesUpdated'; priorities: string[] }
+  | {
+      type: 'openCreateForm';
+      mode: 'full' | 'quick';
+      bugMode?: boolean;
+      causedBy?: string;
+      category?: string;
+      milestone?: string;
+    }
   | {
       type: 'milestoneData';
       milestone: string;
