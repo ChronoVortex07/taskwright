@@ -7,6 +7,7 @@
   import SubtasksSection from './SubtasksSection.svelte';
   import Checklist from './Checklist.svelte';
   import MarkdownSection from './MarkdownSection.svelte';
+  import AttachmentChips from './AttachmentChips.svelte';
   import ActionButtons from './ActionButtons.svelte';
 
   // View state
@@ -181,6 +182,10 @@
 
   function handleOpenFile() {
     vscode.postMessage({ type: 'openFile' });
+  }
+
+  function handleOpenWorkspaceFile(relativePath: string, fragment: string | null) {
+    vscode.postMessage({ type: 'openWorkspaceFile', relativePath, fragment });
   }
 
   function handleArchive() {
@@ -394,40 +399,43 @@
     {isReadOnly}
   />
 
-  <MarkdownSection
+  <AttachmentChips
     taskId={task.id}
-    title="Implementation Plan"
-    fieldName="implementationPlan"
-    content={task.implementationPlan || ''}
-    contentHtml={planHtml}
-    emptyLabel="No plan"
-    onUpdate={handleUpdatePlan}
+    sections={[
+      {
+        key: 'plan',
+        label: 'Implementation Plan',
+        fieldName: 'implementationPlan',
+        content: task.implementationPlan || '',
+        contentHtml: planHtml,
+        emptyLabel: 'No plan',
+        onUpdate: handleUpdatePlan,
+      },
+      {
+        key: 'notes',
+        label: 'Implementation Notes',
+        fieldName: 'implementationNotes',
+        content: task.implementationNotes || '',
+        contentHtml: notesHtml,
+        emptyLabel: 'No notes',
+        onUpdate: handleUpdateImplementationNotes,
+      },
+      {
+        key: 'finalSummary',
+        label: 'Final Summary',
+        fieldName: 'finalSummary',
+        content: task.finalSummary || '',
+        contentHtml: finalSummaryHtml,
+        emptyLabel: 'No summary',
+        onUpdate: handleUpdateFinalSummary,
+      },
+    ]}
+    references={task.references ?? []}
+    documentation={task.documentation ?? []}
+    onOpenFile={handleOpenFile}
+    onOpenWorkspaceFile={handleOpenWorkspaceFile}
     {isReadOnly}
   />
-
-  <MarkdownSection
-    taskId={task.id}
-    title="Implementation Notes"
-    fieldName="implementationNotes"
-    content={task.implementationNotes || ''}
-    contentHtml={notesHtml}
-    emptyLabel="No notes"
-    onUpdate={handleUpdateImplementationNotes}
-    {isReadOnly}
-  />
-
-  {#if task.finalSummary || !isReadOnly}
-    <MarkdownSection
-      taskId={task.id}
-      title="Final Summary"
-      fieldName="finalSummary"
-      content={task.finalSummary || ''}
-      contentHtml={finalSummaryHtml}
-      emptyLabel="No summary"
-      onUpdate={handleUpdateFinalSummary}
-      {isReadOnly}
-    />
-  {/if}
 
   <ActionButtons
     onOpenFile={handleOpenFile}

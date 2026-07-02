@@ -835,6 +835,7 @@ test.describe('Task Detail', () => {
 
   test.describe('Implementation Plan', () => {
     test('shows empty placeholder when plan is absent', async ({ page }) => {
+      await page.locator('[data-testid="attach-chip-plan"]').click();
       await expect(page.locator('[data-testid="implementationPlan-view"]')).toContainText(
         'No plan'
       );
@@ -851,12 +852,14 @@ test.describe('Task Detail', () => {
       });
       await page.waitForTimeout(50);
 
+      await page.locator('[data-testid="attach-chip-plan"]').click();
       const planView = page.locator('[data-testid="implementationPlan-view"]');
       await expect(planView).toContainText('First step');
       await expect(planView).toContainText('Second step');
     });
 
     test('toggles to edit mode and sends updateField for implementationPlan', async ({ page }) => {
+      await page.locator('[data-testid="attach-chip-plan"]').click();
       await page.locator('[data-testid="edit-implementationPlan-btn"]').click();
       await expect(
         page.locator('[data-testid="implementationPlan-section"] [data-testid="markdown-editor"]')
@@ -881,6 +884,7 @@ test.describe('Task Detail', () => {
 
   test.describe('Implementation Notes', () => {
     test('shows empty placeholder when notes are absent', async ({ page }) => {
+      await page.locator('[data-testid="attach-chip-notes"]').click();
       await expect(page.locator('[data-testid="implementationNotes-view"]')).toContainText(
         'No notes'
       );
@@ -897,12 +901,14 @@ test.describe('Task Detail', () => {
       });
       await page.waitForTimeout(50);
 
+      await page.locator('[data-testid="attach-chip-notes"]').click();
       await expect(page.locator('[data-testid="implementationNotes-view"]')).toContainText(
         'Used approach X.'
       );
     });
 
     test('toggles to edit mode and sends updateField for implementationNotes', async ({ page }) => {
+      await page.locator('[data-testid="attach-chip-notes"]').click();
       await page.locator('[data-testid="edit-implementationNotes-btn"]').click();
       await expect(
         page.locator('[data-testid="implementationNotes-section"] [data-testid="markdown-editor"]')
@@ -925,16 +931,19 @@ test.describe('Task Detail', () => {
   });
 
   test.describe('Final Summary', () => {
-    test('shows final summary section for editable tasks (even when empty)', async ({ page }) => {
-      await expect(page.locator('[data-testid="finalSummary-section"]')).toBeVisible();
-      await expect(page.locator('[data-testid="finalSummary-view"]')).toContainText('No summary');
+    test('shows final summary chip with "+ Add" for editable tasks when empty', async ({
+      page,
+    }) => {
+      await expect(page.locator('[data-testid="attach-chip-finalSummary"]')).toBeVisible();
+      await expect(page.locator('[data-testid="attach-add-finalSummary"]')).toBeVisible();
     });
 
-    test('hides final summary section in read-only mode when empty', async ({ page }) => {
+    test('keeps final summary panel collapsed in read-only mode when empty', async ({ page }) => {
       await postMessageToWebview(page, { type: 'taskData', data: readOnlyTaskData });
       await page.waitForTimeout(50);
 
-      await expect(page.locator('[data-testid="finalSummary-section"]')).toHaveCount(0);
+      await expect(page.locator('[data-testid="attach-chip-finalSummary"]')).toBeVisible();
+      await expect(page.locator('[data-testid="attach-panel-finalSummary"]')).toHaveCount(0);
     });
 
     test('shows final summary section in read-only mode when populated', async ({ page }) => {
@@ -948,6 +957,7 @@ test.describe('Task Detail', () => {
       });
       await page.waitForTimeout(50);
 
+      await page.locator('[data-testid="attach-chip-finalSummary"]').click();
       await expect(page.locator('[data-testid="finalSummary-section"]')).toBeVisible();
       await expect(page.locator('[data-testid="finalSummary-view"]')).toContainText(
         'Completed with Z.'
@@ -955,6 +965,7 @@ test.describe('Task Detail', () => {
     });
 
     test('toggles to edit mode and sends updateField for finalSummary', async ({ page }) => {
+      await page.locator('[data-testid="attach-chip-finalSummary"]').click();
       await page.locator('[data-testid="edit-finalSummary-btn"]').click();
       await expect(
         page.locator('[data-testid="finalSummary-section"] [data-testid="markdown-editor"]')
@@ -1374,6 +1385,74 @@ test.describe('Task Detail', () => {
       const descriptionView = page.locator('[data-testid="description-view"]');
       await expect(descriptionView).toContainText('Result<List<MenuItem>>');
       await expect(descriptionView).toContainText('from the API');
+    });
+  });
+});
+
+const attachmentTaskData = {
+  ...sampleTaskData,
+  task: {
+    ...sampleTask,
+    implementationPlan: '1. Do the thing\n2. Verify it',
+    implementationNotes: '',
+    finalSummary: '',
+    references: ['https://example.com/spec'],
+    documentation: ['docs/design.md'],
+  },
+  planHtml: '<ol><li>Do the thing</li><li>Verify it</li></ol>',
+  notesHtml: '',
+  finalSummaryHtml: '',
+};
+
+test.describe('Attachment chips', () => {
+  test.beforeEach(async ({ page }) => {
+    // Self-contained setup (mirrors the 'Read-only cross-branch mode' describe at
+    // task-detail.spec.ts:1273-1280) so this block works wherever it is placed —
+    // e.g. appended at end-of-file, outside the top-level describe's beforeEach.
+    await installVsCodeMock(page);
+    await page.goto('/task-detail.html');
+    await page.waitForTimeout(100);
+    await postMessageToWebview(page, { type: 'taskData', data: attachmentTaskData });
+    await page.waitForTimeout(50);
+  });
+
+  test('renders a chip for Plan / Spec / Notes / Final Summary', async ({ page }) => {
+    await expect(page.locator('[data-testid="attach-chip-plan"]')).toBeVisible();
+    await expect(page.locator('[data-testid="attach-chip-spec"]')).toBeVisible();
+    await expect(page.locator('[data-testid="attach-chip-notes"]')).toBeVisible();
+    await expect(page.locator('[data-testid="attach-chip-finalSummary"]')).toBeVisible();
+  });
+
+  test('empty sections show "+ Add"; filled ones do not', async ({ page }) => {
+    await expect(page.locator('[data-testid="attach-add-notes"]')).toBeVisible();
+    await expect(page.locator('[data-testid="attach-add-finalSummary"]')).toBeVisible();
+    await expect(page.locator('[data-testid="attach-add-plan"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="attach-add-spec"]')).toHaveCount(0);
+  });
+
+  test('clicking a filled chip expands its preview; clicking again collapses', async ({ page }) => {
+    await page.locator('[data-testid="attach-chip-plan"]').click();
+    await expect(page.locator('[data-testid="attach-panel-plan"]')).toBeVisible();
+    await expect(page.locator('[data-testid="implementationPlan-view"]')).toContainText('Do the thing');
+    await page.locator('[data-testid="attach-chip-plan"]').click();
+    await expect(page.locator('[data-testid="attach-panel-plan"]')).toHaveCount(0);
+  });
+
+  test('open-in-editor posts openFile', async ({ page }) => {
+    await page.locator('[data-testid="attach-chip-plan"]').click();
+    await clearPostedMessages(page);
+    await page.locator('[data-testid="attach-open-plan"]').click();
+    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'openFile' });
+  });
+
+  test('Spec chip lists references + documentation; a relative link opens in the editor', async ({ page }) => {
+    await page.locator('[data-testid="attach-chip-spec"]').click();
+    await expect(page.locator('[data-testid="attach-panel-spec"]')).toContainText('docs/design.md');
+    await clearPostedMessages(page);
+    await page.locator('[data-testid="attach-spec-link"]', { hasText: 'docs/design.md' }).click();
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'openWorkspaceFile',
+      relativePath: 'docs/design.md',
     });
   });
 });
