@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { WebviewMessage, DataSourceMode } from '../core/types';
+import { WebviewMessage, DataSourceMode, ExtensionMessage } from '../core/types';
 import { BacklogParser } from '../core/BacklogParser';
 import { TasksController, TasksHost } from './TasksController';
 import { getTasksWebviewHtml } from './tasksWebviewHtml';
@@ -68,6 +68,10 @@ export class TasksPanelProvider {
 
   refresh(): Promise<void> {
     return this.controller?.refresh() ?? Promise.resolve();
+  }
+
+  relayNavigator(message: ExtensionMessage): void {
+    this.controller?.relayNavigator(message);
   }
 
   /** Whether the editor-tab board is currently open. */

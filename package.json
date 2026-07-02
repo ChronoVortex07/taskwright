@@ -343,6 +343,12 @@
           "name": "Details",
           "icon": "images/view-task-preview.svg",
           "visibility": "visible"
+        },
+        {
+          "type": "webview",
+          "id": "taskwright.treeNavigator",
+          "name": "Tree Navigator",
+          "icon": "images/view-kanban.svg"
         }
       ]
     }

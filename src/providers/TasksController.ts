@@ -1020,6 +1020,11 @@ export class TasksController {
     return this.dataSourceMode;
   }
 
+  /** Relay a navigator-originated message (from the sidebar navigator) to this board's webview. */
+  relayNavigator(message: ExtensionMessage): void {
+    this.host.postMessage(message);
+  }
+
   /**
    * Set the view mode (kanban, list, or drafts) from external command.
    * Drafts mode is treated as a special list view showing draft tasks.

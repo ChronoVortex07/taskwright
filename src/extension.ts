@@ -4,13 +4,14 @@ import { TasksPanelProvider } from './providers/TasksPanelProvider';
 import { TaskDetailProvider } from './providers/TaskDetailProvider';
 import { ContentDetailProvider } from './providers/ContentDetailProvider';
 import { TaskPreviewViewProvider } from './providers/TaskPreviewViewProvider';
+import { TreeNavigatorProvider } from './providers/TreeNavigatorProvider';
 import { BacklogParser } from './core/BacklogParser';
 import { BacklogWriter } from './core/BacklogWriter';
 import { TaskCreatePanel } from './providers/TaskCreatePanel';
 import { FileWatcher } from './core/FileWatcher';
 import { BacklogCli } from './core/BacklogCli';
 import { createDebouncedHandler } from './core/debounce';
-import type { TaskSource, DataSourceMode } from './core/types';
+import type { TaskSource, DataSourceMode, ExtensionMessage } from './core/types';
 import { createBacklogDocumentSelector } from './language/documentSelector';
 import { BacklogCompletionProvider } from './language/BacklogCompletionProvider';
 import { BacklogDocumentLinkProvider } from './language/BacklogDocumentLinkProvider';
@@ -275,6 +276,7 @@ interface TasksBoardSurface {
   setActiveEditedTaskId(taskId: string | null): void;
   checkAndSendIntegrationState(): Promise<void>;
   setMergeQueueReader(reader: () => MergeQueue | undefined): void;
+  relayNavigator(message: ExtensionMessage): void;
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -449,6 +451,18 @@ export function activate(context: vscode.ExtensionContext) {
   tasksProvider.setTaskSelectionHandler((taskRef) => taskPreviewProvider.selectTask(taskRef));
   console.log('[Taskwright] Task preview view provider registered');
 
+  const treeNavigatorProvider = new TreeNavigatorProvider(
+    context.extensionUri,
+    parser,
+    (message) => tasksHosts.forEach((host) => host.relayNavigator(message))
+  );
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider('taskwright.treeNavigator', treeNavigatorProvider, {
+      webviewOptions: { retainContextWhenHidden: true },
+    })
+  );
+  console.log('[Taskwright] Tree navigator view provider registered');
+
   // Create Task Detail provider for opening task details in editor
   const taskDetailProvider = new TaskDetailProvider(context.extensionUri, parser);
   if (backlogFolder) {
@@ -486,6 +500,7 @@ export function activate(context: vscode.ExtensionContext) {
       console.log('[Taskwright] Debounced refresh triggered');
       tasksHosts.forEach((host) => host.refresh());
       taskPreviewProvider.refresh();
+      treeNavigatorProvider.refresh();
       TaskDetailProvider.onFileChanged(uri, taskDetailProvider);
     }, 300);
     fileWatcher.onDidChange((uri) => {
@@ -502,6 +517,8 @@ export function activate(context: vscode.ExtensionContext) {
     taskDetailProvider.setParser(parser);
     taskDetailProvider.setBacklogPath(root.backlogPath);
     contentDetailProvider.setParser(parser);
+    treeNavigatorProvider.setParser(parser);
+    treeNavigatorProvider.refresh();
 
     // Re-register language providers (selector may differ per backlog dir)
     registerLanguageProviders(parser, root.backlogDir);
@@ -1029,6 +1046,7 @@ export function activate(context: vscode.ExtensionContext) {
   const refreshAllViews = (): void => {
     tasksHosts.forEach((host) => host.refresh());
     taskPreviewProvider.refresh();
+    treeNavigatorProvider.refresh();
   };
   const resolveClaimTarget = (arg: unknown): string | undefined => {
     if (typeof arg === 'string' && arg.trim()) return arg;
@@ -1461,6 +1479,7 @@ export function activate(context: vscode.ExtensionContext) {
       console.log('[Taskwright] Debounced refresh triggered');
       tasksHosts.forEach((host) => host.refresh());
       taskPreviewProvider.refresh();
+      treeNavigatorProvider.refresh();
       TaskDetailProvider.onFileChanged(uri, taskDetailProvider);
     }, 300);
     fileWatcher.onDidChange((uri) => {

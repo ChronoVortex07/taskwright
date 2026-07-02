@@ -36,6 +36,7 @@ export default defineConfig({
         'task-preview': resolve(__dirname, 'src/webview/entries/task-preview.ts'),
         'task-detail': resolve(__dirname, 'src/webview/entries/task-detail.ts'),
         'content-detail': resolve(__dirname, 'src/webview/entries/content-detail.ts'),
+        'tree-navigator': resolve(__dirname, 'src/webview/entries/tree-navigator.ts'),
       },
       output: {
         // Output as [name].js (e.g., tasks.js, dashboard.js)

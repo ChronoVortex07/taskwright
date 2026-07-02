@@ -302,7 +302,11 @@ export type WebviewMessage =
   | { type: 'releaseTask'; taskId: string }
   | { type: 'cancelDispatch'; taskId: string }
   | { type: 'requestMilestoneData'; milestone: string }
-  | { type: 'toggleReleaseChecklistItem'; milestone: string; itemId: number };
+  | { type: 'toggleReleaseChecklistItem'; milestone: string; itemId: number }
+  | { type: 'navigatorFilterChanged'; search: string; priority: string }
+  | { type: 'navigatorLaneToggle'; lane: string }
+  | { type: 'navigatorJump'; band: string }
+  | { type: 'minimapViewport'; x: number; y: number; w: number; h: number };
 
 /**
  * Data source mode for task viewing
@@ -344,6 +348,16 @@ export type ExtensionMessage =
       lanes: Array<{ name: string; total: number; done: number }>;
       checklist: ChecklistItem[];
     }
+  | {
+      type: 'navigatorData';
+      lanes: Array<{ name: string; count: number }>;
+      bands: string[];
+      priorities: string[];
+    }
+  | { type: 'navigatorFilterChanged'; search: string; priority: string }
+  | { type: 'navigatorLaneToggle'; lane: string }
+  | { type: 'navigatorJump'; band: string }
+  | { type: 'minimapViewport'; x: number; y: number; w: number; h: number }
   | { type: 'draftCountUpdated'; count: number }
   | { type: 'settingsUpdated'; settings: TasksViewSettings }
   | {

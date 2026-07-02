@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { WebviewMessage, DataSourceMode } from '../core/types';
+import { WebviewMessage, DataSourceMode, ExtensionMessage } from '../core/types';
 import { BacklogParser } from '../core/BacklogParser';
 import { TasksController, TasksHost, TasksViewMode, TaskSelectionRef } from './TasksController';
 import { getTasksWebviewHtml } from './tasksWebviewHtml';
@@ -78,6 +78,10 @@ export class TasksViewProvider implements vscode.WebviewViewProvider {
 
   refresh(): Promise<void> {
     return this.controller.refresh();
+  }
+
+  relayNavigator(message: ExtensionMessage): void {
+    this.controller.relayNavigator(message);
   }
 
   resolveWebviewView(
