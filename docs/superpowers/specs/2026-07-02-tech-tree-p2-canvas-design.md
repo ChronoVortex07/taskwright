@@ -177,3 +177,15 @@ detail popover + reworked details page + milestone popover, and the P1 layout ex
 bug/one-off intake (**P3**); `/create-task`, `/execute-task`, tree-traversal tools, indexing
 (**P4–P6**). **Cancel-dispatch's** worktree-removal + agent-cancellation signal is a **P5** dependency
 that P2 only triggers.
+
+## 15. Amendment (P4): draft / proposed nodes
+
+The P4 `/create-task` skill applies its proposal as **Draft-status nodes** the user reviews on the
+canvas, which adds two requirements here:
+
+- **Draft/proposed rendering** — Draft-status nodes get a distinct "proposed" style (e.g.,
+  dashed/ghosted) and participate in layout, filtering, and all P3 gestures (reslot, connect, edit).
+- **Promote action** — a per-node **Promote** and a canvas-level **Promote all proposed**, backed by
+  the `promote_draft` / `promote_drafts` MCP tools.
+
+See `docs/superpowers/specs/2026-07-02-tech-tree-p4-create-task-skill-design.md` §6–§7.
