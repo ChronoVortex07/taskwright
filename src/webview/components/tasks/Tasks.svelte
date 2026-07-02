@@ -39,6 +39,10 @@
   let bandOrder = $state<string[]>([]);
   let treeWarnings = $state<string[]>([]);
 
+  // True while the board is in cross-branch mode (no local tree layout is computed).
+  let crossBranch = $state(false);
+  let priorities = $state<string[]>(['high', 'medium', 'low']);
+
   // Dashboard state
   let dashboardStats = $state<DashboardStats | null>(null);
 
@@ -96,6 +100,14 @@
         laneOrder = message.laneOrder;
         bandOrder = message.bandOrder;
         treeWarnings = message.warnings;
+        break;
+
+      case 'dataSourceChanged':
+        crossBranch = message.mode === 'cross-branch';
+        break;
+
+      case 'prioritiesUpdated':
+        priorities = message.priorities;
         break;
 
       case 'activeTabChanged':
@@ -280,6 +292,7 @@
       }
 
       switch (e.key) {
+        case 't': handleTabChange('tree'); break;
         case 'z': handleTabChange('kanban'); break;
         case 'x': handleTabChange('list'); break;
         case 'c': handleTabChange('drafts'); break;
@@ -501,7 +514,9 @@
       {bandOrder}
       warnings={treeWarnings}
       {statuses}
+      {priorities}
       {taskIdDisplay}
+      {crossBranch}
       onSelectTask={handleSelectTask}
     />
   </div>

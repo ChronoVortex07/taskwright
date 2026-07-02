@@ -21,11 +21,22 @@
     bandOrder: string[];
     warnings: string[];
     statuses: string[];
+    priorities: string[];
     taskIdDisplay: TaskIdDisplayMode;
+    crossBranch?: boolean;
     onSelectTask: (taskId: string, meta?: Pick<Task, 'filePath' | 'source' | 'branch'>) => void;
   }
-  let { tasks, laneOrder, bandOrder, warnings, statuses, taskIdDisplay, onSelectTask }: Props =
-    $props();
+  let {
+    tasks,
+    laneOrder,
+    bandOrder,
+    warnings,
+    statuses,
+    priorities,
+    taskIdDisplay,
+    crossBranch = false,
+    onSelectTask,
+  }: Props = $props();
 
   const layoutNodes = $derived(tasks.filter((t) => !!t.layout));
   const hasLayout = $derived(layoutNodes.length > 0 && laneOrder.length > 0);
@@ -53,9 +64,14 @@
     }
   });
 
-  function persist() {
+  let persistTimer: ReturnType<typeof setTimeout> | undefined;
+  function persistNow() {
     const prev = (vscode.getState() as Record<string, unknown> | undefined) ?? {};
     vscode.setState({ ...prev, treeViewport: vp });
+  }
+  function persist() {
+    if (persistTimer) clearTimeout(persistTimer);
+    persistTimer = setTimeout(persistNow, 120);
   }
 
   function setViewport(next: Viewport) {
@@ -108,6 +124,7 @@
     if (!panning) return;
     panning = false;
     viewportEl?.releasePointerCapture?.(e.pointerId);
+    persistNow();
   }
 
   function onWheel(e: WheelEvent) {
@@ -127,6 +144,19 @@
     setViewport(zoomAt(vp, viewportEl.clientWidth / 2, viewportEl.clientHeight / 2, factor));
   }
 
+  function onCanvasKeydown(e: KeyboardEvent) {
+    const key = e.key;
+    if (!['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown', 'j', 'k'].includes(key)) return;
+    const nodes = Array.from(viewportEl?.querySelectorAll<HTMLElement>('.tree-node') ?? []);
+    if (nodes.length === 0) return;
+    const active = document.activeElement as HTMLElement | null;
+    const idx = active ? nodes.indexOf(active) : -1;
+    const forward = key === 'ArrowRight' || key === 'ArrowDown' || key === 'j';
+    const next = idx < 0 ? 0 : (idx + (forward ? 1 : -1) + nodes.length) % nodes.length;
+    e.preventDefault();
+    nodes[next]?.focus();
+  }
+
   function handleSelect(id: string, meta?: Pick<Task, 'filePath' | 'source' | 'branch'>) {
     selectedId = id;
     onSelectTask(id, meta);
@@ -135,11 +165,19 @@
 
 {#if !hasLayout}
   <div class="tree-empty-state" data-testid="tree-empty-state">
-    <p class="tree-empty-title">The tech tree isn't available for this view.</p>
-    <p class="tree-empty-hint">
-      The tree needs local task layout data, which isn't computed in cross-branch mode. Switch to
-      the Kanban or List tab, or turn off cross-branch mode.
-    </p>
+    {#if crossBranch}
+      <p class="tree-empty-title">The tech tree isn't available in cross-branch mode.</p>
+      <p class="tree-empty-hint">
+        The tree needs local task layout, which isn't computed when the board is scanning other
+        branches. Switch to the Kanban or List tab, or turn off cross-branch mode.
+      </p>
+    {:else}
+      <p class="tree-empty-title">No tasks to plot yet.</p>
+      <p class="tree-empty-hint">
+        Create a task and it will appear here as a node, positioned by its category, milestone, and
+        dependencies.
+      </p>
+    {/if}
   </div>
 {:else}
   <div class="tree-canvas" data-testid="tree-canvas">
@@ -176,6 +214,7 @@
       onpointerup={onPointerUp}
       onpointerleave={onPointerUp}
       onwheel={onWheel}
+      onkeydown={onCanvasKeydown}
       role="application"
       aria-label="Tech tree canvas"
     >

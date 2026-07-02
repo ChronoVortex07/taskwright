@@ -101,7 +101,11 @@
         class:faded={activeId !== null && !incident(e, activeId)}
         data-testid="tree-edge-{e.from}-{e.to}"
         d={e.d}
-        marker-end={e.kind === 'blocking' ? 'url(#tw-arrow-blocking)' : 'url(#tw-arrow)'}
+        marker-end={e.kind === 'bug'
+          ? undefined
+          : e.kind === 'blocking'
+            ? 'url(#tw-arrow-blocking)'
+            : 'url(#tw-arrow)'}
       />
     {/if}
   {/each}

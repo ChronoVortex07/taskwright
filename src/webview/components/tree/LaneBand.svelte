@@ -14,7 +14,7 @@
     <div
       class="tree-lane-label"
       data-testid="tree-lane-{lane.name}"
-      style="top:{lane.y * scale + ty}px; height:{lane.height * scale}px;"
+      style="top:{lane.y * scale + ty - 24}px; height:{lane.height * scale}px;"
     >
       <span>{lane.name}</span>
     </div>

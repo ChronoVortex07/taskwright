@@ -245,4 +245,34 @@ test.describe('Tech tree canvas', () => {
     await page.waitForTimeout(80);
     await expect(page.locator('[data-testid="tree-empty-state"]')).toBeVisible();
   });
+
+  test('bug→cause edge has no arrowhead marker', async ({ page }) => {
+    await page.locator('[data-testid="tree-node-TASK-5"]').hover();
+    const bugEdge = page.locator('[data-testid="tree-edge-TASK-5-TASK-1"]');
+    await expect(bugEdge).toHaveCount(1);
+    await expect(bugEdge).not.toHaveAttribute('marker-end', /tw-arrow/);
+  });
+
+  test('empty board (not cross-branch) shows the "no tasks" copy', async ({ page }) => {
+    await postMessageToWebview(page, { type: 'tasksUpdated', tasks: [] });
+    await postMessageToWebview(page, {
+      type: 'treeLayoutUpdated',
+      laneOrder: [],
+      bandOrder: [],
+      warnings: [],
+    });
+    await page.waitForTimeout(80);
+    await expect(page.locator('[data-testid="tree-empty-state"]')).toContainText(
+      'No tasks to plot'
+    );
+  });
+
+  test('arrow key moves focus to the next node', async ({ page }) => {
+    await page.locator('[data-testid="tree-node-TASK-1"]').focus();
+    await page.locator('[data-testid="tree-viewport"]').press('ArrowRight');
+    const focusedId = await page.evaluate(() =>
+      document.activeElement?.getAttribute('data-testid')
+    );
+    expect(focusedId).toMatch(/^tree-node-/);
+  });
 });
