@@ -53,7 +53,9 @@ canonical Backlog.md fields are untouched.
 | `caused_by` | `string` | bugs | Task ID that introduced the bug. Optional at filing; **required to complete** (§5.2). |
 
 `dependencies: string[]` (existing) remains the **gating** relation. `caused_by` is a **reference**
-relation, never a gate. `priority: 'high' | 'medium' | 'low'` (existing) doubles as bug **severity**.
+relation, never a gate. `priority` (existing) doubles as bug **severity** and is a **user-defined
+ordered list** sourced from config `priorities` (see §10 Amendments), not the fixed
+`high|medium|low` enum.
 
 ### 3.2 Config additions (`backlog/config.yml`)
 
@@ -156,3 +158,18 @@ enforcement, tests.
 streamlined create form, drag-to-connect, and bug/one-off intake UX (P3); `/create-task`,
 `/execute-task`, tree-traversal tools, and codebase indexing (P4–P6). The `dependencies`-as-gate work
 here is what those later pieces stand on.
+
+## 10. Amendments (P2 brainstorm, 2026-07-02)
+
+Two outcomes of the P2 canvas brainstorm change decisions above; they are authoritative:
+
+- **Priority → user-defined ordered list.** Replace the fixed `priority: 'high' | 'medium' | 'low'`
+  enum with the config `priorities: string[]` (already present, previously unused), ordered
+  highest-first and rendered as **text**. Bug **severity reuses priority**, so it inherits the
+  configured set. Sort tie-breaks (§4.4, §4.5) use config order rather than the hardcoded ranking.
+- **Lane = band with sub-rows.** §4.1's "lane (row)" becomes a **band** that grows vertically; the
+  layout gains a within-lane **sub-row packing** step so branching parallel dependency chains do not
+  overlap and the band’s height equals its max concurrent sub-rows. `layout` (§3.3) accordingly
+  carries a sub-row index alongside `{lane, band, depth}`.
+
+See `docs/superpowers/specs/2026-07-02-tech-tree-p2-canvas-design.md` §4, §5, §12.
