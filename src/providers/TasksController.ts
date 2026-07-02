@@ -318,7 +318,7 @@ export class TasksController {
           claimStale: !!task.claimedBy && isClaimStale(task.claimedAt, stalenessMs),
           mergeState: mergeQueue ? mergeStateForTask(mergeQueue, task.id) : undefined,
         };
-        const derived = treeStates?.get(task.id);
+        const derived = treeStates?.get(task.id.trim().toUpperCase());
         if (derived) {
           enhanced.locked = derived.locked;
           enhanced.blockedBy = derived.blockedBy;

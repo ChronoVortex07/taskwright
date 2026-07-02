@@ -403,10 +403,11 @@ export async function getActiveTask(deps: McpHandlerDeps): Promise<ActiveTaskRes
   } catch {
     // not a git repo / no queue — omit the field
   }
+  // Intentional fail-open: a transient derive/IO error must not brick claims — do not "fix" to fail-closed.
   const states = await loadTreeStateFromParser(deps.parser).catch(() => undefined);
   return {
     active: true,
-    task: toSummary(task, deps.root, states?.get(task.id)),
+    task: toSummary(task, deps.root, states?.get(task.id.trim().toUpperCase())),
     queuePosition,
   };
 }
@@ -448,8 +449,9 @@ export async function claimTaskHandler(
   const claimedBy = args.claimedBy?.trim() || '@agent';
 
   // Dependency gate (all modes): a locked task cannot be claimed by an agent.
+  // Intentional fail-open: a transient derive/IO error must not brick claims — do not "fix" to fail-closed.
   const states = await loadTreeStateFromParser(deps.parser).catch(() => undefined);
-  const derived = states?.get(args.taskId) ?? states?.get(args.taskId.trim().toUpperCase());
+  const derived = states?.get(args.taskId.trim().toUpperCase());
   if (derived?.locked) {
     return { claimed: false, taskId: args.taskId, locked: true, blockedBy: derived.blockedBy };
   }
@@ -518,8 +520,9 @@ async function requireSummary(deps: McpHandlerDeps, taskId: string): Promise<Tas
   if (!task) {
     throw new Error(`Task ${taskId} was written but could not be read back.`);
   }
+  // Intentional fail-open: a transient derive/IO error must not brick claims — do not "fix" to fail-closed.
   const states = await loadTreeStateFromParser(deps.parser).catch(() => undefined);
-  return toSummary(task, deps.root, states?.get(task.id));
+  return toSummary(task, deps.root, states?.get(task.id.trim().toUpperCase()));
 }
 
 /**

@@ -99,7 +99,7 @@ export async function claimTaskForCurrentUser(
   if (!opts.force) {
     try {
       const states = await loadTreeStateFromParser(parser);
-      const derived = states.get(taskId);
+      const derived = states.get(taskId.trim().toUpperCase());
       if (derived?.locked) {
         const choice = await vscode.window.showWarningMessage(
           blockedByMessage(taskId, derived.blockedBy),
@@ -109,7 +109,7 @@ export async function claimTaskForCurrentUser(
         if (choice !== 'Force claim') return undefined;
       }
     } catch {
-      // derivation failure must not block a claim
+      // Intentional fail-open: a transient derive/IO error must not brick claims — do not "fix" to fail-closed.
     }
   }
 

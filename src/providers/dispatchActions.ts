@@ -73,13 +73,13 @@ export async function dispatchTask(
   // Dependency gate: never dispatch a locked task.
   try {
     const states = await loadTreeStateFromParser(parser);
-    const derived = states.get(task.id);
+    const derived = states.get(task.id.trim().toUpperCase());
     if (derived?.locked) {
       vscode.window.showErrorMessage(blockedByMessage(task.id, derived.blockedBy));
       return undefined;
     }
   } catch {
-    // If derivation fails (e.g. transient IO), do not block dispatch.
+    // Intentional fail-open: a transient derive/IO error must not brick dispatch — do not "fix" to fail-closed.
   }
 
   const repoRoot = repoRootFor(parser);

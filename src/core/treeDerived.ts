@@ -25,6 +25,7 @@ export interface DeriveTreeStateOptions {
  * (bugs/activeBugIds), and layout for every task in `tasks`. Pass the full
  * universe (active + completed + archived) so a dependency on a done/completed
  * task counts as satisfied and bug backlinks resolve.
+ * Map is keyed by normalized (uppercased) task id.
  */
 export function deriveTreeState(
   tasks: Task[],
@@ -54,7 +55,7 @@ export function deriveTreeState(
   for (const t of tasks) {
     const key = t.id.trim().toUpperCase();
     const blockedBy = computeBlockedBy(t, byId, opts.doneStatus);
-    states.set(t.id, {
+    states.set(key, {
       locked: blockedBy.length > 0,
       blockedBy,
       bugs: bugsByCause.get(key) ?? [],
