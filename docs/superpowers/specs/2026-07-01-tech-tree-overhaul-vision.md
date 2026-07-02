@@ -89,4 +89,6 @@ existing subscription-safe dispatch); P6 comes last (it needs the P1 model and t
 - **P3 (create/edit):** `docs/superpowers/specs/2026-07-02-tech-tree-p3-create-edit-design.md`
 - **P4 (`/create-task` + tools):** `docs/superpowers/specs/2026-07-02-tech-tree-p4-create-task-skill-design.md`
   (adds a P2 amendment §15 for draft/proposed nodes).
-- P5–P6: to be written as each sub-project is brainstormed, following the same spec → plan → build cycle.
+- **P5 (`/execute-task`):** `docs/superpowers/specs/2026-07-02-tech-tree-p5-execute-task-skill-design.md`
+  (clarifies `get_active_task` as init-only; task-scoped cancellation).
+- P6: to be written when brainstormed, following the same spec → plan → build cycle.
