@@ -27,6 +27,8 @@ import type { MergeQueue, MergeMode } from '../core/mergeQueue';
 import { loadTreeBoardFromParser } from '../core/treeDerived';
 import { loadPlanProgress } from '../core/loadPlanProgress';
 import { resolvePriorities } from '../core/priorityOrder';
+import { laneOf } from '../core/treeLayout';
+import { readReleaseChecklist, toggleReleaseChecklist } from '../core/milestoneReleaseChecklist';
 
 export type TasksViewMode =
   | 'tree'
@@ -414,6 +416,42 @@ export class TasksController {
     } catch (error) {
       console.error('[Taskwright] Error refreshing Tasks view:', error);
       this.host.postMessage({ type: 'error', message: 'Failed to load tasks' });
+    }
+  }
+
+  private async sendMilestoneData(milestone: string): Promise<void> {
+    if (!this.parser) return;
+    try {
+      const [tasks, statuses] = await Promise.all([
+        this.parser.getTasks(),
+        this.parser.getStatuses(),
+      ]);
+      const doneStatus = statuses.length > 0 ? statuses[statuses.length - 1] : 'Done';
+      const inMilestone = tasks.filter((t) => (t.milestone ?? 'Backburner') === milestone);
+      const laneMap = new Map<string, { total: number; done: number }>();
+      let total = 0;
+      let done = 0;
+      for (const t of inMilestone) {
+        total++;
+        const isDone = t.status === doneStatus;
+        if (isDone) done++;
+        const lane = laneOf(t);
+        const l = laneMap.get(lane) ?? { total: 0, done: 0 };
+        l.total++;
+        if (isDone) l.done++;
+        laneMap.set(lane, l);
+      }
+      const checklist = readReleaseChecklist(this.parser.getBacklogPath(), milestone);
+      this.host.postMessage({
+        type: 'milestoneData',
+        milestone,
+        total,
+        done,
+        lanes: Array.from(laneMap.entries()).map(([name, v]) => ({ name, ...v })),
+        checklist,
+      });
+    } catch (error) {
+      console.error('[Taskwright] milestone data failed:', error);
     }
   }
 
@@ -854,6 +892,19 @@ export class TasksController {
 
       case 'cancelDispatch': {
         vscode.commands.executeCommand('taskwright.cancelDispatch', message.taskId);
+        break;
+      }
+
+      case 'requestMilestoneData': {
+        await this.sendMilestoneData(message.milestone);
+        break;
+      }
+
+      case 'toggleReleaseChecklistItem': {
+        if (!this.parser) break;
+        toggleReleaseChecklist(this.parser.getBacklogPath(), message.milestone, message.itemId);
+        this.parser.invalidateMilestoneCache();
+        await this.sendMilestoneData(message.milestone);
         break;
       }
 

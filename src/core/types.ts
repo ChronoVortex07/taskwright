@@ -300,7 +300,9 @@ export type WebviewMessage =
   | { type: 'dispatchTask'; taskId: string }
   | { type: 'forceClaimTask'; taskId: string }
   | { type: 'releaseTask'; taskId: string }
-  | { type: 'cancelDispatch'; taskId: string };
+  | { type: 'cancelDispatch'; taskId: string }
+  | { type: 'requestMilestoneData'; milestone: string }
+  | { type: 'toggleReleaseChecklistItem'; milestone: string; itemId: number };
 
 /**
  * Data source mode for task viewing
@@ -334,6 +336,14 @@ export type ExtensionMessage =
     }
   | { type: 'treeLayoutUpdated'; laneOrder: string[]; bandOrder: string[]; warnings: string[] }
   | { type: 'prioritiesUpdated'; priorities: string[] }
+  | {
+      type: 'milestoneData';
+      milestone: string;
+      total: number;
+      done: number;
+      lanes: Array<{ name: string; total: number; done: number }>;
+      checklist: ChecklistItem[];
+    }
   | { type: 'draftCountUpdated'; count: number }
   | { type: 'settingsUpdated'; settings: TasksViewSettings }
   | {

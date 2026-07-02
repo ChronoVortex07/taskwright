@@ -5,19 +5,22 @@
     bands: BandRange[];
     scale: number;
     tx: number;
+    onOpenMilestone: (band: string) => void;
   }
-  let { bands, scale, tx }: Props = $props();
+  let { bands, scale, tx, onOpenMilestone }: Props = $props();
 </script>
 
 <div class="tree-band-headers" data-testid="tree-band-headers">
   {#each bands as band (band.name)}
-    <div
+    <button
       class="tree-band-header"
       data-testid="tree-band-{band.name}"
       style="left:{band.x * scale + tx}px; width:{band.width * scale}px;"
+      onclick={() => onOpenMilestone(band.name)}
+      title="Milestone {band.name}"
     >
       <span class="tree-band-label">{band.name}</span>
-    </div>
+    </button>
   {/each}
 </div>
 
@@ -33,6 +36,9 @@
     overflow: hidden;
   }
   .tree-band-header {
+    all: unset;
+    cursor: pointer;
+    pointer-events: auto;
     position: absolute;
     top: 0;
     height: 24px;

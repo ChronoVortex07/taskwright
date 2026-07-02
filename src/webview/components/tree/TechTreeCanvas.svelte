@@ -15,6 +15,7 @@
   import AgeBandHeader from './AgeBandHeader.svelte';
   import LaneBand from './LaneBand.svelte';
   import DetailPopover, { type PopoverActionKind } from './DetailPopover.svelte';
+  import MilestonePopover from './MilestonePopover.svelte';
 
   interface Props {
     tasks: Task[];
@@ -25,6 +26,13 @@
     priorities: string[];
     taskIdDisplay: TaskIdDisplayMode;
     crossBranch?: boolean;
+    milestoneData?: {
+      milestone: string;
+      total: number;
+      done: number;
+      lanes: Array<{ name: string; total: number; done: number }>;
+      checklist: import('../../lib/types').ChecklistItem[];
+    } | null;
     onSelectTask: (taskId: string, meta?: Pick<Task, 'filePath' | 'source' | 'branch'>) => void;
   }
   let {
@@ -36,6 +44,7 @@
     priorities,
     taskIdDisplay,
     crossBranch = false,
+    milestoneData = null,
     onSelectTask,
   }: Props = $props();
 
@@ -71,6 +80,24 @@
       popoverY = a.y;
     }
   });
+
+  let milestoneBand = $state<string | null>(null);
+  let milestoneX = $state(0);
+  let milestoneY = $state(0);
+  const openMilestoneData = $derived(
+    milestoneBand && milestoneData && milestoneData.milestone === milestoneBand ? milestoneData : null
+  );
+
+  function openMilestone(band: string) {
+    milestoneBand = band;
+    const b = geometry.bands.find((bnd) => bnd.name === band);
+    milestoneX = b ? Math.max(8, b.x * vp.scale + vp.tx) : 8;
+    milestoneY = 28;
+    vscode.postMessage({ type: 'requestMilestoneData', milestone: band });
+  }
+  function closeMilestone() {
+    milestoneBand = null;
+  }
 
   let restored = false;
   $effect(() => {
@@ -128,8 +155,12 @@
   function onPointerDown(e: PointerEvent) {
     const target = e.target as HTMLElement;
     if (target.closest('.tree-toolbar') || target.closest('.tree-popover')) return;
-    if (target.closest('.tree-node')) return;
+    // Band headers live inside the viewport; capturing the pointer here would
+    // swallow their native click (same reason `.tree-node` returns early), so
+    // the milestone popover would never open. Let the header's onclick fire.
+    if (target.closest('.tree-node') || target.closest('.tree-band-header')) return;
     closePopover();
+    closeMilestone();
     panning = true;
     panStart = { x: e.clientX, y: e.clientY, tx: vp.tx, ty: vp.ty };
     viewportEl?.setPointerCapture(e.pointerId);
@@ -295,7 +326,7 @@
       role="application"
       aria-label="Tech tree canvas"
     >
-      <AgeBandHeader bands={geometry.bands} scale={vp.scale} tx={vp.tx} />
+      <AgeBandHeader bands={geometry.bands} scale={vp.scale} tx={vp.tx} onOpenMilestone={openMilestone} />
       <LaneBand lanes={geometry.lanes} scale={vp.scale} ty={vp.ty} />
 
       <div
@@ -346,6 +377,21 @@
         onExpand={onPopoverExpand}
         onQuickEdit={(u) => vscode.postMessage({ type: 'updateTask', taskId: popoverTask.id, updates: u })}
         onAction={onPopoverAction}
+      />
+    {/if}
+
+    {#if openMilestoneData}
+      <MilestonePopover
+        milestone={openMilestoneData.milestone}
+        total={openMilestoneData.total}
+        done={openMilestoneData.done}
+        lanes={openMilestoneData.lanes}
+        checklist={openMilestoneData.checklist}
+        x={milestoneX}
+        y={milestoneY}
+        onClose={closeMilestone}
+        onToggle={(itemId) =>
+          vscode.postMessage({ type: 'toggleReleaseChecklistItem', milestone: openMilestoneData.milestone, itemId })}
       />
     {/if}
 

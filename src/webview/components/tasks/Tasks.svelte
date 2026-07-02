@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getReadOnlyTaskContext, type Task, type Milestone, type TaskStatus, type DashboardStats, type TabMode, type BacklogDocument, type BacklogDecision, type TaskIdDisplayMode } from '../../lib/types';
+  import { getReadOnlyTaskContext, type Task, type Milestone, type TaskStatus, type DashboardStats, type TabMode, type BacklogDocument, type BacklogDecision, type TaskIdDisplayMode, type ExtensionMessage } from '../../lib/types';
   import { vscode, onMessage } from '../../stores/vscode.svelte';
   import KanbanBoard from '../kanban/KanbanBoard.svelte';
   import ListView from '../list/ListView.svelte';
@@ -38,6 +38,7 @@
   let laneOrder = $state<string[]>([]);
   let bandOrder = $state<string[]>([]);
   let treeWarnings = $state<string[]>([]);
+  let milestoneData = $state<Extract<ExtensionMessage, { type: 'milestoneData' }> | null>(null);
 
   // True while the board is in cross-branch mode (no local tree layout is computed).
   let crossBranch = $state(false);
@@ -108,6 +109,10 @@
 
       case 'prioritiesUpdated':
         priorities = message.priorities;
+        break;
+
+      case 'milestoneData':
+        milestoneData = message;
         break;
 
       case 'activeTabChanged':
@@ -517,6 +522,7 @@
       {priorities}
       {taskIdDisplay}
       {crossBranch}
+      {milestoneData}
       onSelectTask={handleSelectTask}
     />
   </div>
