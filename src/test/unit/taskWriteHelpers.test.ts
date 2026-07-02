@@ -26,11 +26,12 @@ describe('assertValidStatus', () => {
   });
 });
 
-describe('assertValidPriority', () => {
-  it('accepts high/medium/low', () => {
-    expect(() => assertValidPriority('medium')).not.toThrow();
+describe('assertValidPriority (config-driven)', () => {
+  it('accepts a case-insensitive match against the allowed list', () => {
+    expect(() => assertValidPriority('HIGH', ['high', 'medium', 'low'])).not.toThrow();
+    expect(() => assertValidPriority('Critical', ['Critical', 'Normal'])).not.toThrow();
   });
-  it('throws otherwise', () => {
-    expect(() => assertValidPriority('urgent')).toThrow('Invalid priority');
+  it('throws for a value outside the allowed list', () => {
+    expect(() => assertValidPriority('urgent', ['high', 'medium', 'low'])).toThrow('Invalid priority');
   });
 });

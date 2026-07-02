@@ -66,7 +66,8 @@ export interface CreateTaskOptions {
   title: string;
   description?: string;
   status?: TaskStatus;
-  priority?: 'high' | 'medium' | 'low';
+  /** Config-driven: any of the board's configured priorities (validated by the MCP layer). */
+  priority?: string;
   labels?: string[];
   milestone?: string;
   assignee?: string[];

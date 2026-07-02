@@ -18,6 +18,7 @@ import { BacklogParser } from '../core/BacklogParser';
 import { BacklogWriter } from '../core/BacklogWriter';
 import { ClaimService } from '../core/ClaimService';
 import { PlanService } from '../core/PlanService';
+import { TreeFieldService } from '../core/TreeFieldService';
 import { resolveBacklogDirectory } from '../core/resolveBacklogDirectory';
 import {
   getActiveTask,
@@ -73,6 +74,7 @@ async function main(): Promise<void> {
     writer: new BacklogWriter(),
     claimService: new ClaimService(),
     planService: new PlanService(),
+    treeFieldService: new TreeFieldService(),
   };
 
   const server = new McpServer({ name: 'taskwright', version: '0.0.1' });
@@ -143,10 +145,20 @@ async function main(): Promise<void> {
         title: z.string().describe('Task title, imperative mood.'),
         description: z.string().optional(),
         status: z.string().optional().describe('Defaults to the board default status.'),
-        priority: z.enum(['high', 'medium', 'low']).optional(),
+        priority: z.string().optional().describe("One of the board's configured priorities."),
         labels: z.array(z.string()).optional(),
         assignee: z.array(z.string()).optional(),
         milestone: z.string().optional(),
+        category: z.string().optional().describe('Tech-tree lane. Absent/empty ⇒ Misc.'),
+        type: z.string().optional().describe('Set to "bug" to file a bug node.'),
+        causedBy: z
+          .string()
+          .optional()
+          .describe('For bugs: the task ID that introduced the bug.'),
+        dependencies: z
+          .array(z.string())
+          .optional()
+          .describe('Task IDs this task depends on (must exist; no cycles).'),
         draft: z.boolean().optional().describe('Create as a draft (DRAFT-N in drafts/).'),
       },
     },
@@ -163,7 +175,7 @@ async function main(): Promise<void> {
         taskId: z.string().describe('Task ID to edit, e.g. TASK-7.'),
         title: z.string().optional(),
         status: z.string().optional(),
-        priority: z.enum(['high', 'medium', 'low']).optional(),
+        priority: z.string().optional().describe("One of the board's configured priorities."),
         labels: z.array(z.string()).optional(),
         assignee: z.array(z.string()).optional(),
         milestone: z.string().optional(),
@@ -179,6 +191,9 @@ async function main(): Promise<void> {
         finalSummary: z.string().optional(),
         dependencies: z.array(z.string()).optional(),
         references: z.array(z.string()).optional(),
+        category: z.string().optional().describe('Tech-tree lane; empty string clears it.'),
+        type: z.string().optional().describe('Set to "bug" or empty to clear.'),
+        causedBy: z.string().optional().describe('Bug cause task ID; empty string clears it.'),
       },
     },
     async (args) => runTool(() => editTaskHandler(deps, args))

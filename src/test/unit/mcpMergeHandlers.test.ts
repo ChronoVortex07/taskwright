@@ -16,6 +16,7 @@ import { BacklogParser } from '../../core/BacklogParser';
 import { BacklogWriter } from '../../core/BacklogWriter';
 import { ClaimService } from '../../core/ClaimService';
 import { PlanService } from '../../core/PlanService';
+import { TreeFieldService } from '../../core/TreeFieldService';
 import {
   requestMergeHandler,
   getActiveTask,
@@ -124,6 +125,7 @@ function makeDeps(root: string, overrides: Partial<McpHandlerDeps> = {}): McpHan
     writer: new BacklogWriter(),
     claimService: new ClaimService(),
     planService: new PlanService(),
+    treeFieldService: new TreeFieldService(),
     gitExec: makeGitExec(primaryRoot),
     shellRun: (async () => ({ code: 0, stdout: '', stderr: '' })) as RunFn,
     now: () => new Date('2026-07-01T12:00:00.000Z'),
@@ -153,6 +155,7 @@ describe('requestMergeHandler', () => {
         writer: new BacklogWriter(),
         claimService: new ClaimService(),
         planService: new PlanService(),
+        treeFieldService: new TreeFieldService(),
         gitExec: primaryExec,
         shellRun: (async () => ({ code: 0, stdout: '', stderr: '' })) as RunFn,
       },

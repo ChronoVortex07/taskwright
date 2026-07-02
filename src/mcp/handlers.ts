@@ -5,6 +5,9 @@ import { BacklogParser } from '../core/BacklogParser';
 import { BacklogWriter } from '../core/BacklogWriter';
 import { ClaimService } from '../core/ClaimService';
 import { PlanService } from '../core/PlanService';
+import { TreeFieldService } from '../core/TreeFieldService';
+import { resolvePriorities } from '../core/priorityOrder';
+import { wouldCreateCycle } from '../core/treeGate';
 import { readActiveTask } from '../core/activeTask';
 import { loadPlanProgress } from '../core/loadPlanProgress';
 import { ChecklistItem, Task } from '../core/types';
@@ -60,6 +63,7 @@ export interface McpHandlerDeps {
   writer: BacklogWriter;
   claimService: ClaimService;
   planService: PlanService;
+  treeFieldService: TreeFieldService;
   /** Injectable git runner (defaults to execFile('git')). Tests override. */
   gitExec?: GitExecFn;
   /** Injectable shell runner for verify/gh (defaults to child_process.exec). */
@@ -506,14 +510,64 @@ async function requireSummary(deps: McpHandlerDeps, taskId: string): Promise<Tas
   return toSummary(task, deps.root, states?.get(task.id));
 }
 
+/**
+ * Validate a proposed dependency set: every ID must resolve to a known task
+ * (tasks/drafts/completed/archive), and — when editing an existing task —
+ * adding any of them must not create a cycle.
+ */
+async function assertDependenciesValid(
+  deps: McpHandlerDeps,
+  dependencies: string[],
+  targetId?: string
+): Promise<void> {
+  if (dependencies.length === 0) return;
+  const [tasks, drafts, completed, archived] = await Promise.all([
+    deps.parser.getTasks(),
+    deps.parser.getDrafts(),
+    deps.parser.getCompletedTasks(),
+    deps.parser.getArchivedTasks(),
+  ]);
+  const all = [...tasks, ...drafts, ...completed, ...archived];
+  const known = new Set(all.map((t) => t.id.trim().toUpperCase()));
+  for (const dep of dependencies) {
+    if (!known.has(dep.trim().toUpperCase())) {
+      throw new Error(`Dependency ${dep} does not exist.`);
+    }
+  }
+  if (targetId) {
+    for (const dep of dependencies) {
+      if (wouldCreateCycle(all, targetId, dep)) {
+        throw new Error(
+          `Adding dependency ${dep} to ${targetId} would create a dependency cycle.`
+        );
+      }
+    }
+  }
+}
+
+/** Validate the type value: only 'bug' or absent is allowed. Returns the trimmed value or undefined. */
+function normalizeType(type: string | undefined): string | undefined {
+  if (type === undefined) return undefined;
+  const t = type.trim();
+  if (t === '') return undefined;
+  if (t !== 'bug') {
+    throw new Error(`Invalid type "${type}". Only "bug" (or none) is allowed.`);
+  }
+  return 'bug';
+}
+
 export interface CreateTaskArgs {
   title: string;
   description?: string;
   status?: string;
-  priority?: 'high' | 'medium' | 'low';
+  priority?: string;
   labels?: string[];
   assignee?: string[];
   milestone?: string;
+  category?: string;
+  type?: string;
+  causedBy?: string;
+  dependencies?: string[];
   draft?: boolean;
 }
 
@@ -526,29 +580,52 @@ export async function createTaskHandler(
   if (!title) throw new Error('A task title is required.');
   const config = await deps.parser.getConfig();
   if (args.status !== undefined) assertValidStatus(args.status, config.statuses ?? []);
-  if (args.priority !== undefined) assertValidPriority(args.priority);
+  if (args.priority !== undefined) assertValidPriority(args.priority, resolvePriorities(config));
+  const type = normalizeType(args.type);
+  const causedBy = args.causedBy?.trim();
+  if (causedBy && type !== 'bug') {
+    throw new Error('caused_by can only be set on a bug (type: bug).');
+  }
+  const dependencies = args.dependencies ?? [];
+  await assertDependenciesValid(deps, dependencies); // no targetId: new task cannot form a cycle
 
+  let id: string;
   if (args.draft) {
-    const { id } = await deps.writer.createDraft(deps.backlogPath, deps.parser, {
+    ({ id } = await deps.writer.createDraft(deps.backlogPath, deps.parser, {
       title,
       description: args.description,
-    });
-    return requireSummary(deps, id);
+    }));
+  } else {
+    ({ id } = await deps.writer.createTask(
+      deps.backlogPath,
+      {
+        title,
+        description: args.description,
+        status: args.status,
+        priority: args.priority,
+        labels: args.labels,
+        assignee: args.assignee,
+        milestone: args.milestone,
+      },
+      deps.parser
+    ));
   }
 
-  const { id } = await deps.writer.createTask(
-    deps.backlogPath,
-    {
-      title,
-      description: args.description,
-      status: args.status,
-      priority: args.priority,
-      labels: args.labels,
-      assignee: args.assignee,
-      milestone: args.milestone,
-    },
-    deps.parser
-  );
+  // type / dependencies go through BacklogWriter (both are serialized there).
+  if (type !== undefined || dependencies.length > 0) {
+    const canonical: Partial<Task> = {};
+    if (type !== undefined) canonical.type = type;
+    if (dependencies.length > 0) canonical.dependencies = dependencies;
+    await deps.writer.updateTask(id, canonical, deps.parser);
+  }
+  // category / caused_by are Taskwright-only: write surgically after create.
+  if (args.category !== undefined && args.category.trim() !== '') {
+    await deps.treeFieldService.setCategory(id, args.category, deps.parser);
+  }
+  if (causedBy) {
+    await deps.treeFieldService.setCausedBy(id, causedBy, deps.parser);
+  }
+
   return requireSummary(deps, id);
 }
 
@@ -556,7 +633,7 @@ export interface EditTaskArgs {
   taskId: string;
   title?: string;
   status?: string;
-  priority?: 'high' | 'medium' | 'low';
+  priority?: string;
   labels?: string[];
   assignee?: string[];
   milestone?: string;
@@ -568,6 +645,9 @@ export interface EditTaskArgs {
   finalSummary?: string;
   dependencies?: string[];
   references?: string[];
+  category?: string;
+  type?: string;
+  causedBy?: string;
 }
 
 export interface MoveResult {
@@ -628,7 +708,19 @@ export async function editTaskHandler(
 ): Promise<TaskSummary> {
   const config = await deps.parser.getConfig();
   if (args.status !== undefined) assertValidStatus(args.status, config.statuses ?? []);
-  if (args.priority !== undefined) assertValidPriority(args.priority);
+  if (args.priority !== undefined) assertValidPriority(args.priority, resolvePriorities(config));
+
+  const existing = await deps.parser.getTask(args.taskId);
+  if (!existing) throw new Error(`Task ${args.taskId} not found`);
+
+  const nextType = args.type !== undefined ? normalizeType(args.type) : existing.type;
+  const causedBy = args.causedBy?.trim();
+  if (args.causedBy !== undefined && causedBy && nextType !== 'bug') {
+    throw new Error('caused_by can only be set on a bug (type: bug).');
+  }
+  if (args.dependencies !== undefined) {
+    await assertDependenciesValid(deps, args.dependencies, args.taskId);
+  }
 
   const updates: Record<string, unknown> = {};
   if (args.title !== undefined) updates.title = args.title;
@@ -648,8 +740,29 @@ export async function editTaskHandler(
   if (args.finalSummary !== undefined) updates.finalSummary = args.finalSummary;
   if (args.dependencies !== undefined) updates.dependencies = args.dependencies;
   if (args.references !== undefined) updates.references = args.references;
+  // Only a non-empty `type` (i.e. 'bug') routes through BacklogWriter; clearing is surgical (below).
+  if (args.type !== undefined && nextType !== undefined) updates.type = nextType;
 
-  await deps.writer.updateTask(args.taskId, updates as Partial<Task>, deps.parser);
+  if (Object.keys(updates).length > 0) {
+    await deps.writer.updateTask(args.taskId, updates as Partial<Task>, deps.parser);
+  }
+
+  // Clearing `type` is surgical: BacklogWriter has no omit-if-empty path for `type`,
+  // so removing the field (rather than writing an empty value) keeps the file clean.
+  if (args.type !== undefined && nextType === undefined) {
+    await deps.treeFieldService.clearType(args.taskId, deps.parser);
+  }
+  // category / caused_by are Taskwright-only surgical fields.
+  if (args.category !== undefined) {
+    if (args.category.trim() === '')
+      await deps.treeFieldService.clearCategory(args.taskId, deps.parser);
+    else await deps.treeFieldService.setCategory(args.taskId, args.category, deps.parser);
+  }
+  if (args.causedBy !== undefined) {
+    if (causedBy) await deps.treeFieldService.setCausedBy(args.taskId, causedBy, deps.parser);
+    else await deps.treeFieldService.clearCausedBy(args.taskId, deps.parser);
+  }
+
   return requireSummary(deps, args.taskId);
 }
 

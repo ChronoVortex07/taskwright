@@ -30,9 +30,11 @@ export function assertValidStatus(status: string, allowed: string[]): void {
   }
 }
 
-/** Throw unless `priority` is one of high/medium/low. */
-export function assertValidPriority(priority: string): void {
-  if (priority !== 'high' && priority !== 'medium' && priority !== 'low') {
-    throw new Error(`Invalid priority "${priority}". Allowed: high, medium, low.`);
+/** Throw unless `priority` matches one of the allowed priorities (case-insensitive). */
+export function assertValidPriority(priority: string, allowed: string[]): void {
+  if (!allowed.some((p) => p.toLowerCase() === priority.toLowerCase())) {
+    throw new Error(
+      `Invalid priority "${priority}". Allowed: ${allowed.join(', ') || '(none configured)'}.`
+    );
   }
 }

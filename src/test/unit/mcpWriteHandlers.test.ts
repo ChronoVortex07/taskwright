@@ -6,6 +6,7 @@ import { BacklogParser } from '../../core/BacklogParser';
 import { BacklogWriter } from '../../core/BacklogWriter';
 import { ClaimService } from '../../core/ClaimService';
 import { PlanService } from '../../core/PlanService';
+import { TreeFieldService } from '../../core/TreeFieldService';
 import {
   createTaskHandler,
   editTaskHandler,
@@ -42,6 +43,7 @@ function deps(): McpHandlerDeps {
     writer: new BacklogWriter(),
     claimService: new ClaimService(),
     planService: new PlanService(),
+    treeFieldService: new TreeFieldService(),
   };
 }
 
@@ -194,5 +196,71 @@ describe('MCP summaries expose tech-tree derived fields (P1)', () => {
     expect(result.task?.locked).toBe(true); // TASK-1 is To Do, not Done
     expect(result.task?.blockedBy).toEqual(['TASK-1']);
     expect(result.task?.layout).toBeDefined();
+  });
+});
+
+describe('create_task / edit_task tech-tree fields (P1)', () => {
+  it('create_task persists category, type=bug, caused_by, dependencies', async () => {
+    await createTaskHandler(deps(), { title: 'Origin' }); // TASK-1
+    const summary = await createTaskHandler(deps(), {
+      title: 'Broken login',
+      type: 'bug',
+      causedBy: 'TASK-1',
+      category: 'Auth',
+      dependencies: ['TASK-1'],
+    });
+    expect(summary.type).toBe('bug');
+    expect(summary.causedBy).toBe('TASK-1');
+    expect(summary.category).toBe('Auth');
+    expect(summary.dependencies).toEqual(['TASK-1']);
+  });
+
+  it('edit_task sets and clears category/caused_by', async () => {
+    await createTaskHandler(deps(), { title: 'A task' }); // TASK-1
+    let s = await editTaskHandler(deps(), { taskId: 'TASK-1', category: 'Backend' });
+    expect(s.category).toBe('Backend');
+    s = await editTaskHandler(deps(), { taskId: 'TASK-1', category: '' });
+    expect(s.category).toBeUndefined();
+  });
+
+  it('edit_task clears type surgically (empty string removes the field)', async () => {
+    await createTaskHandler(deps(), { title: 'Was a bug', type: 'bug' }); // TASK-1
+    let s = await editTaskHandler(deps(), { taskId: 'TASK-1', type: 'bug' });
+    expect(s.type).toBe('bug');
+    s = await editTaskHandler(deps(), { taskId: 'TASK-1', type: '' });
+    expect(s.type).toBeUndefined();
+  });
+
+  it('rejects an invalid type value', async () => {
+    await createTaskHandler(deps(), { title: 'A task' }); // TASK-1
+    await expect(editTaskHandler(deps(), { taskId: 'TASK-1', type: 'feature' })).rejects.toThrow(
+      'type'
+    );
+  });
+
+  it('rejects caused_by on a non-bug task', async () => {
+    await createTaskHandler(deps(), { title: 'Cause' }); // TASK-1
+    await createTaskHandler(deps(), { title: 'Plain' }); // TASK-2
+    await expect(
+      editTaskHandler(deps(), { taskId: 'TASK-2', causedBy: 'TASK-1' })
+    ).rejects.toThrow('bug');
+  });
+
+  it('rejects a dependency that does not exist', async () => {
+    await createTaskHandler(deps(), { title: 'A task' }); // TASK-1
+    await expect(
+      editTaskHandler(deps(), { taskId: 'TASK-1', dependencies: ['TASK-999'] })
+    ).rejects.toThrow('does not exist');
+  });
+
+  it('rejects a dependency edit that would create a cycle', async () => {
+    await createTaskHandler(deps(), { title: 'A' }); // TASK-1
+    await createTaskHandler(deps(), { title: 'B' }); // TASK-2
+    const d = deps();
+    await d.writer.updateTask('TASK-2', { dependencies: ['TASK-1'] }, d.parser); // TASK-2 -> TASK-1
+    // Now making TASK-1 depend on TASK-2 closes the cycle.
+    await expect(
+      editTaskHandler(deps(), { taskId: 'TASK-1', dependencies: ['TASK-2'] })
+    ).rejects.toThrow('cycle');
   });
 });

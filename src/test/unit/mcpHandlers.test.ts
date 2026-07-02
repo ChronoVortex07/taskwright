@@ -5,6 +5,7 @@ import { BacklogParser } from '../../core/BacklogParser';
 import { BacklogWriter } from '../../core/BacklogWriter';
 import { ClaimService } from '../../core/ClaimService';
 import { PlanService } from '../../core/PlanService';
+import { TreeFieldService } from '../../core/TreeFieldService';
 import {
   getActiveTask,
   claimTaskHandler,
@@ -66,6 +67,7 @@ function makeDeps(): McpHandlerDeps {
     writer: new BacklogWriter(),
     claimService: new ClaimService(),
     planService: new PlanService(),
+    treeFieldService: new TreeFieldService(),
   };
 }
 
