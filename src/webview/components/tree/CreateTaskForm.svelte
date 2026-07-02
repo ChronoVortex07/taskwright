@@ -46,23 +46,19 @@
   const BACKBURNER = 'Backburner';
 
   // Bug is a mode of the form: type:'bug', no category/milestone, priority relabeled "Severity".
-  let isBug = $state(false);
+  // Init-once by design: the form is {#if}-mounted fresh per open, so capturing the initial
+  // prop values is intended (state_referenced_locally is a false positive here).
+  // svelte-ignore state_referenced_locally
+  let isBug = $state(bugMode);
   let title = $state('');
   let description = $state('');
   let priority = $state('');
-  let category = $state(MISC);
-  let milestone = $state(BACKBURNER);
-  let causedBy = $state('');
-
-  // Initialize and sync prop changes to state
-  $effect(() => {
-    isBug = bugMode;
-  });
-  $effect(() => {
-    category = prefill?.category ?? MISC;
-    milestone = prefill?.milestone ?? BACKBURNER;
-    causedBy = prefill?.causedBy ?? '';
-  });
+  // svelte-ignore state_referenced_locally
+  let category = $state(prefill?.category ?? MISC);
+  // svelte-ignore state_referenced_locally
+  let milestone = $state(prefill?.milestone ?? BACKBURNER);
+  // svelte-ignore state_referenced_locally
+  let causedBy = $state(prefill?.causedBy ?? '');
 
   // Category options: keep Misc first, drop the Bugs lane, de-dupe Misc from laneOrder.
   const categoryOptions = $derived([MISC, ...laneOrder.filter((l) => l !== 'Bugs' && l !== MISC)]);
