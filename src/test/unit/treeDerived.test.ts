@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Task } from '../../core/types';
-import { deriveTreeState } from '../../core/treeDerived';
+import { deriveTreeState, deriveTreeBoard } from '../../core/treeDerived';
 
 function task(partial: Partial<Task> & { id: string }): Task {
   return {
@@ -54,5 +54,34 @@ describe('deriveTreeState', () => {
     const s = deriveTreeState([task({ id: 'TASK-1' })], opts).get('TASK-1')!;
     expect(s.bugs).toEqual([]);
     expect(s.activeBugIds).toEqual([]);
+  });
+});
+
+describe('deriveTreeBoard', () => {
+  it('returns states plus laneOrder/bandOrder/warnings', () => {
+    const tasks = [
+      task({ id: 'TASK-1', category: 'Features', milestone: 'v1', status: 'Done' }),
+      task({ id: 'TASK-2', category: 'Features', milestone: 'v1', dependencies: ['TASK-1'] }),
+      task({ id: 'TASK-3', type: 'bug', causedBy: 'TASK-1' }),
+    ];
+    const board = deriveTreeBoard(tasks, {
+      doneStatus: 'Done',
+      milestoneOrder: ['v1'],
+      priorities: ['high', 'medium', 'low'],
+      categories: ['Features'],
+    });
+    // Misc + Bugs are always the last two lanes; declared "Features" leads.
+    expect(board.laneOrder).toEqual(['Features', 'Misc', 'Bugs']);
+    // Backburner is always the rightmost band.
+    expect(board.bandOrder[board.bandOrder.length - 1]).toBe('Backburner');
+    expect(board.bandOrder).toContain('v1');
+    // states carry the same layout the legacy map exposes.
+    expect(board.states.get('TASK-2')!.layout.depth).toBeGreaterThanOrEqual(1);
+    expect(Array.isArray(board.warnings)).toBe(true);
+  });
+
+  it('deriveTreeState still returns just the states map (delegation intact)', () => {
+    const s = deriveTreeState([task({ id: 'TASK-1' })], opts);
+    expect(s.get('TASK-1')!.layout.lane).toBeDefined();
   });
 });

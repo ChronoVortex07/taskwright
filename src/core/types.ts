@@ -278,7 +278,7 @@ export type WebviewMessage =
   | { type: 'deleteTask'; taskId: string }
   | {
       type: 'setViewMode';
-      mode: 'kanban' | 'list' | 'drafts' | 'archived' | 'dashboard' | 'docs' | 'decisions';
+      mode: 'tree' | 'kanban' | 'list' | 'drafts' | 'archived' | 'dashboard' | 'docs' | 'decisions';
     }
   | { type: 'focusTaskPreview' }
   | { type: 'requestCreateTask' }
@@ -319,8 +319,9 @@ export type ExtensionMessage =
   | { type: 'completedTasksUpdated'; tasks: Task[] }
   | {
       type: 'activeTabChanged';
-      tab: 'kanban' | 'list' | 'drafts' | 'archived' | 'dashboard' | 'docs' | 'decisions';
+      tab: 'tree' | 'kanban' | 'list' | 'drafts' | 'archived' | 'dashboard' | 'docs' | 'decisions';
     }
+  | { type: 'treeLayoutUpdated'; laneOrder: string[]; bandOrder: string[]; warnings: string[] }
   | { type: 'draftCountUpdated'; count: number }
   | { type: 'settingsUpdated'; settings: TasksViewSettings }
   | {

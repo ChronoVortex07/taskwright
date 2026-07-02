@@ -24,9 +24,10 @@ import { getClaimStalenessMs } from './claimActions';
 import { getTaskwrightConfig } from '../config';
 import { mergeStateForTask, type MergeTaskState } from '../core/mergeBoard';
 import type { MergeQueue, MergeMode } from '../core/mergeQueue';
-import { loadTreeStateFromParser } from '../core/treeDerived';
+import { loadTreeBoardFromParser } from '../core/treeDerived';
 
 export type TasksViewMode =
+  | 'tree'
   | 'kanban'
   | 'list'
   | 'drafts'
@@ -137,7 +138,7 @@ export class TasksController {
     const legacyDrafts = this.context.globalState.get<boolean>('backlog.showingDrafts', false);
     this.viewMode = legacyDrafts
       ? 'drafts'
-      : this.context.globalState.get<TasksViewMode>('backlog.viewMode', 'kanban');
+      : this.context.globalState.get<TasksViewMode>('backlog.viewMode', 'tree');
     this.milestoneGrouping = this.context.globalState.get('backlog.milestoneGrouping', false);
     const savedCollapsed = this.context.globalState.get<string[]>('backlog.collapsedColumns', []);
     this.collapsedColumns = new Set(savedCollapsed);
@@ -259,12 +260,12 @@ export class TasksController {
       // cross-branch mode, where the displayed tasks come from the cross-branch
       // loader — deriving tree state from the local getTasks universe would not
       // match the board (the tech-tree is a local-board feature).
-      let treeStates: Awaited<ReturnType<typeof loadTreeStateFromParser>> | undefined;
+      let treeBoard: Awaited<ReturnType<typeof loadTreeBoardFromParser>> | undefined;
       if (this.dataSourceMode !== 'cross-branch') {
         try {
-          treeStates = await loadTreeStateFromParser(this.parser);
+          treeBoard = await loadTreeBoardFromParser(this.parser);
         } catch {
-          treeStates = undefined;
+          treeBoard = undefined;
         }
       }
 
@@ -318,7 +319,7 @@ export class TasksController {
           claimStale: !!task.claimedBy && isClaimStale(task.claimedAt, stalenessMs),
           mergeState: mergeQueue ? mergeStateForTask(mergeQueue, task.id) : undefined,
         };
-        const derived = treeStates?.get(task.id.trim().toUpperCase());
+        const derived = treeBoard?.states.get(task.id.trim().toUpperCase());
         if (derived) {
           enhanced.locked = derived.locked;
           enhanced.blockedBy = derived.blockedBy;
@@ -353,11 +354,13 @@ export class TasksController {
         type: 'draftsModeChanged',
         enabled: this.viewMode === 'drafts',
       });
-      this.host.postMessage({
-        type: 'viewModeChanged',
-        viewMode:
-          this.viewMode === 'drafts' || this.viewMode === 'archived' ? 'list' : this.viewMode,
-      });
+      if (this.viewMode !== 'tree') {
+        this.host.postMessage({
+          type: 'viewModeChanged',
+          viewMode:
+            this.viewMode === 'drafts' || this.viewMode === 'archived' ? 'list' : this.viewMode,
+        });
+      }
       this.host.postMessage({
         type: 'columnCollapseChanged',
         collapsedColumns: Array.from(this.collapsedColumns),
@@ -370,6 +373,12 @@ export class TasksController {
       this.host.postMessage({ type: 'statusesUpdated', statuses });
       this.host.postMessage({ type: 'milestonesUpdated', milestones });
       this.host.postMessage({ type: 'tasksUpdated', tasks: tasksWithBlocks });
+      this.host.postMessage({
+        type: 'treeLayoutUpdated',
+        laneOrder: treeBoard?.laneOrder ?? [],
+        bandOrder: treeBoard?.bandOrder ?? [],
+        warnings: treeBoard?.warnings ?? [],
+      });
 
       // Send draft count for tab badge
       const draftCount = this.viewMode === 'drafts' ? tasks.length : draftCountFromFolder;
@@ -908,7 +917,7 @@ export class TasksController {
     this.host.postMessage({ type: 'activeTabChanged', tab: mode });
     // Backward compatibility: also send legacy messages
     this.host.postMessage({ type: 'draftsModeChanged', enabled: isDrafts });
-    if (!isDashboard && !isDocs && !isDecisions) {
+    if (!isDashboard && !isDocs && !isDecisions && mode !== 'tree') {
       this.host.postMessage({
         type: 'viewModeChanged',
         viewMode: isDrafts || isArchived ? 'list' : mode,

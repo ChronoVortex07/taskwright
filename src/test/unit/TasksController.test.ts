@@ -50,6 +50,7 @@ describe('TasksController', () => {
       getDrafts: vi.fn().mockResolvedValue([]),
       getCompletedTasks: vi.fn().mockResolvedValue([]),
       getArchivedTasks: vi.fn().mockResolvedValue([]),
+      getCategories: vi.fn().mockResolvedValue([]),
       getBacklogPath: vi.fn().mockReturnValue('/fake/backlog'),
     } as unknown as BacklogParser;
   });
@@ -344,5 +345,121 @@ describe('TasksController', () => {
       'taskwright.sendBackMerge',
       'TASK-6'
     );
+  });
+});
+
+describe('TasksController — tree tab', () => {
+  let mockParser: BacklogParser;
+  let mockContext: vscode.ExtensionContext;
+  let posted: ExtensionMessage[];
+  let ready: boolean;
+  let host: TasksHost;
+
+  function createHost(kind: 'sidebar' | 'editor' = 'editor'): TasksHost {
+    return {
+      kind,
+      postMessage: (message) => {
+        posted.push(message);
+      },
+      isReady: () => ready,
+    };
+  }
+
+  function postedTypes(): string[] {
+    return posted.map((m) => m.type);
+  }
+
+  function treeTasks(): Task[] {
+    return [
+      {
+        id: 'TASK-1',
+        title: 'Root',
+        status: 'Done',
+        category: 'Features',
+        milestone: 'v1',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/fake/backlog/tasks/task-1.md',
+      } as Task,
+      {
+        id: 'TASK-2',
+        title: 'Child',
+        status: 'To Do',
+        category: 'Features',
+        milestone: 'v1',
+        labels: [],
+        assignee: [],
+        dependencies: ['TASK-1'],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/fake/backlog/tasks/task-2.md',
+      } as Task,
+    ];
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    posted = [];
+    ready = true;
+    mockContext = createMockExtensionContext() as unknown as vscode.ExtensionContext;
+    host = createHost();
+
+    mockParser = {
+      getTasks: vi.fn().mockResolvedValue(treeTasks()),
+      getTasksWithCrossBranch: vi.fn().mockResolvedValue([]),
+      getTask: vi.fn(),
+      getConfig: vi.fn().mockResolvedValue({}),
+      getStatuses: vi.fn().mockResolvedValue(['To Do', 'In Progress', 'Done']),
+      getMilestones: vi.fn().mockResolvedValue([{ id: 'v1', name: 'v1' }]),
+      getDrafts: vi.fn().mockResolvedValue([]),
+      getCompletedTasks: vi.fn().mockResolvedValue([]),
+      getArchivedTasks: vi.fn().mockResolvedValue([]),
+      getCategories: vi.fn().mockResolvedValue(['Features']),
+      getBacklogPath: vi.fn().mockReturnValue('/fake/backlog'),
+    } as unknown as BacklogParser;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('emits treeLayoutUpdated immediately after tasksUpdated', async () => {
+    const controller = new TasksController(host, mockParser, mockContext);
+    await controller.refresh();
+    const types = postedTypes();
+    const tasksIdx = types.indexOf('tasksUpdated');
+    const treeIdx = types.indexOf('treeLayoutUpdated');
+    expect(tasksIdx).toBeGreaterThanOrEqual(0);
+    expect(treeIdx).toBe(tasksIdx + 1);
+    const msg = posted[treeIdx] as Extract<ExtensionMessage, { type: 'treeLayoutUpdated' }>;
+    expect(msg.laneOrder).toEqual(['Features', 'Misc', 'Bugs']);
+    expect(msg.bandOrder[msg.bandOrder.length - 1]).toBe('Backburner');
+    expect(Array.isArray(msg.warnings)).toBe(true);
+  });
+
+  it('defaults the persisted view mode to tree when nothing is stored', async () => {
+    const controller = new TasksController(host, mockParser, mockContext);
+    controller.loadPersistedState();
+    await controller.refresh();
+    expect(posted).toContainEqual({ type: 'activeTabChanged', tab: 'tree' });
+  });
+
+  it('respects a persisted kanban choice (default only applies when unset)', async () => {
+    await mockContext.globalState.update('backlog.viewMode', 'kanban');
+    const controller = new TasksController(host, mockParser, mockContext);
+    controller.loadPersistedState();
+    await controller.refresh();
+    expect(posted).toContainEqual({ type: 'activeTabChanged', tab: 'kanban' });
+    expect(posted).not.toContainEqual({ type: 'activeTabChanged', tab: 'tree' });
+  });
+
+  it('setViewMode(tree) posts activeTabChanged tree and no legacy viewModeChanged', () => {
+    const controller = new TasksController(host, mockParser, mockContext);
+    controller.setViewMode('tree');
+    expect(posted).toContainEqual({ type: 'activeTabChanged', tab: 'tree' });
+    expect(posted.some((m) => m.type === 'viewModeChanged')).toBe(false);
   });
 });

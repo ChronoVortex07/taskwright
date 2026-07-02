@@ -198,8 +198,8 @@ describe('TasksViewProvider', () => {
       // Reset mock to clear any initialization calls
       (mockWebview.postMessage as ReturnType<typeof vi.fn>).mockClear();
 
-      // Default is kanban, setting to kanban again should not trigger message
-      provider.setViewMode('kanban');
+      // Default is tree, setting to tree again should not trigger message
+      provider.setViewMode('tree');
 
       expect(mockWebview.postMessage).not.toHaveBeenCalledWith(
         expect.objectContaining({ type: 'activeTabChanged' })
