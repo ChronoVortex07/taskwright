@@ -1,6 +1,6 @@
 import type { Task } from './types';
 import { compareByOrdinal } from './ordinalUtils';
-import { priorityRank } from './priorityOrder';
+import { comparePriority, priorityRank } from './priorityOrder';
 
 /** Reserved lane for all `type: bug` nodes. */
 export const BUGS_LANE = 'Bugs';
@@ -161,17 +161,22 @@ export function deriveTreeLayout(tasks: Task[], opts: DeriveLayoutOptions): Deri
   }
 
   for (const [lane, laneTasks] of laneGroups) {
-    // Process prerequisites first: band index, then depth, then ordinal, then id.
+    // Process prerequisites first: band index, then depth, then ordinal,
+    // then config priority (§10 priorityRank), then id.
     const ordered = [...laneTasks].sort((a, b) => {
       const bi = bandIdxOf(a) - bandIdxOf(b);
       if (bi !== 0) return bi;
       const di = depthOf(a) - depthOf(b);
       if (di !== 0) return di;
+      // Ordinal dimension only: identical taskIds neutralize compareByOrdinal's
+      // embedded fixed-priority/id tiebreaks so §10 config priority below governs.
       const byOrd = compareByOrdinal(
-        { taskId: a.id, ordinal: a.ordinal },
-        { taskId: b.id, ordinal: b.ordinal }
+        { taskId: '', ordinal: a.ordinal },
+        { taskId: '', ordinal: b.ordinal }
       );
       if (byOrd !== 0) return byOrd;
+      const byPri = comparePriority(a.priority, b.priority, opts.priorities);
+      if (byPri !== 0) return byPri;
       return a.id.localeCompare(b.id);
     });
 

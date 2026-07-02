@@ -124,6 +124,21 @@ describe('deriveTreeLayout — sub-row packing (diamond)', () => {
   });
 });
 
+describe('deriveTreeLayout — in-cell tie-break honors config priorityRank', () => {
+  it('same cell, no ordinals: higher config priority packs first even when id order disagrees', () => {
+    const { layout } = deriveTreeLayout(
+      [
+        task({ id: 'TASK-A', category: 'Backend', milestone: 'v1.0', priority: 'low' }),
+        task({ id: 'TASK-B', category: 'Backend', milestone: 'v1.0', priority: 'high' }),
+      ],
+      opts({ milestoneOrder: ['v1.0'] })
+    );
+    // id order alone would put TASK-A (low) first; §10 config priorityRank must win.
+    expect(layout.get('TASK-B')!.subRow).toBe(0);
+    expect(layout.get('TASK-A')!.subRow).toBe(1);
+  });
+});
+
 describe('deriveTreeLayout — bug lane', () => {
   it('bugs are bandless, sorted by severity then open-before-done then recency', () => {
     const { layout } = deriveTreeLayout(

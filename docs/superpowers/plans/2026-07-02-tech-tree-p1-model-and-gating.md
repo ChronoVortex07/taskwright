@@ -385,12 +385,12 @@ Edit `src/core/BacklogParser.ts` `RawFrontmatter` (line ~25) — add (`type?: st
 Edit `applyFrontmatter` (after the `if (fm.type) { task.type = String(fm.type); }` block, ~line 735):
 
 ```ts
-    if (fm.category) {
-      task.category = String(fm.category).trim();
-    }
-    if (fm.caused_by) {
-      task.causedBy = String(fm.caused_by).trim();
-    }
+if (fm.category) {
+  task.category = String(fm.category).trim();
+}
+if (fm.caused_by) {
+  task.causedBy = String(fm.caused_by).trim();
+}
 ```
 
 Add `getCategories` to `BacklogParser` (next to `getUniqueLabels`, ~line 426):
@@ -1094,7 +1094,13 @@ describe('deriveTreeLayout — bug lane', () => {
   it('bugs are bandless, sorted by severity then open-before-done then recency', () => {
     const { layout } = deriveTreeLayout(
       [
-        task({ id: 'TASK-1', type: 'bug', priority: 'low', status: 'To Do', updatedAt: '2026-01-01 00:00' }),
+        task({
+          id: 'TASK-1',
+          type: 'bug',
+          priority: 'low',
+          status: 'To Do',
+          updatedAt: '2026-01-01 00:00',
+        }),
         task({ id: 'TASK-2', type: 'bug', priority: 'high', status: 'Done' }),
         task({ id: 'TASK-3', type: 'bug', priority: 'high', status: 'To Do' }),
       ],
@@ -1122,7 +1128,7 @@ Create `src/core/treeLayout.ts`:
 ```ts
 import type { Task } from './types';
 import { compareByOrdinal } from './ordinalUtils';
-import { priorityRank } from './priorityOrder';
+import { comparePriority, priorityRank } from './priorityOrder';
 
 /** Reserved lane for all `type: bug` nodes. */
 export const BUGS_LANE = 'Bugs';
@@ -1233,7 +1239,8 @@ export function deriveTreeLayout(tasks: Task[], opts: DeriveLayoutOptions): Deri
   // --- Bug lane (bandless): severity -> open-before-done -> recency desc -> id ---
   const bugs = tasks.filter((t) => t.type === 'bug');
   bugs.sort((a, b) => {
-    const pr = priorityRank(a.priority, opts.priorities) - priorityRank(b.priority, opts.priorities);
+    const pr =
+      priorityRank(a.priority, opts.priorities) - priorityRank(b.priority, opts.priorities);
     if (pr !== 0) return pr;
     const ad = isDone(a, opts.doneStatus) ? 1 : 0;
     const bd = isDone(b, opts.doneStatus) ? 1 : 0;
@@ -1282,17 +1289,22 @@ export function deriveTreeLayout(tasks: Task[], opts: DeriveLayoutOptions): Deri
   }
 
   for (const [lane, laneTasks] of laneGroups) {
-    // Process prerequisites first: band index, then depth, then ordinal, then id.
+    // Process prerequisites first: band index, then depth, then ordinal,
+    // then config priority (§10 priorityRank), then id.
     const ordered = [...laneTasks].sort((a, b) => {
       const bi = bandIdxOf(a) - bandIdxOf(b);
       if (bi !== 0) return bi;
       const di = depthOf(a) - depthOf(b);
       if (di !== 0) return di;
+      // Ordinal dimension only: identical taskIds neutralize compareByOrdinal's
+      // embedded fixed-priority/id tiebreaks so §10 config priority below governs.
       const byOrd = compareByOrdinal(
-        { taskId: a.id, ordinal: a.ordinal },
-        { taskId: b.id, ordinal: b.ordinal }
+        { taskId: '', ordinal: a.ordinal },
+        { taskId: '', ordinal: b.ordinal }
       );
       if (byOrd !== 0) return byOrd;
+      const byPri = comparePriority(a.priority, b.priority, opts.priorities);
+      if (byPri !== 0) return byPri;
       return a.id.localeCompare(b.id);
     });
 
@@ -1555,41 +1567,41 @@ import { loadTreeStateFromParser } from '../core/treeDerived';
 Inside the load method, after `computeSubtasks(tasks)` and `const doneStatus = ...` (near line 252), compute the derived states once:
 
 ```ts
-      // Tech-tree P1 derived state (locked/blockedBy/bugs/activeBugIds/layout).
-      // Best-effort: a failure must not break loading the board.
-      let treeStates: Awaited<ReturnType<typeof loadTreeStateFromParser>> | undefined;
-      try {
-        treeStates = await loadTreeStateFromParser(this.parser);
-      } catch {
-        treeStates = undefined;
-      }
+// Tech-tree P1 derived state (locked/blockedBy/bugs/activeBugIds/layout).
+// Best-effort: a failure must not break loading the board.
+let treeStates: Awaited<ReturnType<typeof loadTreeStateFromParser>> | undefined;
+try {
+  treeStates = await loadTreeStateFromParser(this.parser);
+} catch {
+  treeStates = undefined;
+}
 ```
 
 Then extend the `enhanced` object literal type and body inside `tasks.map` (near line 291) so each task carries the derived fields:
 
 ```ts
-        const enhanced: Task & {
-          blocksTaskIds?: string[];
-          subtaskProgress?: { total: number; done: number };
-          blockingDependencyIds?: string[];
-          isActiveTask?: boolean;
-          claimStale?: boolean;
-          mergeState?: MergeTaskState;
-        } = {
-          ...task,
-          blocksTaskIds: reverseDeps.get(task.id) || [],
-          isActiveTask: !!activeTaskId && task.id === activeTaskId,
-          claimStale: !!task.claimedBy && isClaimStale(task.claimedAt, stalenessMs),
-          mergeState: mergeQueue ? mergeStateForTask(mergeQueue, task.id) : undefined,
-        };
-        const derived = treeStates?.get(task.id);
-        if (derived) {
-          enhanced.locked = derived.locked;
-          enhanced.blockedBy = derived.blockedBy;
-          enhanced.bugs = derived.bugs;
-          enhanced.activeBugIds = derived.activeBugIds;
-          enhanced.layout = derived.layout;
-        }
+const enhanced: Task & {
+  blocksTaskIds?: string[];
+  subtaskProgress?: { total: number; done: number };
+  blockingDependencyIds?: string[];
+  isActiveTask?: boolean;
+  claimStale?: boolean;
+  mergeState?: MergeTaskState;
+} = {
+  ...task,
+  blocksTaskIds: reverseDeps.get(task.id) || [],
+  isActiveTask: !!activeTaskId && task.id === activeTaskId,
+  claimStale: !!task.claimedBy && isClaimStale(task.claimedAt, stalenessMs),
+  mergeState: mergeQueue ? mergeStateForTask(mergeQueue, task.id) : undefined,
+};
+const derived = treeStates?.get(task.id);
+if (derived) {
+  enhanced.locked = derived.locked;
+  enhanced.blockedBy = derived.blockedBy;
+  enhanced.bugs = derived.bugs;
+  enhanced.activeBugIds = derived.activeBugIds;
+  enhanced.layout = derived.layout;
+}
 ```
 
 (Leave the existing `blockingDependencyIds` computation below it untouched — it is retained for backward compatibility per the directive.)
@@ -1748,12 +1760,12 @@ export function toSummary(task: Task, root: string, derived?: TreeDerivedState):
 Update `getActiveTask` — pass derived state (one pass). Replace its final `return`:
 
 ```ts
-  const states = await loadTreeStateFromParser(deps.parser).catch(() => undefined);
-  return {
-    active: true,
-    task: toSummary(task, deps.root, states?.get(task.id)),
-    queuePosition,
-  };
+const states = await loadTreeStateFromParser(deps.parser).catch(() => undefined);
+return {
+  active: true,
+  task: toSummary(task, deps.root, states?.get(task.id)),
+  queuePosition,
+};
 ```
 
 Update `requireSummary` to derive once and pass the state:
@@ -1817,7 +1829,9 @@ describe('assertValidPriority (config-driven)', () => {
     expect(() => assertValidPriority('Critical', ['Critical', 'Normal'])).not.toThrow();
   });
   it('throws for a value outside the allowed list', () => {
-    expect(() => assertValidPriority('urgent', ['high', 'medium', 'low'])).toThrow('Invalid priority');
+    expect(() => assertValidPriority('urgent', ['high', 'medium', 'low'])).toThrow(
+      'Invalid priority'
+    );
   });
 });
 ```
@@ -1869,9 +1883,9 @@ describe('create_task / edit_task tech-tree fields (P1)', () => {
   it('rejects caused_by on a non-bug task', async () => {
     await createTaskHandler(deps(), { title: 'Cause' }); // TASK-1
     await createTaskHandler(deps(), { title: 'Plain' }); // TASK-2
-    await expect(
-      editTaskHandler(deps(), { taskId: 'TASK-2', causedBy: 'TASK-1' })
-    ).rejects.toThrow('bug');
+    await expect(editTaskHandler(deps(), { taskId: 'TASK-2', causedBy: 'TASK-1' })).rejects.toThrow(
+      'bug'
+    );
   });
 
   it('rejects a dependency that does not exist', async () => {
@@ -1941,8 +1955,8 @@ import { wouldCreateCycle } from '../core/treeGate';
 Add to `McpHandlerDeps` (next to `planService`):
 
 ```ts
-  planService: PlanService;
-  treeFieldService: TreeFieldService;
+planService: PlanService;
+treeFieldService: TreeFieldService;
 ```
 
 Add a shared dependency validator (place near `requireSummary`):
@@ -1975,9 +1989,7 @@ async function assertDependenciesValid(
   if (targetId) {
     for (const dep of dependencies) {
       if (wouldCreateCycle(all, targetId, dep)) {
-        throw new Error(
-          `Adding dependency ${dep} to ${targetId} would create a dependency cycle.`
-        );
+        throw new Error(`Adding dependency ${dep} to ${targetId} would create a dependency cycle.`);
       }
     }
   }
@@ -2149,7 +2161,8 @@ export async function editTaskHandler(
   }
   // category / caused_by are Taskwright-only surgical fields.
   if (args.category !== undefined) {
-    if (args.category.trim() === '') await deps.treeFieldService.clearCategory(args.taskId, deps.parser);
+    if (args.category.trim() === '')
+      await deps.treeFieldService.clearCategory(args.taskId, deps.parser);
     else await deps.treeFieldService.setCategory(args.taskId, args.category, deps.parser);
   }
   if (args.causedBy !== undefined) {
@@ -2172,15 +2185,15 @@ import { TreeFieldService } from '../core/TreeFieldService';
 In `main()` `deps`:
 
 ```ts
-  const deps: McpHandlerDeps = {
-    root,
-    backlogPath,
-    parser: new BacklogParser(backlogPath),
-    writer: new BacklogWriter(),
-    claimService: new ClaimService(),
-    planService: new PlanService(),
-    treeFieldService: new TreeFieldService(),
-  };
+const deps: McpHandlerDeps = {
+  root,
+  backlogPath,
+  parser: new BacklogParser(backlogPath),
+  writer: new BacklogWriter(),
+  claimService: new ClaimService(),
+  planService: new PlanService(),
+  treeFieldService: new TreeFieldService(),
+};
 ```
 
 Update the `create_task` `inputSchema`:
@@ -2295,7 +2308,9 @@ describe('complete_task bug rule (P1)', () => {
     await createTaskHandler(deps(), { title: 'Bug', type: 'bug' }); // TASK-1
     const d = deps();
     await d.treeFieldService.setCausedBy('TASK-1', 'TASK-999', d.parser);
-    await expect(completeTaskHandler(deps(), { taskId: 'TASK-1' })).rejects.toThrow('does not exist');
+    await expect(completeTaskHandler(deps(), { taskId: 'TASK-1' })).rejects.toThrow(
+      'does not exist'
+    );
   });
 
   it('completes a bug with a valid caused_by', async () => {
@@ -2335,16 +2350,16 @@ export interface ClaimResult {
 In `claimTaskHandler`, **replace** the two existing consecutive lines — `const claimedBy = args.claimedBy?.trim() || '@agent';` immediately followed by `const cfg = await resolveSyncConfig(deps);` (real handlers.ts ~lines 412–413) — with the gate block below. Its first line re-declares `claimedBy` and its last line re-declares `cfg`, so replacing (not inserting) leaves no duplicate `const claimedBy`/`const cfg`:
 
 ```ts
-  const claimedBy = args.claimedBy?.trim() || '@agent';
+const claimedBy = args.claimedBy?.trim() || '@agent';
 
-  // Dependency gate (all modes): a locked task cannot be claimed by an agent.
-  const states = await loadTreeStateFromParser(deps.parser).catch(() => undefined);
-  const derived = states?.get(args.taskId) ?? states?.get(args.taskId.trim().toUpperCase());
-  if (derived?.locked) {
-    return { claimed: false, taskId: args.taskId, locked: true, blockedBy: derived.blockedBy };
-  }
+// Dependency gate (all modes): a locked task cannot be claimed by an agent.
+const states = await loadTreeStateFromParser(deps.parser).catch(() => undefined);
+const derived = states?.get(args.taskId) ?? states?.get(args.taskId.trim().toUpperCase());
+if (derived?.locked) {
+  return { claimed: false, taskId: args.taskId, locked: true, blockedBy: derived.blockedBy };
+}
 
-  const cfg = await resolveSyncConfig(deps);
+const cfg = await resolveSyncConfig(deps);
 ```
 
 (Because this block **replaces** the original `claimedBy`/`cfg` declarations at ~lines 412–413, no duplicate `const claimedBy` or `const cfg` remains — do not leave the originals in place.)
@@ -2414,31 +2429,31 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 Append to `src/test/unit/TaskDetailProvider.test.ts` and add `getConfig` to the `mockParser` (in `beforeEach`, add `getConfig: vi.fn().mockResolvedValue({}),` to the `mockParser` object). Then add a test that opens a task and asserts the posted `taskData.priorities` reflects config:
 
 ```ts
-  it('sends config-driven priorities in taskData (tech-tree P1)', async () => {
-    (mockParser.getConfig as Mock).mockResolvedValue({ priorities: ['Critical', 'Normal', 'Low'] });
-    (mockParser.getTask as Mock).mockResolvedValue({
-      id: 'TASK-1',
-      title: 'T',
-      status: 'To Do',
-      labels: [],
-      assignee: [],
-      dependencies: [],
-      acceptanceCriteria: [],
-      definitionOfDone: [],
-      filePath: '/fake/backlog/tasks/task-1.md',
-    });
-
-    const provider = new TaskDetailProvider(extensionUri, mockParser);
-    provider.setBacklogPath('/fake/backlog');
-    await provider.openTask('TASK-1');
-    // openTask defers the first send by 100ms.
-    await new Promise((r) => setTimeout(r, 150));
-
-    const taskDataCall = (mockWebview.postMessage as Mock).mock.calls
-      .map((c) => c[0])
-      .find((m) => m?.type === 'taskData');
-    expect(taskDataCall?.data.priorities).toEqual(['Critical', 'Normal', 'Low']);
+it('sends config-driven priorities in taskData (tech-tree P1)', async () => {
+  (mockParser.getConfig as Mock).mockResolvedValue({ priorities: ['Critical', 'Normal', 'Low'] });
+  (mockParser.getTask as Mock).mockResolvedValue({
+    id: 'TASK-1',
+    title: 'T',
+    status: 'To Do',
+    labels: [],
+    assignee: [],
+    dependencies: [],
+    acceptanceCriteria: [],
+    definitionOfDone: [],
+    filePath: '/fake/backlog/tasks/task-1.md',
   });
+
+  const provider = new TaskDetailProvider(extensionUri, mockParser);
+  provider.setBacklogPath('/fake/backlog');
+  await provider.openTask('TASK-1');
+  // openTask defers the first send by 100ms.
+  await new Promise((r) => setTimeout(r, 150));
+
+  const taskDataCall = (mockWebview.postMessage as Mock).mock.calls
+    .map((c) => c[0])
+    .find((m) => m?.type === 'taskData');
+  expect(taskDataCall?.data.priorities).toEqual(['Critical', 'Normal', 'Low']);
+});
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -2457,8 +2472,8 @@ import { resolvePriorities } from '../core/priorityOrder';
 In `sendTaskData` (where the `TaskDetailData` object is built, ~line 505), replace the hardcoded priorities. Just before the `const data: TaskDetailData = {` block, resolve config:
 
 ```ts
-      const config = await this.parser.getConfig();
-      const priorities = resolvePriorities(config);
+const config = await this.parser.getConfig();
+const priorities = resolvePriorities(config);
 ```
 
 and change the field:
@@ -2478,17 +2493,17 @@ import { blockedByMessage } from '../core/treeGate';
 In `dispatchTask`, after the `if (!task) { ... }` guard and before creating the worktree, add the gate:
 
 ```ts
-  // Dependency gate: never dispatch a locked task.
-  try {
-    const states = await loadTreeStateFromParser(parser);
-    const derived = states.get(task.id);
-    if (derived?.locked) {
-      vscode.window.showErrorMessage(blockedByMessage(task.id, derived.blockedBy));
-      return undefined;
-    }
-  } catch {
-    // If derivation fails (e.g. transient IO), do not block dispatch.
+// Dependency gate: never dispatch a locked task.
+try {
+  const states = await loadTreeStateFromParser(parser);
+  const derived = states.get(task.id);
+  if (derived?.locked) {
+    vscode.window.showErrorMessage(blockedByMessage(task.id, derived.blockedBy));
+    return undefined;
   }
+} catch {
+  // If derivation fails (e.g. transient IO), do not block dispatch.
+}
 ```
 
 Edit `src/providers/claimActions.ts`. Add imports:
@@ -2588,20 +2603,20 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 **1. Spec § → task coverage**
 
-| Spec / directive area | Task(s) |
-|---|---|
-| §3.1 `category` (surgical), `type: bug`, `caused_by` fields | Tasks 2 (model/parse), 3 (surgical write) |
-| §3.1 / §10 priority → user-defined ordered list (config `priorities`) | Task 1 (`priorityOrder`, relax `TaskPriority`, `parsePriority`) |
-| §3.2 config `categories`; reserved lanes/band constants | Tasks 2 (`categories`, `getCategories`), 5 (`BUGS_LANE`/`MISC_LANE`/`BACKBURNER_BAND`) |
-| §3.3 derived `locked`/`blockedBy` | Tasks 4 (`treeGate`), 6 (`deriveTreeState`) |
-| §3.3 derived `bugs`/`activeBugIds` | Task 6 |
-| §3.3 / §10 derived `layout {lane, band, depth, subRow}` | Task 5 (`treeLayout`), 6 (compose) |
-| §4 layout rules (lane/band/depth/in-cell order); §10 sub-rows | Task 5 |
-| §5.1 gate: `claim_task` refuses; dispatch refuses | Tasks 9 (MCP claim), 10 (dispatch) |
-| §5.2 human-only Force claim; no MCP `force`; DAG invariant `wouldCreateCycle` | Tasks 10 (`forceClaimTask`), 8 (cycle validation), 4 (`wouldCreateCycle`) |
-| §6 bug lifecycle: `complete_task` requires resolvable `caused_by` | Task 9 |
-| §7 MCP surface: create/edit fields, claim gate, complete rule, summaries, `forceClaimTask` command | Tasks 7, 8, 9, 10 |
-| §8 TDD (gate, cycle, layout, bug-completion, surgical round-trip) | Tasks 3, 4, 5, 6, 8, 9 |
+| Spec / directive area                                                                              | Task(s)                                                                                |
+| -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| §3.1 `category` (surgical), `type: bug`, `caused_by` fields                                        | Tasks 2 (model/parse), 3 (surgical write)                                              |
+| §3.1 / §10 priority → user-defined ordered list (config `priorities`)                              | Task 1 (`priorityOrder`, relax `TaskPriority`, `parsePriority`)                        |
+| §3.2 config `categories`; reserved lanes/band constants                                            | Tasks 2 (`categories`, `getCategories`), 5 (`BUGS_LANE`/`MISC_LANE`/`BACKBURNER_BAND`) |
+| §3.3 derived `locked`/`blockedBy`                                                                  | Tasks 4 (`treeGate`), 6 (`deriveTreeState`)                                            |
+| §3.3 derived `bugs`/`activeBugIds`                                                                 | Task 6                                                                                 |
+| §3.3 / §10 derived `layout {lane, band, depth, subRow}`                                            | Task 5 (`treeLayout`), 6 (compose)                                                     |
+| §4 layout rules (lane/band/depth/in-cell order); §10 sub-rows                                      | Task 5                                                                                 |
+| §5.1 gate: `claim_task` refuses; dispatch refuses                                                  | Tasks 9 (MCP claim), 10 (dispatch)                                                     |
+| §5.2 human-only Force claim; no MCP `force`; DAG invariant `wouldCreateCycle`                      | Tasks 10 (`forceClaimTask`), 8 (cycle validation), 4 (`wouldCreateCycle`)              |
+| §6 bug lifecycle: `complete_task` requires resolvable `caused_by`                                  | Task 9                                                                                 |
+| §7 MCP surface: create/edit fields, claim gate, complete rule, summaries, `forceClaimTask` command | Tasks 7, 8, 9, 10                                                                      |
+| §8 TDD (gate, cycle, layout, bug-completion, surgical round-trip)                                  | Tasks 3, 4, 5, 6, 8, 9                                                                 |
 
 **2. Placeholder scan:** No TBD/TODO; every code and test step is complete and runnable.
 
