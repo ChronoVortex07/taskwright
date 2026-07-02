@@ -199,6 +199,11 @@
         "icon": "$(add)"
       },
       {
+        "command": "taskwright.quickCapture",
+        "title": "Taskwright: Quick Capture Task",
+        "icon": "$(add)"
+      },
+      {
         "command": "taskwright.createMilestone",
         "title": "Taskwright: Create Milestone",
         "icon": "$(milestone)"
@@ -309,6 +314,20 @@
       {
         "command": "taskwright.setupClaudeIntegration",
         "title": "Taskwright: Set Up Claude Code Integration (MCP + CLAUDE.md)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "taskwright.createTask",
+        "key": "ctrl+n",
+        "mac": "cmd+n",
+        "when": "activeWebviewPanelId == 'taskwright.tasksEditor' || focusedView == 'taskwright.kanban'"
+      },
+      {
+        "command": "taskwright.quickCapture",
+        "key": "ctrl+shift+n",
+        "mac": "cmd+shift+n",
+        "when": "activeWebviewPanelId == 'taskwright.tasksEditor' || focusedView == 'taskwright.kanban'"
       }
     ],
     "menus": {

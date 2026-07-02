@@ -40,6 +40,14 @@
     jumpBand?: string;
     jumpNonce?: number;
     onSelectTask: (taskId: string, meta?: Pick<Task, 'filePath' | 'source' | 'branch'>) => void;
+    /** Open the unified create form (P3a: reportBug; P3b: drop-on-empty click-in-place). */
+    onCreateInPlace?: (opts: {
+      mode?: 'full' | 'quick';
+      bugMode?: boolean;
+      causedBy?: string;
+      category?: string;
+      milestone?: string;
+    }) => void;
   }
   let {
     tasks,

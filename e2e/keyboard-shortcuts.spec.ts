@@ -190,13 +190,14 @@ test.describe('Keyboard Shortcuts', () => {
       await setupTasksView(page);
     });
 
-    test('n key sends requestCreateTask message', async ({ page }) => {
+    test('n key opens the create form locally (P3a)', async ({ page }) => {
       await clearPostedMessages(page);
       await page.keyboard.press('n');
-      await page.waitForTimeout(50);
 
+      await expect(page.locator('[data-testid="create-form"]')).toBeVisible();
+      // No round-trip message: the form opens in-webview and posts createTask only on submit.
       const messages = await getPostedMessages(page);
-      expect(messages).toContainEqual({ type: 'requestCreateTask' });
+      expect(messages).not.toContainEqual({ type: 'requestCreateTask' });
     });
 
     test('r key sends refresh message', async ({ page }) => {

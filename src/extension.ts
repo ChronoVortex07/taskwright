@@ -7,7 +7,6 @@ import { TaskPreviewViewProvider } from './providers/TaskPreviewViewProvider';
 import { TreeNavigatorProvider } from './providers/TreeNavigatorProvider';
 import { BacklogParser } from './core/BacklogParser';
 import { BacklogWriter } from './core/BacklogWriter';
-import { TaskCreatePanel } from './providers/TaskCreatePanel';
 import { FileWatcher } from './core/FileWatcher';
 import { BacklogCli } from './core/BacklogCli';
 import { createDebouncedHandler } from './core/debounce';
@@ -998,18 +997,20 @@ export function activate(context: vscode.ExtensionContext) {
       tasksHosts.forEach((host) => host.refresh())
     );
   }
+  // Create task: reveal the board and open the unified create form in it.
+  // (relayNavigator is the generic "post this ExtensionMessage to the board" relay.)
   context.subscriptions.push(
     vscode.commands.registerCommand('taskwright.createTask', () => {
-      const activeBacklogPath = manager.getActiveRoot()?.backlogPath;
-      if (!activeBacklogPath || !parser) {
-        vscode.window.showErrorMessage('No backlog folder found in workspace');
-        return;
-      }
+      tasksPanelProvider.reveal();
+      tasksHosts.forEach((host) => host.relayNavigator({ type: 'openCreateForm', mode: 'full' }));
+    })
+  );
 
-      TaskCreatePanel.show(context.extensionUri, writer, parser, activeBacklogPath, {
-        tasksProvider,
-        taskDetailProvider,
-      });
+  // Quick capture: same form in quick (title-only) mode.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('taskwright.quickCapture', () => {
+      tasksPanelProvider.reveal();
+      tasksHosts.forEach((host) => host.relayNavigator({ type: 'openCreateForm', mode: 'quick' }));
     })
   );
 

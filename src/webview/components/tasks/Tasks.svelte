@@ -7,6 +7,7 @@
   import DocumentsList from '../docs/DocumentsList.svelte';
   import DecisionsList from '../decisions/DecisionsList.svelte';
   import TechTreeCanvas from '../tree/TechTreeCanvas.svelte';
+  import CreateTaskForm, { type CreateTaskPayload } from '../tree/CreateTaskForm.svelte';
   import TabBar from '../shared/TabBar.svelte';
   import AgentSetupBanner from '../shared/AgentSetupBanner.svelte';
   import Toast from '../shared/Toast.svelte';
@@ -50,6 +51,37 @@
   // True while the board is in cross-branch mode (no local tree layout is computed).
   let crossBranch = $state(false);
   let priorities = $state<string[]>(['high', 'medium', 'low']);
+
+  // Unified create form (hosted at root so it works from any tab).
+  let createForm = $state<{
+    mode: 'full' | 'quick';
+    bugMode: boolean;
+    prefill?: { category?: string; milestone?: string; causedBy?: string };
+  } | null>(null);
+
+  function openCreateForm(
+    mode: 'full' | 'quick',
+    opts?: { bugMode?: boolean; prefill?: { category?: string; milestone?: string; causedBy?: string } }
+  ) {
+    createForm = { mode, bugMode: opts?.bugMode ?? false, prefill: opts?.prefill };
+  }
+
+  function handleCreateSubmit(payload: CreateTaskPayload) {
+    // Q1: map fields explicitly — never spread a payload into the message envelope
+    // (a spread carrying a `type` key would clobber the discriminant).
+    vscode.postMessage({
+      type: 'createTask',
+      title: payload.title,
+      description: payload.description,
+      priority: payload.priority,
+      category: payload.category,
+      milestone: payload.milestone,
+      taskType: payload.taskType,
+      causedBy: payload.causedBy,
+      openAfter: payload.openAfter,
+    });
+    createForm = null;
+  }
 
   // Dashboard state
   let dashboardStats = $state<DashboardStats | null>(null);
@@ -116,6 +148,13 @@
 
       case 'prioritiesUpdated':
         priorities = message.priorities;
+        break;
+
+      case 'openCreateForm':
+        openCreateForm(message.mode, {
+          bugMode: message.bugMode,
+          prefill: { category: message.category, milestone: message.milestone, causedBy: message.causedBy },
+        });
         break;
 
       case 'milestoneData':
@@ -319,6 +358,14 @@
         return;
       }
 
+      // Create-form shortcuts (Ctrl/Cmd-N = full, Ctrl/Cmd-Shift-N = quick). Handled
+      // before the single-key switch so bare `n` below doesn't also fire.
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'n' || e.key === 'N')) {
+        e.preventDefault();
+        openCreateForm(e.shiftKey ? 'quick' : 'full');
+        return;
+      }
+
       switch (e.key) {
         case 't': handleTabChange('tree'); break;
         case 'z': handleTabChange('kanban'); break;
@@ -336,7 +383,7 @@
           }
           break;
         }
-        case 'n': vscode.postMessage({ type: 'requestCreateTask' }); break;
+        case 'n': openCreateForm('full'); break;
         case 'r': vscode.postMessage({ type: 'refresh' }); break;
         case '/': {
           e.preventDefault();
@@ -496,7 +543,7 @@
   {activeTab}
   {draftCount}
   onTabChange={handleTabChange}
-  onCreateTask={() => vscode.postMessage({ type: 'requestCreateTask' })}
+  onCreateTask={() => openCreateForm('full')}
   onRefresh={() => vscode.postMessage({ type: 'refresh' })}
 />
 
@@ -552,6 +599,11 @@
       {jumpBand}
       {jumpNonce}
       onSelectTask={handleSelectTask}
+      onCreateInPlace={(opts) =>
+        openCreateForm(opts.mode ?? 'full', {
+          bugMode: opts.bugMode,
+          prefill: { causedBy: opts.causedBy, category: opts.category, milestone: opts.milestone },
+        })}
     />
   </div>
 {:else if activeTab === 'kanban'}
@@ -661,6 +713,20 @@
 
 {#if toastMessage}
   <Toast message={toastMessage} onDismiss={hideToast} />
+{/if}
+
+{#if createForm}
+  <CreateTaskForm
+    mode={createForm.mode}
+    bugMode={createForm.bugMode}
+    prefill={createForm.prefill}
+    {laneOrder}
+    milestones={configMilestones}
+    {priorities}
+    {tasks}
+    onSubmit={handleCreateSubmit}
+    onClose={() => (createForm = null)}
+  />
 {/if}
 
 <button
