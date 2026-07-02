@@ -146,6 +146,10 @@ export interface ClaimResult {
   surrendered?: boolean;
   /** Who holds the task when `surrendered` is true. */
   heldBy?: string;
+  /** True when the task cannot be claimed because its dependencies are unmet. */
+  locked?: boolean;
+  /** The blocking dependency IDs when `locked` is true. */
+  blockedBy?: string[];
 }
 
 export interface ReleaseResult {
@@ -442,6 +446,14 @@ export async function claimTaskHandler(
   args: { taskId: string; claimedBy?: string; worktree?: string }
 ): Promise<ClaimResult> {
   const claimedBy = args.claimedBy?.trim() || '@agent';
+
+  // Dependency gate (all modes): a locked task cannot be claimed by an agent.
+  const states = await loadTreeStateFromParser(deps.parser).catch(() => undefined);
+  const derived = states?.get(args.taskId) ?? states?.get(args.taskId.trim().toUpperCase());
+  if (derived?.locked) {
+    return { claimed: false, taskId: args.taskId, locked: true, blockedBy: derived.blockedBy };
+  }
+
   const cfg = await resolveSyncConfig(deps);
 
   if (cfg.mode !== 'off') {
@@ -537,9 +549,7 @@ async function assertDependenciesValid(
   if (targetId) {
     for (const dep of dependencies) {
       if (wouldCreateCycle(all, targetId, dep)) {
-        throw new Error(
-          `Adding dependency ${dep} to ${targetId} would create a dependency cycle.`
-        );
+        throw new Error(`Adding dependency ${dep} to ${targetId} would create a dependency cycle.`);
       }
     }
   }
@@ -656,11 +666,24 @@ export interface MoveResult {
   path: string;
 }
 
-/** Move a task into completed/. */
+/** Move a task into completed/. Bugs must be traced to their cause first. */
 export async function completeTaskHandler(
   deps: McpHandlerDeps,
   args: { taskId: string }
 ): Promise<MoveResult> {
+  const task = await deps.parser.getTask(args.taskId);
+  if (task?.type === 'bug') {
+    const cause = task.causedBy?.trim();
+    if (!cause) {
+      throw new Error(
+        'A bug must be traced to the task that caused it (set caused_by) before it can be completed.'
+      );
+    }
+    const causeTask = await deps.parser.getTask(cause);
+    if (!causeTask) {
+      throw new Error(`caused_by references ${cause} which does not exist.`);
+    }
+  }
   const dest = await deps.writer.completeTask(args.taskId, deps.parser);
   return { taskId: args.taskId, outcome: 'completed', path: dest };
 }

@@ -17,6 +17,7 @@ import {
   demoteTaskHandler,
   createSubtaskHandler,
   getActiveTask,
+  claimTaskHandler,
 } from '../../mcp/handlers';
 import type { McpHandlerDeps } from '../../mcp/handlers';
 import { writeActiveTask } from '../../core/activeTask';
@@ -241,9 +242,9 @@ describe('create_task / edit_task tech-tree fields (P1)', () => {
   it('rejects caused_by on a non-bug task', async () => {
     await createTaskHandler(deps(), { title: 'Cause' }); // TASK-1
     await createTaskHandler(deps(), { title: 'Plain' }); // TASK-2
-    await expect(
-      editTaskHandler(deps(), { taskId: 'TASK-2', causedBy: 'TASK-1' })
-    ).rejects.toThrow('bug');
+    await expect(editTaskHandler(deps(), { taskId: 'TASK-2', causedBy: 'TASK-1' })).rejects.toThrow(
+      'bug'
+    );
   });
 
   it('rejects a dependency that does not exist', async () => {
@@ -262,5 +263,53 @@ describe('create_task / edit_task tech-tree fields (P1)', () => {
     await expect(
       editTaskHandler(deps(), { taskId: 'TASK-1', dependencies: ['TASK-2'] })
     ).rejects.toThrow('cycle');
+  });
+});
+
+describe('claim_task gate (P1)', () => {
+  it('refuses a locked task with locked/blockedBy and no claim', async () => {
+    await createTaskHandler(deps(), { title: 'Root' }); // TASK-1 (To Do)
+    await createTaskHandler(deps(), { title: 'Dependent' }); // TASK-2
+    const d = deps();
+    await d.writer.updateTask('TASK-2', { dependencies: ['TASK-1'] }, d.parser);
+
+    const result = await claimTaskHandler(deps(), { taskId: 'TASK-2' });
+    expect(result.claimed).toBe(false);
+    expect(result.locked).toBe(true);
+    expect(result.blockedBy).toEqual(['TASK-1']);
+  });
+
+  it('allows claiming once the dependency is done', async () => {
+    await createTaskHandler(deps(), { title: 'Root' }); // TASK-1
+    await createTaskHandler(deps(), { title: 'Dependent' }); // TASK-2
+    const d = deps();
+    await d.writer.updateTask('TASK-2', { dependencies: ['TASK-1'] }, d.parser);
+    await d.writer.updateTask('TASK-1', { status: 'Done' }, d.parser);
+
+    const result = await claimTaskHandler(deps(), { taskId: 'TASK-2', claimedBy: '@me' });
+    expect(result.claimed).toBe(true);
+  });
+});
+
+describe('complete_task bug rule (P1)', () => {
+  it('refuses to complete a bug with no caused_by', async () => {
+    await createTaskHandler(deps(), { title: 'Bug', type: 'bug' }); // TASK-1
+    await expect(completeTaskHandler(deps(), { taskId: 'TASK-1' })).rejects.toThrow('caused_by');
+  });
+
+  it('refuses when caused_by points at a nonexistent task', async () => {
+    await createTaskHandler(deps(), { title: 'Bug', type: 'bug' }); // TASK-1
+    const d = deps();
+    await d.treeFieldService.setCausedBy('TASK-1', 'TASK-999', d.parser);
+    await expect(completeTaskHandler(deps(), { taskId: 'TASK-1' })).rejects.toThrow(
+      'does not exist'
+    );
+  });
+
+  it('completes a bug with a valid caused_by', async () => {
+    await createTaskHandler(deps(), { title: 'Cause' }); // TASK-1
+    await createTaskHandler(deps(), { title: 'Bug', type: 'bug', causedBy: 'TASK-1' }); // TASK-2
+    const result = await completeTaskHandler(deps(), { taskId: 'TASK-2' });
+    expect(result.outcome).toBe('completed');
   });
 });
