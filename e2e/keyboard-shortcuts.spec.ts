@@ -51,6 +51,8 @@ async function setupTasksView(page: ReturnType<typeof test.info>['page']) {
   });
   await postMessageToWebview(page, { type: 'milestonesUpdated', milestones: [] });
   await postMessageToWebview(page, { type: 'tasksUpdated', tasks: sampleTasks });
+  // Explicitly start in kanban (the app default tab is now 'tree')
+  await postMessageToWebview(page, { type: 'viewModeChanged', viewMode: 'kanban' });
   await page.waitForTimeout(100);
 }
 
@@ -108,7 +110,7 @@ test.describe('Keyboard Shortcuts', () => {
     });
 
     test('z/x/c/v keys switch views', async ({ page }) => {
-      // Start in kanban view (default)
+      // Start in kanban view (explicit switch in setup; the app default tab is tree)
       await expect(page.locator('#kanban-view')).toBeVisible();
 
       // Press x - switch to list view
@@ -242,7 +244,7 @@ test.describe('Keyboard Shortcuts', () => {
     });
 
     test('/ does nothing in kanban view (no search input)', async ({ page }) => {
-      // We're in kanban view by default - pressing / should not throw
+      // We're in kanban view (explicit switch in setup) - pressing / should not throw
       await page.keyboard.press('/');
       await page.waitForTimeout(50);
 

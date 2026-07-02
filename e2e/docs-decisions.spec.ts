@@ -84,6 +84,8 @@ async function setupTasksView(page: ReturnType<typeof test.info>['page']) {
   });
   await postMessageToWebview(page, { type: 'milestonesUpdated', milestones: [] });
   await postMessageToWebview(page, { type: 'tasksUpdated', tasks: [] });
+  // Explicitly start in kanban (the app default tab is now 'tree')
+  await postMessageToWebview(page, { type: 'viewModeChanged', viewMode: 'kanban' });
   await page.waitForTimeout(100);
 }
 
