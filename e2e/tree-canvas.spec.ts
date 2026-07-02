@@ -1,5 +1,9 @@
 import { test, expect } from '@playwright/test';
-import { installVsCodeMock, postMessageToWebview } from './fixtures/vscode-mock';
+import {
+  installVsCodeMock,
+  postMessageToWebview,
+  getLastPostedMessage,
+} from './fixtures/vscode-mock';
 import type { Task } from '../src/webview/lib/types';
 import { deriveGeometry, type GeometryNode } from '../src/webview/lib/treeGeometry';
 
@@ -88,7 +92,12 @@ async function setupTreeView(page: Parameters<typeof installVsCodeMock>[0]) {
   });
   await postMessageToWebview(page, { type: 'milestonesUpdated', milestones: [] });
   await postMessageToWebview(page, { type: 'tasksUpdated', tasks: treeTasks() });
-  await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder, bandOrder, warnings: [] });
+  await postMessageToWebview(page, {
+    type: 'treeLayoutUpdated',
+    laneOrder,
+    bandOrder,
+    warnings: [],
+  });
   await postMessageToWebview(page, { type: 'activeTabChanged', tab: 'tree' });
   await page.waitForTimeout(150);
   await expect(page.locator('[data-testid="tree-canvas"]')).toBeVisible();
@@ -146,9 +155,7 @@ test.describe('Tech tree canvas', () => {
 
   test('clicking a node sends selectTask (no popover in P2a)', async ({ page }) => {
     await page.locator('[data-testid="tree-node-TASK-2"]').click();
-    const last = await page.evaluate(() =>
-      (window as any).__vscodeTestHelpers.getLastPostedMessage()
-    );
+    const last = await getLastPostedMessage(page);
     expect(last).toMatchObject({ type: 'selectTask', taskId: 'TASK-2' });
   });
 
@@ -160,12 +167,22 @@ test.describe('Tech tree canvas', () => {
     await page.locator('[data-testid="tree-viewport"]').evaluate((el) => {
       for (let i = 0; i < 20; i++) {
         el.dispatchEvent(
-          new WheelEvent('wheel', { deltaY: 120, ctrlKey: true, clientX: 400, clientY: 300, bubbles: true, cancelable: true })
+          new WheelEvent('wheel', {
+            deltaY: 120,
+            ctrlKey: true,
+            clientX: 400,
+            clientY: 300,
+            bubbles: true,
+            cancelable: true,
+          })
         );
       }
     });
     await page.waitForTimeout(50);
-    await expect(page.locator('[data-testid="tree-node-TASK-1"]')).toHaveAttribute('data-lod', 'far');
+    await expect(page.locator('[data-testid="tree-node-TASK-1"]')).toHaveAttribute(
+      'data-lod',
+      'far'
+    );
     const afterTransform = await surface.getAttribute('style');
     expect(afterTransform).not.toBe(beforeTransform);
   });
@@ -175,7 +192,13 @@ test.describe('Tech tree canvas', () => {
     const before = await surface.getAttribute('style');
     await page.locator('[data-testid="tree-viewport"]').evaluate((el) => {
       el.dispatchEvent(
-        new WheelEvent('wheel', { deltaX: 120, deltaY: 80, ctrlKey: false, bubbles: true, cancelable: true })
+        new WheelEvent('wheel', {
+          deltaX: 120,
+          deltaY: 80,
+          ctrlKey: false,
+          bubbles: true,
+          cancelable: true,
+        })
       );
     });
     await page.waitForTimeout(50);
@@ -213,7 +236,12 @@ test.describe('Tech tree canvas', () => {
         } as Task,
       ],
     });
-    await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder: [], bandOrder: [], warnings: [] });
+    await postMessageToWebview(page, {
+      type: 'treeLayoutUpdated',
+      laneOrder: [],
+      bandOrder: [],
+      warnings: [],
+    });
     await page.waitForTimeout(80);
     await expect(page.locator('[data-testid="tree-empty-state"]')).toBeVisible();
   });

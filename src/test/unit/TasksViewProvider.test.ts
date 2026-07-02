@@ -178,7 +178,7 @@ describe('TasksViewProvider', () => {
       const provider = new TasksViewProvider(extensionUri, mockParser, mockContext);
       resolveView(provider);
 
-      // Default is kanban, so changing to list should trigger messages
+      // Default is tree, so changing to list should trigger messages
       provider.setViewMode('list');
 
       expect(mockWebview.postMessage).toHaveBeenCalledWith({
