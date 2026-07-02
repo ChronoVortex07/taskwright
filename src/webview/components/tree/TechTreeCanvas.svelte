@@ -65,6 +65,7 @@
     jumpBand = '',
     jumpNonce = 0,
     onSelectTask,
+    onCreateInPlace,
   }: Props = $props();
 
   const layoutNodes = $derived(tasks.filter((t) => !!t.layout));
@@ -359,6 +360,10 @@
         break;
       case 'sendBack':
         vscode.postMessage({ type: 'sendBackMerge', taskId: id });
+        break;
+      case 'reportBug':
+        closePopover();
+        onCreateInPlace?.({ bugMode: true, causedBy: id });
         break;
       case 'markDone':
         vscode.postMessage({ type: 'updateTask', taskId: id, updates: { status: doneStatus } });

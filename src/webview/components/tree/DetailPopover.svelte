@@ -15,7 +15,8 @@
     | 'markDone'
     | 'cancelDispatch'
     | 'approve'
-    | 'sendBack';
+    | 'sendBack'
+    | 'reportBug';
 
   interface Props {
     task: PopoverTask;
@@ -195,6 +196,12 @@
       {/each}
     </div>
   {/if}
+
+  <div class="tp-actions tp-actions-secondary" data-testid="tp-actions-secondary">
+    <button class="tp-btn tp-btn-quiet" data-testid="tp-action-reportBug" onclick={() => onAction('reportBug', task.id)}>
+      Report bug
+    </button>
+  </div>
 </div>
 
 <style>
@@ -344,5 +351,18 @@
   }
   .tp-btn:hover {
     background: var(--vscode-button-hoverBackground, #1177bb);
+  }
+  .tp-actions-secondary {
+    margin-top: 2px;
+  }
+  .tp-btn-quiet {
+    font-size: 11px;
+    opacity: 0.85;
+    background: transparent;
+    border-color: var(--vscode-panel-border, #444);
+  }
+  .tp-btn-quiet:hover {
+    opacity: 1;
+    background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
   }
 </style>
