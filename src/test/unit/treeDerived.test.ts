@@ -1,0 +1,58 @@
+import { describe, it, expect } from 'vitest';
+import type { Task } from '../../core/types';
+import { deriveTreeState } from '../../core/treeDerived';
+
+function task(partial: Partial<Task> & { id: string }): Task {
+  return {
+    title: partial.title ?? partial.id,
+    status: partial.status ?? 'To Do',
+    labels: [],
+    assignee: [],
+    dependencies: partial.dependencies ?? [],
+    acceptanceCriteria: [],
+    definitionOfDone: [],
+    filePath: `/b/tasks/${partial.id}.md`,
+    ...partial,
+    id: partial.id,
+  } as Task;
+}
+
+const opts = {
+  doneStatus: 'Done',
+  milestoneOrder: [] as string[],
+  priorities: ['high', 'medium', 'low'],
+  categories: [] as string[],
+};
+
+describe('deriveTreeState', () => {
+  it('composes locked/blockedBy from the gate and layout from the layout module', () => {
+    const tasks = [
+      task({ id: 'TASK-1', status: 'Done' }),
+      task({ id: 'TASK-2', dependencies: ['TASK-1'] }),
+      task({ id: 'TASK-3', dependencies: ['TASK-2'] }),
+    ];
+    const states = deriveTreeState(tasks, opts);
+    expect(states.get('TASK-2')!.locked).toBe(false); // dep TASK-1 is Done
+    expect(states.get('TASK-3')!.locked).toBe(true); // dep TASK-2 not done
+    expect(states.get('TASK-3')!.blockedBy).toEqual(['TASK-2']);
+    expect(states.get('TASK-1')!.layout.lane).toBeDefined();
+  });
+
+  it('backlinks bugs to the task that caused them; activeBugIds excludes done bugs', () => {
+    const tasks = [
+      task({ id: 'TASK-1' }),
+      task({ id: 'TASK-2', type: 'bug', causedBy: 'TASK-1', status: 'To Do' }),
+      task({ id: 'TASK-3', type: 'bug', causedBy: 'TASK-1', status: 'Done' }),
+      task({ id: 'TASK-4', type: 'bug', causedBy: 'TASK-1', folder: 'completed' }),
+    ];
+    const s = deriveTreeState(tasks, opts).get('TASK-1')!;
+    expect(s.bugs.sort()).toEqual(['TASK-2', 'TASK-3', 'TASK-4']);
+    expect(s.activeBugIds).toEqual(['TASK-2']); // TASK-3 (done) and TASK-4 (completed) excluded
+  });
+
+  it('a task with no bugs has empty bug arrays', () => {
+    const s = deriveTreeState([task({ id: 'TASK-1' })], opts).get('TASK-1')!;
+    expect(s.bugs).toEqual([]);
+    expect(s.activeBugIds).toEqual([]);
+  });
+});

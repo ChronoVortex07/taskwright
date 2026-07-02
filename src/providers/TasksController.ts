@@ -24,6 +24,7 @@ import { getClaimStalenessMs } from './claimActions';
 import { getTaskwrightConfig } from '../config';
 import { mergeStateForTask, type MergeTaskState } from '../core/mergeBoard';
 import type { MergeQueue, MergeMode } from '../core/mergeQueue';
+import { loadTreeStateFromParser } from '../core/treeDerived';
 
 export type TasksViewMode =
   | 'kanban'
@@ -253,6 +254,20 @@ export class TasksController {
       const completedTaskIds = new Set(completedTasks.map((task) => task.id));
       const archivedTaskIds = new Set(archivedTasks.map((task) => task.id));
 
+      // Tech-tree P1 derived state (locked/blockedBy/bugs/activeBugIds/layout).
+      // Best-effort: a failure must not break loading the board. Skipped in
+      // cross-branch mode, where the displayed tasks come from the cross-branch
+      // loader — deriving tree state from the local getTasks universe would not
+      // match the board (the tech-tree is a local-board feature).
+      let treeStates: Awaited<ReturnType<typeof loadTreeStateFromParser>> | undefined;
+      if (this.dataSourceMode !== 'cross-branch') {
+        try {
+          treeStates = await loadTreeStateFromParser(this.parser);
+        } catch {
+          treeStates = undefined;
+        }
+      }
+
       // Build reverse dependency map and task-by-id lookup once — O(n)
       const taskById = new Map<string, Task>();
       const reverseDeps = new Map<string, string[]>();
@@ -303,6 +318,14 @@ export class TasksController {
           claimStale: !!task.claimedBy && isClaimStale(task.claimedAt, stalenessMs),
           mergeState: mergeQueue ? mergeStateForTask(mergeQueue, task.id) : undefined,
         };
+        const derived = treeStates?.get(task.id);
+        if (derived) {
+          enhanced.locked = derived.locked;
+          enhanced.blockedBy = derived.blockedBy;
+          enhanced.bugs = derived.bugs;
+          enhanced.activeBugIds = derived.activeBugIds;
+          enhanced.layout = derived.layout;
+        }
         const blockingDependencyIds = task.dependencies.filter((depId) => {
           if (completedTaskIds.has(depId) || archivedTaskIds.has(depId)) return false;
           const depTask = taskById.get(depId);

@@ -1,5 +1,6 @@
 import type { MergeTaskState } from './mergeBoard';
 import type { MergeMode } from './mergeQueue';
+import type { TreeLayout } from './treeLayout';
 
 /**
  * Task status values matching Backlog.md format.
@@ -84,6 +85,13 @@ export interface Task {
   subtaskSummaries?: Array<{ id: string; title: string; status: string }>; // Enriched subtask data
   blocksTaskIds?: string[]; // Reverse dependencies: tasks that depend on this task
   blockingDependencyIds?: string[]; // Dependency IDs currently blocking this task in views
+
+  // Tech-tree P1 derived state (computed at load; never persisted).
+  locked?: boolean;
+  blockedBy?: string[];
+  bugs?: string[];
+  activeBugIds?: string[];
+  layout?: TreeLayout;
 
   // Taskwright advisory-claim fields (multi-agent coordination; written directly, not via the CLI)
   claimedBy?: string; // Who/what claimed the task (agent or user id, may be @-prefixed)
