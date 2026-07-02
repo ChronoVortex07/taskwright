@@ -104,6 +104,7 @@ describe('TaskDetailProvider', () => {
         return normalized;
       }),
       invalidateMilestoneCache: vi.fn(),
+      getConfig: vi.fn().mockResolvedValue({}),
     } as unknown as BacklogParser;
 
     // Reset fs mocks
@@ -503,6 +504,34 @@ describe('TaskDetailProvider', () => {
       );
       expect(taskDataCall).toBeTruthy();
       expect(taskDataCall![0].data.isDraft).toBe(false);
+    });
+  });
+
+  describe('sendTaskData priorities', () => {
+    it('sends config-driven priorities in taskData (tech-tree P1)', async () => {
+      (mockParser.getConfig as Mock).mockResolvedValue({ priorities: ['Critical', 'Normal', 'Low'] });
+      (mockParser.getTask as Mock).mockResolvedValue({
+        id: 'TASK-1',
+        title: 'T',
+        status: 'To Do',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/fake/backlog/tasks/task-1.md',
+      });
+
+      const provider = new TaskDetailProvider(extensionUri, mockParser);
+      provider.setBacklogPath('/fake/backlog');
+      await provider.openTask('TASK-1');
+      // openTask defers the first send by 100ms.
+      await new Promise((r) => setTimeout(r, 150));
+
+      const taskDataCall = (mockWebview.postMessage as Mock).mock.calls
+        .map((c) => c[0])
+        .find((m) => m?.type === 'taskData');
+      expect(taskDataCall?.data.priorities).toEqual(['Critical', 'Normal', 'Low']);
     });
   });
 

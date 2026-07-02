@@ -22,6 +22,7 @@ import { readActiveTask, writeActiveTask, clearActiveTask } from '../core/active
 import { loadPlanProgress } from '../core/loadPlanProgress';
 import { mergeStateForTask } from '../core/mergeBoard';
 import { MergeQueueStore, mergeQueuePath, nodeQueueFs, type MergeMode } from '../core/mergeQueue';
+import { resolvePriorities } from '../core/priorityOrder';
 import { getTaskwrightConfig } from '../config';
 
 const execFileAsyncDetail = promisify(execFile);
@@ -502,10 +503,13 @@ export class TaskDetailProvider {
       }
       const mergeMode = getTaskwrightConfig<MergeMode>('mergeMode', 'manual-review');
 
+      const config = await this.parser.getConfig();
+      const priorities = resolvePriorities(config);
+
       const data: TaskDetailData = {
         task: contextTask,
         statuses,
-        priorities: ['high', 'medium', 'low'],
+        priorities,
         uniqueLabels,
         uniqueAssignees,
         milestones: milestoneOptions,

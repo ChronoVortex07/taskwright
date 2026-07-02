@@ -13,6 +13,8 @@ import {
   resolveTerminalLaunch,
 } from '../core/dispatchPrompt';
 import { getTaskwrightConfig } from '../config';
+import { loadTreeStateFromParser } from '../core/treeDerived';
+import { blockedByMessage } from '../core/treeGate';
 
 /**
  * Provider-layer glue for subscription-safe dispatch. Composes the pure cores
@@ -66,6 +68,18 @@ export async function dispatchTask(
   if (!task) {
     vscode.window.showErrorMessage(`Task ${taskId} was not found.`);
     return undefined;
+  }
+
+  // Dependency gate: never dispatch a locked task.
+  try {
+    const states = await loadTreeStateFromParser(parser);
+    const derived = states.get(task.id);
+    if (derived?.locked) {
+      vscode.window.showErrorMessage(blockedByMessage(task.id, derived.blockedBy));
+      return undefined;
+    }
+  } catch {
+    // If derivation fails (e.g. transient IO), do not block dispatch.
   }
 
   const repoRoot = repoRootFor(parser);

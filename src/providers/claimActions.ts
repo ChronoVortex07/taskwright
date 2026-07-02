@@ -11,6 +11,8 @@ import { getTaskwrightConfig } from '../config';
 import { readSyncConfig, syncConfigPath } from '../core/syncConfig';
 import { nodeQueueFs } from '../core/mergeQueue';
 import { claimTaskSynced, releaseTaskSynced, type SyncTarget } from '../core/boardSyncEngine';
+import { loadTreeStateFromParser } from '../core/treeDerived';
+import { blockedByMessage } from '../core/treeGate';
 
 /**
  * Provider-layer glue for advisory claiming. Resolves the claimant identity
@@ -88,9 +90,28 @@ async function resolveSyncTarget(parser: BacklogParser): Promise<SyncTarget | un
  */
 export async function claimTaskForCurrentUser(
   taskId: string,
-  parser: BacklogParser
+  parser: BacklogParser,
+  opts: { force?: boolean } = {}
 ): Promise<Claim | undefined> {
   const identity = getClaimIdentity();
+
+  // Dependency gate (human-overridable). Skipped when force is set.
+  if (!opts.force) {
+    try {
+      const states = await loadTreeStateFromParser(parser);
+      const derived = states.get(taskId);
+      if (derived?.locked) {
+        const choice = await vscode.window.showWarningMessage(
+          blockedByMessage(taskId, derived.blockedBy),
+          { modal: true },
+          'Force claim'
+        );
+        if (choice !== 'Force claim') return undefined;
+      }
+    } catch {
+      // derivation failure must not block a claim
+    }
+  }
 
   const syncTarget = await resolveSyncTarget(parser);
   if (syncTarget) {

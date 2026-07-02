@@ -1053,6 +1053,25 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showErrorMessage(`Failed to claim task: ${error}`);
       }
     }),
+    vscode.commands.registerCommand('taskwright.forceClaimTask', async (arg?: unknown) => {
+      if (!parser) {
+        vscode.window.showErrorMessage('No backlog folder found in workspace');
+        return;
+      }
+      const taskId = resolveClaimTarget(arg);
+      if (!taskId) {
+        vscode.window.showInformationMessage('Open a task to force-claim it.');
+        return;
+      }
+      try {
+        const claim = await claimTaskForCurrentUser(taskId, parser, { force: true });
+        if (!claim) return;
+        refreshAllViews();
+        vscode.window.showInformationMessage(`Force-claimed ${taskId} as ${claim.claimedBy}`);
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to force-claim task: ${error}`);
+      }
+    }),
     vscode.commands.registerCommand('taskwright.releaseTask', async (arg?: unknown) => {
       if (!parser) {
         vscode.window.showErrorMessage('No backlog folder found in workspace');

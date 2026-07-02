@@ -257,6 +257,11 @@
         "icon": "$(lock)"
       },
       {
+        "command": "taskwright.forceClaimTask",
+        "title": "Taskwright: Force Claim Task (override dependency gate)",
+        "icon": "$(lock)"
+      },
+      {
         "command": "taskwright.releaseTask",
         "title": "Taskwright: Release Task",
         "icon": "$(unlock)"
