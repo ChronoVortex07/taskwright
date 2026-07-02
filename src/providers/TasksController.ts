@@ -852,6 +852,11 @@ export class TasksController {
         break;
       }
 
+      case 'cancelDispatch': {
+        vscode.commands.executeCommand('taskwright.cancelDispatch', message.taskId);
+        break;
+      }
+
       case 'requestCreateTask': {
         vscode.commands.executeCommand('taskwright.createTask');
         break;

@@ -20,6 +20,10 @@ import { BacklogWorkspaceManager, type BacklogRoot } from './core/BacklogWorkspa
 import { detectPackageManager } from './core/AgentIntegrationDetector';
 import { claimTaskForCurrentUser, releaseTaskClaim } from './providers/claimActions';
 import { dispatchTask } from './providers/dispatchActions';
+import { cancelDispatch } from './core/cancelDispatch';
+import { removeWorktree } from './core/finishTask';
+import { dispatchBranchName } from './core/dispatchPrompt';
+import type { GitExecFn } from './core/WorktreeService';
 import { approveMergeInQueue, sendBackMerge } from './providers/mergeActions';
 import { categorizeWithClaude } from './providers/intakeActions';
 import { attachPlanForTask, detachPlanForTask } from './providers/planActions';
@@ -1089,6 +1093,55 @@ export function activate(context: vscode.ExtensionContext) {
       } catch (error) {
         vscode.window.showErrorMessage(`Failed to release task: ${error}`);
       }
+    })
+  );
+
+  // Cancel dispatch (P2 spec §7, v1): reverse a dispatch by releasing the claim,
+  // resetting the task to the first configured status, removing its worktree, and
+  // disposing the terminal the extension launched. Orchestrated by the pure
+  // cancelDispatch core; this wires the real deps.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('taskwright.cancelDispatch', async (arg: unknown) => {
+      const taskId = resolveClaimTarget(arg);
+      if (!taskId || !parser) return;
+      // Alias the guarded parser to a const so the injected closures below keep
+      // the non-undefined narrowing (the module `parser` let is reassigned elsewhere).
+      const activeParser = parser;
+      const task = await activeParser.getTask(taskId);
+      if (!task) return;
+      const confirm = await vscode.window.showWarningMessage(
+        `Cancel dispatch for ${taskId}? This releases the claim, resets it to To Do, and removes its worktree.`,
+        { modal: true },
+        'Cancel dispatch'
+      );
+      if (confirm !== 'Cancel dispatch') return;
+
+      const branch = dispatchBranchName(task);
+      const statuses = await activeParser.getStatuses();
+      const toDo = statuses[0] ?? 'To Do';
+      const repoRoot = path.dirname(activeParser.getBacklogPath());
+      const exec: GitExecFn = (cwd, args) =>
+        execFileAsync('git', args, { cwd, timeout: 15_000 }).then((r) => ({
+          stdout: r.stdout,
+          stderr: r.stderr,
+        }));
+
+      await cancelDispatch(
+        {
+          releaseClaim: (id) => releaseTaskClaim(id, activeParser),
+          setStatus: (id, status) => writer.updateTask(id, { status }, activeParser),
+          removeWorktree: (rel) => removeWorktree(exec, repoRoot, rel),
+          disposeTerminal: (name) =>
+            vscode.window.terminals.find((t) => t.name === name)?.dispose(),
+        },
+        { taskId, branch, toDoStatus: toDo, terminalName: `Taskwright ${taskId}` }
+      );
+
+      refreshAllViews();
+      TaskDetailProvider.refreshCurrent(taskDetailProvider);
+      vscode.window.showInformationMessage(
+        `Cancelled dispatch for ${taskId}: released claim, reset to ${toDo}, removed worktree.`
+      );
     })
   );
 

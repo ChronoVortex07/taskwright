@@ -267,6 +267,10 @@
         "icon": "$(unlock)"
       },
       {
+        "command": "taskwright.cancelDispatch",
+        "title": "Taskwright: Cancel Dispatch"
+      },
+      {
         "command": "taskwright.setActiveTask",
         "title": "Taskwright: Set Active Task (for agent)",
         "icon": "$(target)"
