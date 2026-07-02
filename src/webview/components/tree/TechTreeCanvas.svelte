@@ -113,6 +113,15 @@
   });
   const fadedIds = $derived(new Set<string>([...dimmedIds, ...hiddenIds]));
 
+  const draftNodes = $derived(
+    layoutNodes.filter((t) => t.status === 'Draft' || t.folder === 'drafts')
+  );
+  function promoteAll() {
+    for (const t of draftNodes) {
+      vscode.postMessage({ type: 'promoteDraft', taskId: t.id });
+    }
+  }
+
   // Q3: per-collapsed-lane summary (name + task counts) for the overlay strip. Uses the
   // existing geometry.lanes (y/height) — NO relayout; done = the last configured status.
   const laneSummaries = $derived.by(() => {
@@ -402,6 +411,12 @@
       onSendBack={(id) => vscode.postMessage({ type: 'sendBackMerge', taskId: id })}
     />
 
+    {#if draftNodes.length > 0}
+      <button class="tree-promote-all" data-testid="tree-promote-all" onclick={promoteAll}>
+        Promote all proposed ({draftNodes.length})
+      </button>
+    {/if}
+
     <div
       class="tree-viewport"
       class:panning
@@ -452,6 +467,7 @@
               hidden={hiddenIds.has(task.id)}
               onSelect={handleSelect}
               onHover={(id) => (hoveredId = id)}
+              onPromote={(pid) => vscode.postMessage({ type: 'promoteDraft', taskId: pid })}
             />
           {/if}
         {/each}
@@ -595,6 +611,22 @@
     background: var(--vscode-inputValidation-warningBackground, rgba(204, 167, 0, 0.2));
     color: var(--vscode-foreground);
     border: 1px solid var(--vscode-editorWarning-foreground, #cca700);
+  }
+  .tree-promote-all {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 20;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 4px 10px;
+    border: 1px solid var(--vscode-button-border, transparent);
+    border-radius: 6px;
+    background: var(--vscode-button-background, #0e639c);
+    color: var(--vscode-button-foreground, #fff);
+  }
+  .tree-promote-all:hover {
+    background: var(--vscode-button-hoverBackground, #1177bb);
   }
   .tree-empty-state {
     display: flex;

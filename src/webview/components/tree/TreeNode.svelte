@@ -22,10 +22,11 @@
     hidden?: boolean;
     onSelect: (id: string, meta?: Pick<Task, 'filePath' | 'source' | 'branch'>) => void;
     onHover: (id: string | null) => void;
+    onPromote?: (id: string) => void;
   }
   let {
     task, x, y, w, h, lod, statuses, taskIdDisplay, selected, hovered,
-    dimmed = false, hidden = false, onSelect, onHover,
+    dimmed = false, hidden = false, onSelect, onHover, onPromote,
   }: Props = $props();
 
   const doneStatus = $derived(statuses.length > 0 ? statuses[statuses.length - 1] : 'Done');
@@ -153,6 +154,19 @@
       </div>
     {/if}
     <div class="tree-node-badges">
+      {#if isDraft}
+        <button
+          class="tree-node-promote"
+          data-testid="tree-node-promote-{task.id}"
+          title="Promote to task"
+          onclick={(e) => {
+            e.stopPropagation();
+            onPromote?.(task.id);
+          }}
+        >
+          Promote
+        </button>
+      {/if}
       {#if task.claimedBy}
         <span class="tree-node-worker" data-testid="tree-node-worker-{task.id}" title="Claimed by {task.claimedBy}">
           {#if task.worktree}
@@ -311,6 +325,18 @@
   }
   .tree-node-check {
     color: var(--vscode-charts-green, #89d185);
+  }
+  .tree-node-promote {
+    all: unset;
+    cursor: pointer;
+    font-size: 10px;
+    padding: 1px 8px;
+    border-radius: 8px;
+    background: var(--vscode-button-background, #0e639c);
+    color: var(--vscode-button-foreground, #fff);
+  }
+  .tree-node-promote:hover {
+    background: var(--vscode-button-hoverBackground, #1177bb);
   }
 
   /* --- State styles --- */
