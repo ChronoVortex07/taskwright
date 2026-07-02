@@ -15,8 +15,10 @@ import {
   promoteDraftHandler,
   demoteTaskHandler,
   createSubtaskHandler,
+  getActiveTask,
 } from '../../mcp/handlers';
 import type { McpHandlerDeps } from '../../mcp/handlers';
+import { writeActiveTask } from '../../core/activeTask';
 
 let root: string;
 let backlogPath: string;
@@ -174,5 +176,23 @@ describe('createSubtaskHandler', () => {
     });
     expect(sub.id).toBe('TASK-1.1');
     expect(sub.title).toBe('Child step');
+  });
+});
+
+describe('MCP summaries expose tech-tree derived fields (P1)', () => {
+  it('a task summary includes dependencies, locked, and layout', async () => {
+    await createTaskHandler(deps(), { title: 'Root' }); // TASK-1
+    await createTaskHandler(deps(), { title: 'Dependent' }); // TASK-2
+    // Make TASK-2 depend on TASK-1 via the writer directly (edit_task deps land in Task 8).
+    const d = deps();
+    await d.writer.updateTask('TASK-2', { dependencies: ['TASK-1'] }, d.parser);
+
+    writeActiveTask(root, 'TASK-2');
+    const result = await getActiveTask(deps());
+    expect(result.active).toBe(true);
+    expect(result.task?.dependencies).toEqual(['TASK-1']);
+    expect(result.task?.locked).toBe(true); // TASK-1 is To Do, not Done
+    expect(result.task?.blockedBy).toEqual(['TASK-1']);
+    expect(result.task?.layout).toBeDefined();
   });
 });

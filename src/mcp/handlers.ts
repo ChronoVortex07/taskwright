@@ -15,6 +15,8 @@ import {
   renderChecklist,
 } from './taskWriteHelpers';
 import { isPrimaryTree } from '../core/worktreeGuard';
+import { loadTreeStateFromParser, type TreeDerivedState } from '../core/treeDerived';
+import type { TreeLayout } from '../core/treeLayout';
 import {
   MergeQueueStore,
   mergeQueuePath,
@@ -109,6 +111,17 @@ export interface TaskSummary {
   plan?: string;
   /** Checkbox completion of the linked plan, when one is attached. */
   planProgress?: PlanProgressSummary;
+  // Tech-tree P1 fields.
+  category?: string;
+  type?: string;
+  causedBy?: string;
+  milestone?: string;
+  dependencies: string[];
+  locked?: boolean;
+  blockedBy?: string[];
+  bugs?: string[];
+  activeBugIds?: string[];
+  layout?: TreeLayout;
   filePath: string;
 }
 
@@ -310,7 +323,7 @@ export async function requestMergeHandler(
   );
 }
 
-export function toSummary(task: Task, root: string): TaskSummary {
+export function toSummary(task: Task, root: string, derived?: TreeDerivedState): TaskSummary {
   let planProgress: PlanProgressSummary | undefined;
   if (task.plan) {
     const loaded = loadPlanProgress(root, task.plan);
@@ -336,6 +349,16 @@ export function toSummary(task: Task, root: string): TaskSummary {
     claimedAt: task.claimedAt,
     plan: task.plan,
     planProgress,
+    category: task.category,
+    type: task.type,
+    causedBy: task.causedBy,
+    milestone: task.milestone,
+    dependencies: task.dependencies,
+    locked: derived?.locked,
+    blockedBy: derived?.blockedBy,
+    bugs: derived?.bugs,
+    activeBugIds: derived?.activeBugIds,
+    layout: derived?.layout,
     filePath: task.filePath,
   };
 }
@@ -372,7 +395,12 @@ export async function getActiveTask(deps: McpHandlerDeps): Promise<ActiveTaskRes
   } catch {
     // not a git repo / no queue — omit the field
   }
-  return { active: true, task: toSummary(task, deps.root), queuePosition };
+  const states = await loadTreeStateFromParser(deps.parser).catch(() => undefined);
+  return {
+    active: true,
+    task: toSummary(task, deps.root, states?.get(task.id)),
+    queuePosition,
+  };
 }
 
 /**
@@ -474,7 +502,8 @@ async function requireSummary(deps: McpHandlerDeps, taskId: string): Promise<Tas
   if (!task) {
     throw new Error(`Task ${taskId} was written but could not be read back.`);
   }
-  return toSummary(task, deps.root);
+  const states = await loadTreeStateFromParser(deps.parser).catch(() => undefined);
+  return toSummary(task, deps.root, states?.get(task.id));
 }
 
 export interface CreateTaskArgs {
