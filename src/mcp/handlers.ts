@@ -8,6 +8,7 @@ import { PlanService } from '../core/PlanService';
 import { TreeFieldService } from '../core/TreeFieldService';
 import { resolvePriorities } from '../core/priorityOrder';
 import { wouldCreateCycle } from '../core/treeGate';
+import { createTaskWithTreeFields, normalizeType } from '../core/createTaskCore';
 import { readActiveTask } from '../core/activeTask';
 import { loadPlanProgress } from '../core/loadPlanProgress';
 import { ChecklistItem, Task } from '../core/types';
@@ -558,17 +559,6 @@ async function assertDependenciesValid(
   }
 }
 
-/** Validate the type value: only 'bug' or absent is allowed. Returns the trimmed value or undefined. */
-function normalizeType(type: string | undefined): string | undefined {
-  if (type === undefined) return undefined;
-  const t = type.trim();
-  if (t === '') return undefined;
-  if (t !== 'bug') {
-    throw new Error(`Invalid type "${type}". Only "bug" (or none) is allowed.`);
-  }
-  return 'bug';
-}
-
 export interface CreateTaskArgs {
   title: string;
   description?: string;
@@ -589,56 +579,12 @@ export async function createTaskHandler(
   deps: McpHandlerDeps,
   args: CreateTaskArgs
 ): Promise<TaskSummary> {
-  const title = args.title?.trim();
-  if (!title) throw new Error('A task title is required.');
   const config = await deps.parser.getConfig();
   if (args.status !== undefined) assertValidStatus(args.status, config.statuses ?? []);
   if (args.priority !== undefined) assertValidPriority(args.priority, resolvePriorities(config));
-  const type = normalizeType(args.type);
-  const causedBy = args.causedBy?.trim();
-  if (causedBy && type !== 'bug') {
-    throw new Error('caused_by can only be set on a bug (type: bug).');
-  }
-  const dependencies = args.dependencies ?? [];
-  await assertDependenciesValid(deps, dependencies); // no targetId: new task cannot form a cycle
+  await assertDependenciesValid(deps, args.dependencies ?? []); // no targetId: new task cannot form a cycle
 
-  let id: string;
-  if (args.draft) {
-    ({ id } = await deps.writer.createDraft(deps.backlogPath, deps.parser, {
-      title,
-      description: args.description,
-    }));
-  } else {
-    ({ id } = await deps.writer.createTask(
-      deps.backlogPath,
-      {
-        title,
-        description: args.description,
-        status: args.status,
-        priority: args.priority,
-        labels: args.labels,
-        assignee: args.assignee,
-        milestone: args.milestone,
-      },
-      deps.parser
-    ));
-  }
-
-  // type / dependencies go through BacklogWriter (both are serialized there).
-  if (type !== undefined || dependencies.length > 0) {
-    const canonical: Partial<Task> = {};
-    if (type !== undefined) canonical.type = type;
-    if (dependencies.length > 0) canonical.dependencies = dependencies;
-    await deps.writer.updateTask(id, canonical, deps.parser);
-  }
-  // category / caused_by are Taskwright-only: write surgically after create.
-  if (args.category !== undefined && args.category.trim() !== '') {
-    await deps.treeFieldService.setCategory(id, args.category, deps.parser);
-  }
-  if (causedBy) {
-    await deps.treeFieldService.setCausedBy(id, causedBy, deps.parser);
-  }
-
+  const { id } = await createTaskWithTreeFields(deps, args);
   return requireSummary(deps, id);
 }
 
