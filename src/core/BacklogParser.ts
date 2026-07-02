@@ -48,6 +48,8 @@ interface RawFrontmatter {
   worktree?: string;
   claimed_at?: string;
   plan?: string;
+  category?: string;
+  caused_by?: string;
 }
 
 interface RawMilestoneFrontmatter {
@@ -426,6 +428,35 @@ export class BacklogParser {
   }
 
   /**
+   * Tech-tree lane vocabulary: config `categories` (order preserved) unioned with
+   * categories found on non-bug tasks (sorted). Reserved lanes (Bugs/Misc) are
+   * intentionally excluded — those are constants owned by the layout module.
+   */
+  async getCategories(): Promise<string[]> {
+    const [tasks, config] = await Promise.all([this.getTasks(), this.getConfig()]);
+    const result: string[] = [];
+    const seen = new Set<string>();
+    for (const raw of config.categories ?? []) {
+      const value = String(raw).trim();
+      if (value && !seen.has(value.toLowerCase())) {
+        seen.add(value.toLowerCase());
+        result.push(value);
+      }
+    }
+    const discovered: string[] = [];
+    for (const task of tasks) {
+      if (task.type === 'bug') continue;
+      const value = task.category?.trim();
+      if (value && !seen.has(value.toLowerCase())) {
+        seen.add(value.toLowerCase());
+        discovered.push(value);
+      }
+    }
+    discovered.sort((a, b) => a.localeCompare(b));
+    return [...result, ...discovered];
+  }
+
+  /**
    * Get all unique assignees from all tasks (for autocomplete)
    */
   async getUniqueAssignees(): Promise<string[]> {
@@ -732,6 +763,12 @@ export class BacklogParser {
     }
     if (fm.type) {
       task.type = String(fm.type);
+    }
+    if (fm.category) {
+      task.category = String(fm.category).trim();
+    }
+    if (fm.caused_by) {
+      task.causedBy = String(fm.caused_by).trim();
     }
     if (fm.reporter) {
       task.reporter = String(fm.reporter);

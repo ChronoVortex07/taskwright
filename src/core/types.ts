@@ -64,6 +64,10 @@ export interface Task {
   references?: string[];
   documentation?: string[];
   type?: string;
+  /** Tech-tree lane: free-form single value; absent/empty ⇒ Misc lane. Taskwright-only, written surgically. */
+  category?: string;
+  /** For `type: 'bug'` nodes: the task ID that introduced the bug. Taskwright-only, written surgically. */
+  causedBy?: string;
   parentTaskId?: string;
   folder?: TaskFolder;
   filePath: string;
@@ -184,6 +188,8 @@ export interface BacklogConfig {
   statuses?: string[];
   priorities?: string[];
   labels?: string[];
+  /** Predeclared tech-tree lanes (mirrors `labels`); drives lane rendering + category autocomplete. */
+  categories?: string[];
   milestones?: Milestone[];
   definition_of_done?: string[];
   date_format?: string;

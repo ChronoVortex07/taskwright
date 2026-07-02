@@ -3477,5 +3477,64 @@ Actual content starts here.
       const task = parser.parseTaskContent(content, '/fake/path/task-1.md');
       expect(task?.description).toBe('Actual content starts here.');
     });
+
+    describe('category / caused_by parsing (tech-tree P1)', () => {
+      it('parses category and caused_by from frontmatter', () => {
+        const parser = new BacklogParser('/fake/path');
+        const md = `---
+id: TASK-1
+title: A task
+status: To Do
+assignee: []
+dependencies: []
+category: Backend
+type: bug
+caused_by: TASK-9
+---
+
+## Description
+
+Body.
+`;
+        const task = parser.parseTaskContent(md, '/fake/path/tasks/task-1 - A-task.md');
+        expect(task?.category).toBe('Backend');
+        expect(task?.type).toBe('bug');
+        expect(task?.causedBy).toBe('TASK-9');
+      });
+
+      it('leaves category/causedBy undefined when absent', () => {
+        const parser = new BacklogParser('/fake/path');
+        const md = `---
+id: TASK-2
+title: B task
+status: To Do
+assignee: []
+dependencies: []
+---
+
+## Description
+
+Body.
+`;
+        const task = parser.parseTaskContent(md, '/fake/path/tasks/task-2 - B-task.md');
+        expect(task?.category).toBeUndefined();
+        expect(task?.causedBy).toBeUndefined();
+      });
+    });
+  });
+
+  describe('getCategories (tech-tree P1)', () => {
+    it('unions config categories (order preserved) with discovered non-bug categories (sorted)', async () => {
+      const parser = new BacklogParser('/fake/path');
+      vi.spyOn(parser, 'getConfig').mockResolvedValue({ categories: ['Platform', 'Backend'] });
+      vi.spyOn(parser, 'getTasks').mockResolvedValue([
+        { id: 'TASK-1', category: 'Backend' } as never, // already declared
+        { id: 'TASK-2', category: 'UI' } as never, // discovered
+        { id: 'TASK-3', category: 'Auth' } as never, // discovered
+        { id: 'TASK-4', category: 'Ignored', type: 'bug' } as never, // bug: excluded
+        { id: 'TASK-5' } as never, // no category: excluded (Misc)
+      ]);
+      expect(await parser.getCategories()).toEqual(['Platform', 'Backend', 'Auth', 'UI']);
+    });
   });
 });
