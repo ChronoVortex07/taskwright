@@ -98,6 +98,12 @@ test.describe('Tree detail popover', () => {
     expect(await getLastPostedMessage(page)).toMatchObject({ type: 'claimTask', taskId: 'TASK-1' });
   });
 
+  test('Dispatch posts dispatchTask', async ({ page }) => {
+    await page.locator('[data-testid="tree-node-TASK-1"]').click();
+    await page.locator('[data-testid="tp-action-dispatch"]').click();
+    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'dispatchTask', taskId: 'TASK-1' });
+  });
+
   test('locked To Do offers only Force claim', async ({ page }) => {
     await page.locator('[data-testid="tree-node-TASK-2"]').click();
     await expect(page.locator('[data-testid="tp-action-forceClaim"]')).toBeVisible();
@@ -114,6 +120,12 @@ test.describe('Tree detail popover', () => {
       taskId: 'TASK-3',
       updates: { status: 'Done' },
     });
+  });
+
+  test('Release claim posts releaseTask', async ({ page }) => {
+    await page.locator('[data-testid="tree-node-TASK-3"]').click();
+    await page.locator('[data-testid="tp-action-release"]').click();
+    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'releaseTask', taskId: 'TASK-3' });
   });
 
   test('status quick-edit posts updateTask', async ({ page }) => {
