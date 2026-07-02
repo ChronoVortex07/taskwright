@@ -43,6 +43,10 @@
           <h3 class="shortcuts-section-title">Views</h3>
           <div class="shortcuts-list">
             <div class="shortcut-row">
+              <kbd>t</kbd>
+              <span>Tree view</span>
+            </div>
+            <div class="shortcut-row">
               <kbd>z</kbd>
               <span>Kanban view</span>
             </div>

@@ -31,7 +31,9 @@
 
   let expanded = $state<string | null>(null);
 
-  const specItems = $derived([...documentation, ...references]);
+  // Dedupe: a URL present in both `documentation` and `references` would otherwise throw
+  // Svelte 5's each_key_duplicate (keyed by href) and break the whole detail render.
+  const specItems = $derived([...new Set([...documentation, ...references])]);
   const specFilled = $derived(specItems.length > 0);
 
   // Collapse everything when switching tasks.
@@ -72,7 +74,7 @@
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
         <span class="attach-chip-label">{s.label}</span>
-        {#if !isFilled(s)}<span class="attach-add" data-testid="attach-add-{s.key}">+ Add</span>{/if}
+        {#if !isFilled(s) && !isReadOnly}<span class="attach-add" data-testid="attach-add-{s.key}">+ Add</span>{/if}
       </button>
     {/each}
     <button
@@ -84,7 +86,7 @@
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
       <span class="attach-chip-label">Spec</span>
-      {#if !specFilled}<span class="attach-add" data-testid="attach-add-spec">+ Add</span>{/if}
+      {#if !specFilled && !isReadOnly}<span class="attach-add" data-testid="attach-add-spec">+ Add</span>{/if}
     </button>
   </div>
 
@@ -116,9 +118,11 @@
       {#if specItems.length === 0}
         <div class="attach-empty">
           <span>No spec links yet.</span>
-          <button class="attach-open" data-testid="attach-add-spec-open" onclick={onOpenFile}>
-            + Add in editor
-          </button>
+          {#if !isReadOnly}
+            <button class="attach-open" data-testid="attach-add-spec-open" onclick={onOpenFile}>
+              + Add in editor
+            </button>
+          {/if}
         </div>
       {:else}
         <ul class="attach-spec-list">

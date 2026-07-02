@@ -32,12 +32,12 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
 
 - **Advisory claiming** ✅ (Phase 2): `claimed_by` / `worktree` / `claimed_at` frontmatter written
   surgically by `src/core/claims.ts` + `ClaimService` (Backlog.md's canonical frontmatter round-trips
-  untouched). Claim badge on kanban cards; Claim/Release control in the detail panel; `backlog.claimTask`
+  untouched). Claim badge on kanban cards; Claim/Release control in the tree-node popover; `backlog.claimTask`
   / `backlog.releaseTask` commands. Staleness helper exists (`isClaimStale`); auto-expiry is Phase 5.
 - **Active task + Taskwright MCP** ✅ (Phase 2): pull-based handoff via `<root>/.taskwright/active-task.json`
   (`src/core/activeTask.ts`, git-ignored, per-worktree). MCP server `src/mcp/server.ts` (stdio, bundled to
   `dist/mcp/server.js`, registered in `.mcp.json`) exposes `get_active_task` / `claim_task` / `release_task`;
-  handlers in `src/mcp/handlers.ts`. "Set active" control in the detail panel + `backlog.setActiveTask` /
+  handlers in `src/mcp/handlers.ts`. "Set active" control in the tree-node popover + `backlog.setActiveTask` /
   `backlog.clearActiveTask`. MCP server reuses only vscode-free `src/core` and routes stray `console.log`
   to stderr (stdout is the JSON-RPC channel).
 - **Subscription-safe dispatch** ✅ (Phase 3): `backlog.dispatchTask` renders a paste-ready prompt and copies
@@ -45,8 +45,9 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   template + `{{placeholder}}` substitution; `backlog.dispatchTemplate` setting), `src/core/WorktreeService.ts`
   (`.worktrees/<branch>` isolation, **on by default** via `taskwright.dispatchCreateWorktree`; set `false` to opt out), `src/core/handoff.ts`
   (`.taskwright/handoff/<id>.md`). Orchestration in `src/providers/dispatchActions.ts` (sets active task on the
-  session root, optional terminal); "Dispatch" control in the detail panel. Visual proof + behavior coverage of
-  the agentic banners (claim / set-active / dispatch) lives in `e2e/dispatch.spec.ts` — `bun run proof` builds
+  session root, optional terminal); "Dispatch" control in the tree-node popover. Visual proof + behavior coverage of
+  the kept plan banner lives in `e2e/dispatch.spec.ts` (the claim / set-active / dispatch actions moved to the
+  tree-node popover — covered by `e2e/tree-popover.spec.ts` + the CDP suite) — `bun run proof` builds
   and runs it, writing screenshots to `e2e/__screenshots__/dispatch/` (git-ignored).
   Opt-in `taskwright.dispatchOpenTerminal` + `taskwright.dispatchTerminalCommand` run a command (templated on `{{handoffFile}}`) in the worktree terminal; the command is refused if it uses `claude -p` (subscription-safe — `resolveTerminalLaunch` / `commandUsesClaudePrintMode` in `src/core/dispatchPrompt.ts`).
 - **Build-independent MCP in worktrees** ✅: a dispatched `.worktrees/<branch>` has no git-ignored `dist/`, so
@@ -95,6 +96,20 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   (one-consent migration) in `extension.ts`, MCP `claim_task`/`release_task` and the UI `claimActions`
   both route through the engine when `mode !== 'off'`. Merge queue stays per-clone (documented boundary).
   Design: `docs/superpowers/specs/2026-07-01-github-synced-board-design.md`; plans: `docs/superpowers/plans/2026-07-01-synced-board-phase-{1..4}-*.md`.
+- **Tech-tree canvas (P2a)** ✅: a **Tree** tab (now the default view) renders the board as a dependency
+  tech-tree. Pure core `src/webview/lib/treeGeometry.ts` computes node/edge geometry from the task graph
+  (lanes = categories, bands = milestones/ages); the extension pushes layout via the `treeLayoutUpdated`
+  message (`laneOrder`/`bandOrder`/`warnings`). Chrome: `TechTreeCanvas.svelte` host with `TreeNode`,
+  `EdgeLayer`, `LaneBand`/`AgeBandHeader` band-lane scaffolding, plus pan/zoom and level-of-detail (LOD)
+  scaling. Coverage: `e2e/tree-canvas.spec.ts`.
+- **Tech-tree interaction shell (P2b)** ✅: node-centric actions replace the old detail-panel banners.
+  `DetailPopover.svelte` surfaces state-aware claim / set-active / dispatch / promote actions on a tree
+  node and drives an ephemeral active task (`popoverActiveChanged` message); `src/core/cancelDispatch.ts`
+  (v1) tears a dispatch down. `MilestonePopover.svelte` + `src/core/milestoneReleaseChecklist.ts` show a
+  release checklist; `InFlightPanel.svelte` lists active/merge-queue tasks. A `TreeNavigatorProvider`
+  WebviewView (`TreeNavigator.svelte`, `navigator*` messages) gives a filterable lane/band minimap. Details
+  reworked (DoD dropped from the UI, `AttachmentChips.svelte` for plan/spec/notes). Coverage: the CDP
+  tree-popover suite + `e2e/tree-popover.spec.ts`, on a restored test-workspace fixture.
 
 ## Conventions
 

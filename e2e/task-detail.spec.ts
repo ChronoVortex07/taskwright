@@ -1455,4 +1455,41 @@ test.describe('Attachment chips', () => {
       relativePath: 'docs/design.md',
     });
   });
+
+  test('Spec panel dedupes a path present in both documentation and references (no each_key_duplicate crash)', async ({ page }) => {
+    // A URL in BOTH frontmatter arrays would throw Svelte 5's each_key_duplicate and break
+    // the whole detail render unless specItems is deduped.
+    await postMessageToWebview(page, {
+      type: 'taskData',
+      data: {
+        ...attachmentTaskData,
+        task: {
+          ...attachmentTaskData.task,
+          references: ['docs/shared.md'],
+          documentation: ['docs/shared.md'],
+        },
+      },
+    });
+    await page.waitForTimeout(50);
+    await page.locator('[data-testid="attach-chip-spec"]').click();
+    await expect(page.locator('[data-testid="attach-panel-spec"]')).toBeVisible();
+    // Rendered exactly once despite appearing in both arrays.
+    await expect(page.locator('[data-testid="attach-spec-link"]')).toHaveCount(1);
+    await expect(page.locator('[data-testid="attach-spec-link"]')).toHaveText('docs/shared.md');
+  });
+
+  test('read-only mode hides the "+ Add" affordances', async ({ page }) => {
+    await postMessageToWebview(page, {
+      type: 'taskData',
+      data: {
+        ...attachmentTaskData,
+        isReadOnly: true,
+        readOnlyReason: 'Task is from feature/other and is read-only.',
+      },
+    });
+    await page.waitForTimeout(50);
+    // Empty sections would normally invite "+ Add"; read-only views must not.
+    await expect(page.locator('[data-testid="attach-add-notes"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="attach-add-finalSummary"]')).toHaveCount(0);
+  });
 });

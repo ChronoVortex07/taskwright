@@ -18,8 +18,11 @@
   );
   const isManualPending = (t: FlightTask) =>
     !!t.mergeState && !t.mergeState.approved && t.mergeState.mode === 'manual-review';
+  // Nothing in flight and nothing queued: render nothing rather than an empty frame.
+  const isEmpty = $derived(active.length === 0 && queue.length === 0);
 </script>
 
+{#if !isEmpty}
 <div class="inflight" class:collapsed data-testid="inflight-panel">
   <button
     class="inflight-toggle"
@@ -67,6 +70,7 @@
     </div>
   {/if}
 </div>
+{/if}
 
 <style>
   .inflight {
