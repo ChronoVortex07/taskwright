@@ -8,9 +8,10 @@ import type { MergeMode } from './mergeQueue';
 export type TaskStatus = string;
 
 /**
- * Task priority levels
+ * Task priority. P1 §10 relaxed this from a fixed high|medium|low enum to a
+ * user-defined ordered list sourced from config `priorities` (see priorityOrder.ts).
  */
-export type TaskPriority = 'high' | 'medium' | 'low';
+export type TaskPriority = string;
 
 /**
  * User preference for how task IDs are displayed in Tasks webview

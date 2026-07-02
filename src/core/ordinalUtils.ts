@@ -6,7 +6,7 @@
 export interface CardData {
   taskId: string;
   ordinal: number | undefined;
-  priority?: 'high' | 'medium' | 'low';
+  priority?: string;
 }
 
 export interface OrdinalUpdate {

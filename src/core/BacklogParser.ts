@@ -982,11 +982,13 @@ export class BacklogParser {
   }
 
   private parsePriority(value: string): TaskPriority | undefined {
-    const lower = value.toLowerCase();
-    if (lower.includes('high')) return 'high';
-    if (lower.includes('medium')) return 'medium';
-    if (lower.includes('low')) return 'low';
-    return undefined;
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    const lower = trimmed.toLowerCase();
+    if (lower === 'high' || lower === 'medium' || lower === 'low') {
+      return lower as TaskPriority;
+    }
+    return trimmed;
   }
 
   private parseChecklistItem(line: string, fallbackIndex: number): ChecklistItem | undefined {
