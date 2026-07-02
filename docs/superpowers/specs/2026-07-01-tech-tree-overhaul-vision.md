@@ -86,4 +86,5 @@ existing subscription-safe dispatch); P6 comes last (it needs the P1 model and t
 - **P1 (foundation):** `docs/superpowers/specs/2026-07-01-tech-tree-p1-model-and-gating-design.md`
   (see its §10 Amendments — priority becomes config-defined; lanes become bands with sub-rows).
 - **P2 (canvas):** `docs/superpowers/specs/2026-07-02-tech-tree-p2-canvas-design.md`
-- P3–P6: to be written as each sub-project is brainstormed, following the same spec → plan → build cycle.
+- **P3 (create/edit):** `docs/superpowers/specs/2026-07-02-tech-tree-p3-create-edit-design.md`
+- P4–P6: to be written as each sub-project is brainstormed, following the same spec → plan → build cycle.
