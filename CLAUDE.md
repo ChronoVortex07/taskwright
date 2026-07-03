@@ -127,6 +127,26 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   `e2e/tree-authoring.spec.ts`, `src/test/cdp/tree-authoring.test.ts`. Design:
   `docs/superpowers/specs/2026-07-02-tech-tree-p3-create-edit-design.md`; plan:
   `docs/superpowers/plans/2026-07-03-tech-tree-p3a-create-surface.md`.
+- **Tech-tree drag surface (P3b)** ✅: the canvas is a spatial editor. **Drag-to-connect** —
+  two connect handles per node (left = needs, right = unlocks) drag a dashed line
+  (`DragLayer.svelte`, world coords); a valid target glows green, a self/dupe/cycle red
+  (client-side `wouldCreateCycle` imported from `src/core/treeGate.ts`); drop over a node posts
+  `addDependency`, drop on empty canvas opens the create form pre-linked (reuses P3a
+  `createTask.linkTo`); a plain empty-canvas **click** opens the form with the clicked cell's
+  lane/band inferred (click-in-place). **Drag-to-reslot** — vertical → `category` (`reslotTask`),
+  horizontal → `milestone` (`reslotTask`), in-cell → `ordinal` (`reorderTasks` + `ordinalUtils`);
+  bugs are reorder-only (never `reslotTask`). **Edge removal** — a ✕ on the edge hover hit-path or a popover prereq
+  chip posts `removeDependency`. One pointer-event gesture machine in `TechTreeCanvas.svelte`
+  disambiguates connect / node-body / empty-canvas via a `DRAG_THRESHOLD` (no HTML5 DnD); the
+  geometry inverse (`screenToWorld`/`laneAtY`/`bandAtX`/`cellAt`/`reslotTargets`) lives in
+  `src/webview/lib/treeGeometry.ts`. `TasksController` re-validates `wouldCreateCycle` before every
+  dependency write and routes category via `TreeFieldService`, milestone/dependencies via
+  `BacklogWriter.updateTask` — one writer path for human and agent (parity), **no stored
+  coordinates**. Also lands the P2b carry-in debt (minimap drag-to-pan → `navigatorMinimapPan`;
+  filter-aware Promote-all). Coverage: `src/test/unit/treeGeometry.test.ts`,
+  `src/test/unit/TasksController.test.ts`, `e2e/tree-drag.spec.ts`, `src/test/cdp/tree-reslot.test.ts`.
+  Design: `docs/superpowers/specs/2026-07-02-tech-tree-p3-create-edit-design.md`; plan:
+  `docs/superpowers/plans/2026-07-03-tech-tree-p3b-drag-surface.md`.
 
 ## Conventions
 
