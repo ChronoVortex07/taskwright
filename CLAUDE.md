@@ -37,8 +37,9 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
 - **Active task + Taskwright MCP** ✅ (Phase 2): pull-based handoff via `<root>/.taskwright/active-task.json`
   (`src/core/activeTask.ts`, git-ignored, per-worktree). MCP server `src/mcp/server.ts` (stdio, bundled to
   `dist/mcp/server.js`, registered in `.mcp.json`) exposes `get_active_task` / `claim_task` / `release_task`;
-  handlers in `src/mcp/handlers.ts`. "Set active" control in the tree-node popover + `backlog.setActiveTask` /
-  `backlog.clearActiveTask`. MCP server reuses only vscode-free `src/core` and routes stray `console.log`
+  handlers in `src/mcp/handlers.ts`. Active is **ephemeral** via tree-node popover open/close — there is no
+  "Set active" control (the `backlog.setActiveTask` / `backlog.clearActiveTask` commands remain).
+  MCP server reuses only vscode-free `src/core` and routes stray `console.log`
   to stderr (stdout is the JSON-RPC channel).
 - **Subscription-safe dispatch** ✅ (Phase 3): `backlog.dispatchTask` renders a paste-ready prompt and copies
   it to the clipboard — **never** spawns `claude -p`. Pure cores: `src/core/dispatchPrompt.ts` (configurable

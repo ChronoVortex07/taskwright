@@ -366,6 +366,11 @@
         return;
       }
 
+      // With the create-form modal open, bare single-key shortcuts must not fire behind it
+      // (e.g. focus on a form <select>/<button> is not INPUT/TEXTAREA, so `t`/`z`/… would
+      // switch tabs). Escape stays live: the form's own <svelte:window> handles close.
+      if (createForm) return;
+
       switch (e.key) {
         case 't': handleTabChange('tree'); break;
         case 'z': handleTabChange('kanban'); break;

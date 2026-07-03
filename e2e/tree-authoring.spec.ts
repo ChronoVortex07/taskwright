@@ -156,4 +156,19 @@ test.describe('Tree authoring — create form', () => {
     await expect(page.locator('[data-testid="create-form"]')).toHaveCount(0);
     expect((await getPostedMessages(page)).some((m) => m.type === 'createTask')).toBe(false);
   });
+
+  test('open form suppresses bare single-key shortcuts behind the modal', async ({ page }) => {
+    await page.locator('[data-testid="action-create"]').click();
+    await expect(page.locator('[data-testid="create-form"]')).toBeVisible();
+    // Focus a non-INPUT element in the form (the submit button) — without the
+    // `if (createForm) return;` guard, bare keys like `t`/`z` would fall through the
+    // INPUT/TEXTAREA target filter and switch the tab behind the modal (posting setViewMode).
+    await page.locator('[data-testid="cf-submit"]').focus();
+    await clearPostedMessages(page);
+    await page.keyboard.press('t');
+    await page.keyboard.press('z');
+    await expect(page.locator('[data-testid="create-form"]')).toBeVisible();
+    await expect(page.locator('[data-testid="tree-canvas"]')).toBeVisible();
+    expect((await getPostedMessages(page)).some((m) => m.type === 'setViewMode')).toBe(false);
+  });
 });
