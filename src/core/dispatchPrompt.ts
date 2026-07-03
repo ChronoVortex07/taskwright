@@ -33,7 +33,7 @@ export interface DispatchContext {
  */
 export const DEFAULT_DISPATCH_TEMPLATE = `You are a fresh Claude Code session assigned exactly one task. Work only on this task — do not touch unrelated code or other tasks.
 
-Your isolated worktree is .worktrees/{{worktree}}. cd into it first and run every git, file, and test command there. A fresh worktree has no node_modules (it is git-ignored), so run \`bun install\` there once before you build or test. Do NOT git checkout, commit, or merge in the repository root — that tree is shared with other agents and committing there corrupts their branches.
+Launch this session INSIDE your isolated worktree .worktrees/{{worktree}} — open that folder / start the session with it as the working directory. Do NOT start at the repository root and cd in: the taskwright MCP server roots itself at the directory the session launched in, and an in-session cd does not move it. A fresh worktree has no node_modules (it is git-ignored), so run \`bun install\` there once before you build or test. Do NOT git checkout, commit, or merge in the repository root — that tree is shared with other agents and committing there corrupts their branches.
 
 Task {{id}}: {{title}}
 Status: {{status}} · Priority: {{priority}} · Labels: {{labels}}
@@ -48,7 +48,7 @@ Status: {{status}} · Priority: {{priority}} · Labels: {{labels}}
 {{plan}}
 
 ---
-Before writing code, call the \`taskwright\` MCP tool \`get_active_task\` to confirm your assignment and load full context, then \`claim_task\` with id \`{{id}}\` (worktree \`{{worktree}}\`). Follow the project's TDD / superpowers workflow. Record what you learn in the task's Implementation Notes. When the task is committed and your worktree is clean, call \`request_merge\` (taskwright MCP) from inside your worktree and wait for it to return — it rebases onto the base branch, runs the verify commands, waits for its turn in the merge queue (and, in manual-review mode, for your human's approval on the board), then fast-forward-merges to the base branch (or opens a PR), marks the task Done, and removes your worktree. Do not merge, commit, or push from the repository root yourself.`;
+Run the \`/execute-task\` skill. It loads your assignment (\`get_active_task\`), verifies you are worktree-rooted and installs deps, claims the task, executes with the right strategy (attached plan → executing-plans; independent subtasks → subagent-driven-development; else test-driven-development), records progress with \`edit_task\`, checks for cancellation, and closes with \`request_merge\` from inside your worktree. It is subscription-safe (in-session; never \`claude -p\`). If \`/execute-task\` is unavailable, follow the project's TDD / superpowers workflow by hand and close with \`request_merge\` (taskwright MCP) from inside your worktree.`;
 
 /** Format a checklist as markdown, or a placeholder when empty. */
 export function formatChecklist(items: ChecklistItem[]): string {

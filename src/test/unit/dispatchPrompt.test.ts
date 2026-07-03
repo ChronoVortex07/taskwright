@@ -109,7 +109,7 @@ describe('renderDispatchPrompt', () => {
     expect(out).toContain('TASK-7');
     expect(out).toContain('Add user login');
     expect(out).toContain('get_active_task');
-    expect(out).toContain('claim_task');
+    expect(out).toContain('/execute-task');
     expect(out).not.toMatch(/\{\{\w+\}\}/); // no leftover known tokens
   });
 
@@ -148,9 +148,9 @@ describe('commandUsesClaudePrintMode', () => {
 });
 
 describe('DEFAULT_DISPATCH_TEMPLATE worktree isolation', () => {
-  it('tells the session to cd into and stay in its worktree', () => {
+  it('tells the session to LAUNCH inside its worktree (not cd from the root)', () => {
     expect(DEFAULT_DISPATCH_TEMPLATE).toContain('.worktrees/{{worktree}}');
-    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('cd into it');
+    expect(DEFAULT_DISPATCH_TEMPLATE).toMatch(/launch this session inside/i);
     expect(DEFAULT_DISPATCH_TEMPLATE).toContain('repository root');
   });
 
@@ -196,6 +196,25 @@ describe('resolveTerminalLaunch', () => {
 describe('DEFAULT_DISPATCH_TEMPLATE closing step', () => {
   it('instructs the agent to close with request_merge from the worktree', () => {
     expect(DEFAULT_DISPATCH_TEMPLATE).toContain('request_merge');
-    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('wait for it to return');
+    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('from inside your worktree');
+  });
+});
+
+describe('DEFAULT_DISPATCH_TEMPLATE — /execute-task repoint (P5, GAP-9)', () => {
+  it('instructs the session to run /execute-task', () => {
+    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('/execute-task');
+  });
+
+  it('names the adaptive strategies so the skill choice is transparent', () => {
+    expect(DEFAULT_DISPATCH_TEMPLATE).toMatch(/executing-plans/);
+    expect(DEFAULT_DISPATCH_TEMPLATE).toMatch(/subagent-driven-development/);
+    expect(DEFAULT_DISPATCH_TEMPLATE).toMatch(/test-driven-development/);
+  });
+
+  it('keeps the subscription-safety + bun install + no-root-commit guardrails', () => {
+    expect(DEFAULT_DISPATCH_TEMPLATE).toMatch(/subscription-safe/i);
+    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('bun install');
+    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('node_modules');
+    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('repository root');
   });
 });
