@@ -103,13 +103,29 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   `EdgeLayer`, `LaneBand`/`AgeBandHeader` band-lane scaffolding, plus pan/zoom and level-of-detail (LOD)
   scaling. Coverage: `e2e/tree-canvas.spec.ts`.
 - **Tech-tree interaction shell (P2b)** ✅: node-centric actions replace the old detail-panel banners.
-  `DetailPopover.svelte` surfaces state-aware claim / set-active / dispatch / promote actions on a tree
-  node and drives an ephemeral active task (`popoverActiveChanged` message); `src/core/cancelDispatch.ts`
+  `DetailPopover.svelte` surfaces state-aware claim / dispatch actions on a tree node and drives an
+  **ephemeral** active task via popover open/close (`popoverActiveChanged` message) — there is no
+  "Set active" control (the `backlog.setActiveTask` / `backlog.clearActiveTask` commands remain).
+  **Promote** lives on draft `TreeNode`s and the canvas "Promote all proposed" button, **not** the
+  popover. `src/core/cancelDispatch.ts`
   (v1) tears a dispatch down. `MilestonePopover.svelte` + `src/core/milestoneReleaseChecklist.ts` show a
   release checklist; `InFlightPanel.svelte` lists active/merge-queue tasks. A `TreeNavigatorProvider`
   WebviewView (`TreeNavigator.svelte`, `navigator*` messages) gives a filterable lane/band minimap. Details
   reworked (DoD dropped from the UI, `AttachmentChips.svelte` for plan/spec/notes). Coverage: the CDP
   tree-popover suite + `e2e/tree-popover.spec.ts`, on a restored test-workspace fixture.
+- **Tech-tree create surface (P3a)** ✅: a **human** authors tasks from the board via one unified
+  `CreateTaskForm.svelte` (full / quick / bug modes), hosted at the `Tasks.svelte` root so it works from
+  any tab. Triggers: in-webview `Ctrl/Cmd-N` & bare `n` (full), `Ctrl/Cmd-Shift-N` (quick), the TabBar
+  `+`, the repointed `taskwright.createTask` / new `taskwright.quickCapture` commands (`contributes.keybindings`,
+  scoped to the board via `activeWebviewPanelId`/`focusedView`), and a **Report bug** popover action
+  (`onCreateInPlace({bugMode,causedBy})`). Every path posts one locked `createTask` message. The MCP
+  `createTaskHandler` and the `TasksController` `createTask` case both call the shared vscode-free core
+  `src/core/createTaskCore.ts` (`createTaskWithTreeFields`) — one writer sequence for human and agent
+  (parity). `linkTo` post-create dependency wiring is built here (P3b's drop-on-empty reuses it). The
+  legacy `TaskCreatePanel` is retired. Coverage: `src/test/unit/createTaskCore.test.ts`,
+  `e2e/tree-authoring.spec.ts`, `src/test/cdp/tree-authoring.test.ts`. Design:
+  `docs/superpowers/specs/2026-07-02-tech-tree-p3-create-edit-design.md`; plan:
+  `docs/superpowers/plans/2026-07-03-tech-tree-p3a-create-surface.md`.
 
 ## Conventions
 
