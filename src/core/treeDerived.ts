@@ -90,15 +90,16 @@ export function deriveTreeState(
  * the MCP handlers and the extension providers can share it.
  */
 export async function loadTreeBoardFromParser(parser: BacklogParser): Promise<TreeBoard> {
-  const [tasks, completed, archived, config, milestones, categories] = await Promise.all([
+  const [tasks, drafts, completed, archived, config, milestones, categories] = await Promise.all([
     parser.getTasks(),
+    parser.getDrafts(),
     parser.getCompletedTasks(),
     parser.getArchivedTasks(),
     parser.getConfig(),
     parser.getMilestones(),
     parser.getCategories(),
   ]);
-  return deriveTreeBoard([...tasks, ...completed, ...archived], {
+  return deriveTreeBoard([...tasks, ...drafts, ...completed, ...archived], {
     doneStatus: resolveDoneStatus(config.statuses),
     milestoneOrder: milestones.map((m) => m.name),
     priorities: resolvePriorities(config),

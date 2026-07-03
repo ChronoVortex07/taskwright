@@ -301,7 +301,6 @@ export type WebviewMessage =
       mode: 'tree' | 'kanban' | 'list' | 'drafts' | 'archived' | 'dashboard' | 'docs' | 'decisions';
     }
   | { type: 'focusTaskPreview' }
-  | { type: 'requestCreateTask' }
   | { type: 'requestCreateMilestone' }
   | { type: 'openDocument'; documentId: string }
   | { type: 'openDecision'; decisionId: string }

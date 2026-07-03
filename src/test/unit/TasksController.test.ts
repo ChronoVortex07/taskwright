@@ -657,4 +657,30 @@ describe('TasksController — tree tab', () => {
       expect(updateSpy).toHaveBeenCalledWith('TASK-1', { dependencies: ['TASK-3'] }, mockParser);
     });
   });
+
+  describe('TasksController — GAP-1b tree-mode draft union', () => {
+    it('tree tab unions drafts into the tasksUpdated payload', async () => {
+      (mockParser.getDrafts as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 'DRAFT-1', title: 'Proposed', status: 'Draft', folder: 'drafts', labels: [], assignee: [],
+          dependencies: [], acceptanceCriteria: [], definitionOfDone: [], filePath: '/b/drafts/draft-1.md' },
+      ]);
+      const controller = new TasksController(host, mockParser, mockContext);
+      controller.setViewMode('tree');
+      await controller.refresh();
+      const tasksMsg = posted.find((m) => m.type === 'tasksUpdated');
+      expect((tasksMsg!.tasks as Task[]).some((t) => t.id === 'DRAFT-1')).toBe(true);
+    });
+
+    it('kanban tab does NOT union drafts into the payload', async () => {
+      (mockParser.getDrafts as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 'DRAFT-1', title: 'Proposed', status: 'Draft', folder: 'drafts', labels: [], assignee: [],
+          dependencies: [], acceptanceCriteria: [], definitionOfDone: [], filePath: '/b/drafts/draft-1.md' },
+      ]);
+      const controller = new TasksController(host, mockParser, mockContext);
+      controller.setViewMode('kanban');
+      await controller.refresh();
+      const tasksMsg = posted.find((m) => m.type === 'tasksUpdated');
+      expect((tasksMsg!.tasks as Task[]).some((t) => t.id === 'DRAFT-1')).toBe(false);
+    });
+  });
 });

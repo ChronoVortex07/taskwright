@@ -255,6 +255,15 @@ export class TasksController {
           this.parser.getArchivedTasks(),
         ]);
 
+      // GAP-1(b): the tree canvas must show draft proposals as nodes (they gate deps
+      // and carry their own lane/band). Union drafts into the payload for the TREE tab
+      // ONLY — kanban/list/drafts/archived tabs are unchanged, and cross-branch mode
+      // skips tree derivation (treeBoard stays undefined) so there is nothing to render.
+      if (this.viewMode === 'tree' && this.dataSourceMode !== 'cross-branch') {
+        const treeDrafts = await this.parser.getDrafts();
+        tasks.push(...treeDrafts);
+      }
+
       // Compute subtask relationships from parentTaskId fields
       computeSubtasks(tasks);
 
@@ -1004,11 +1013,6 @@ export class TasksController {
         toggleReleaseChecklist(this.parser.getBacklogPath(), message.milestone, message.itemId);
         this.parser.invalidateMilestoneCache();
         await this.sendMilestoneData(message.milestone);
-        break;
-      }
-
-      case 'requestCreateTask': {
-        vscode.commands.executeCommand('taskwright.createTask');
         break;
       }
 
