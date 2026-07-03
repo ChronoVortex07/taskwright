@@ -318,7 +318,17 @@ export class BacklogParser {
     for (const folder of ['tasks', 'drafts', 'completed', 'archive/tasks']) {
       const tasks = await this.getTasksFromFolder(folder);
       const found = tasks.find((t) => t.id === taskId);
-      if (found) return found;
+      if (found) {
+        // P6/D2c: apply the same migrate-on-read alias as getDrafts so every read path
+        // agrees — a legacy on-disk `status: Draft` draft surfaces via getTask (and thus
+        // get_active_task/summaries) with the board default, matching getDrafts/get_board.
+        // A new P6 draft carrying a real status is returned untouched.
+        if (found.folder === 'drafts' && found.status === 'Draft') {
+          const config = await this.getConfig();
+          return { ...found, status: config.default_status || 'To Do' };
+        }
+        return found;
+      }
     }
     return undefined;
   }

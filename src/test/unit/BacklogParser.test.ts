@@ -2320,6 +2320,60 @@ status: Done
         expect(task?.folder).toBe('drafts');
       });
 
+      it('aliases a legacy status: Draft draft read via getTask to the board default (P6/D2c cross-path parity)', async () => {
+        const parser = new BacklogParser('/fake/backlog');
+        vi.spyOn(parser, 'getConfig').mockResolvedValue({});
+        vi.spyOn(parser, 'getTasksFromFolder').mockImplementation(async (folder: string) => {
+          if (folder === 'drafts') {
+            return [
+              {
+                id: 'DRAFT-1',
+                title: 'Legacy',
+                status: 'Draft' as const,
+                folder: 'drafts' as const,
+                filePath: '/fake/backlog/drafts/draft-1.md',
+                labels: [],
+                assignee: [],
+                dependencies: [],
+                acceptanceCriteria: [],
+                definitionOfDone: [],
+              },
+            ];
+          }
+          return [];
+        });
+
+        const task = await parser.getTask('DRAFT-1');
+        expect(task?.status).toBe('To Do'); // was 'Draft' before the getTask alias; agrees with getDrafts now
+        expect(task?.folder).toBe('drafts'); // provisional marker intact
+      });
+
+      it('does not alter a P6 draft carrying a real status read via getTask', async () => {
+        const parser = new BacklogParser('/fake/backlog');
+        vi.spyOn(parser, 'getTasksFromFolder').mockImplementation(async (folder: string) => {
+          if (folder === 'drafts') {
+            return [
+              {
+                id: 'DRAFT-2',
+                title: 'Baseline',
+                status: 'Done' as const,
+                folder: 'drafts' as const,
+                filePath: '/fake/backlog/drafts/draft-2.md',
+                labels: [],
+                assignee: [],
+                dependencies: [],
+                acceptanceCriteria: [],
+                definitionOfDone: [],
+              },
+            ];
+          }
+          return [];
+        });
+
+        const task = await parser.getTask('DRAFT-2');
+        expect(task?.status).toBe('Done'); // real status untouched (no aliasing)
+      });
+
       it('should find task in completed folder as last resort', async () => {
         const parser = new BacklogParser('/fake/backlog');
 

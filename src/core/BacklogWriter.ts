@@ -448,7 +448,7 @@ export class BacklogWriter {
     fs.renameSync(task.filePath, destPath);
     parser.invalidateTaskCache(task.filePath);
 
-    // Update frontmatter: new ID, status Draft, and updated_date
+    // Update frontmatter: new ID and updated_date (status preserved, P6/D2e)
     const rawContent = fs.readFileSync(destPath, 'utf-8');
     const hasCRLF = detectCRLF(rawContent);
     const content = normalizeToLF(rawContent);
@@ -757,7 +757,9 @@ export class BacklogWriter {
   /**
    * Create a new draft file in the drafts/ directory. `opts` lets callers seed
    * the title and description; both default to the empty/"Untitled" form so
-   * existing callers are unaffected.
+   * existing callers are unaffected. `opts.status` sets the draft's real status
+   * (P6/D2b — drafts are status-carrying); it defaults to `config.default_status ?? 'To Do'`
+   * (resolved via `parser`) when unspecified.
    */
   async createDraft(
     backlogPath: string,
