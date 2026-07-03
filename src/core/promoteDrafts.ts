@@ -20,7 +20,7 @@ export interface PromoteDraftsDeps {
   treeFieldService: TreeFieldService;
 }
 
-export interface PromoteMapping {
+interface PromoteMapping {
   from: string;
   to: string;
 }

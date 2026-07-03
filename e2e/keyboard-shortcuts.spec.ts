@@ -197,7 +197,7 @@ test.describe('Keyboard Shortcuts', () => {
       await expect(page.locator('[data-testid="create-form"]')).toBeVisible();
       // No round-trip message: the form opens in-webview and posts createTask only on submit.
       const messages = await getPostedMessages(page);
-      expect(messages).not.toContainEqual({ type: 'requestCreateTask' });
+      expect(messages).not.toContainEqual({ type: 'createTask' });
     });
 
     test('r key sends refresh message', async ({ page }) => {
@@ -295,10 +295,8 @@ test.describe('Keyboard Shortcuts', () => {
       await page.keyboard.press('n');
       await page.waitForTimeout(50);
 
-      // No requestCreateTask message should have been sent
-      const messages = await getPostedMessages(page);
-      const createMessages = messages.filter((m) => m.type === 'requestCreateTask');
-      expect(createMessages).toHaveLength(0);
+      // The create form must NOT open while the popup owns the keyboard.
+      await expect(page.locator('[data-testid="create-form"]')).not.toBeVisible();
     });
   });
 });

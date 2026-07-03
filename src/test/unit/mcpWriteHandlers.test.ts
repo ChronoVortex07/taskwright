@@ -395,6 +395,16 @@ describe('createCategoryHandler', () => {
     expect(res.category).toBe('Data');
   });
 
+  // M1: a backslash-bearing category name must not produce invalid YAML that makes
+  // getConfig() silently return {} (losing statuses/labels/task_prefix for the board).
+  it('a backslash-bearing category name does not corrupt the board config (M1)', async () => {
+    const d = deps();
+    await createCategoryHandler(d, { category: 'some\\module' });
+    const cfg = await d.parser.getConfig();
+    expect(cfg.statuses).toEqual(['To Do', 'In Progress', 'Done']); // NOT {} — config intact
+    expect(await d.parser.getCategories()).toContain('some\\module');
+  });
+
   it('rejects a multi-line categories: block and leaves the file byte-identical', async () => {
     const cfgPath = path.join(backlogPath, 'config.yml');
     const blockCfg =

@@ -620,12 +620,7 @@ export async function listMilestonesHandler(deps: McpHandlerDeps): Promise<Miles
   ]);
   const doneStatus = resolveDoneStatus(config.statuses);
   const idByName = new Map(milestones.map((m: Milestone) => [m.name.toLowerCase(), m.id]));
-  const bandByLower = new Map(board.bandOrder.map((b) => [b.toLowerCase(), b]));
-  const resolveBand = (t: Task): string => {
-    const m = t.milestone?.trim();
-    if (!m) return BACKBURNER_BAND;
-    return bandByLower.get(m.toLowerCase()) ?? BACKBURNER_BAND;
-  };
+  const resolveBand = makeBandResolver(board);
   const totals = new Map<string, { taskCount: number; doneCount: number }>();
   for (const t of [...tasks, ...drafts]) {
     const band = resolveBand(t);
@@ -654,6 +649,20 @@ export interface BoardTaskSummary {
   blockedBy: string[];
   locked: boolean;
   draft: boolean;
+}
+
+/** Build a milestone→band resolver for one board: a task's trimmed milestone mapped to
+ *  its canonical band (case-insensitive), or Backburner when unset/unknown. One definition
+ *  shared by list_milestones and get_board (mirrors the shared toBoardSummary). */
+function makeBandResolver(
+  board: Awaited<ReturnType<typeof loadTreeBoardFromParser>>
+): (task: Task) => string {
+  const bandByLower = new Map(board.bandOrder.map((b) => [b.toLowerCase(), b]));
+  return (task: Task): string => {
+    const m = task.milestone?.trim();
+    if (!m) return BACKBURNER_BAND;
+    return bandByLower.get(m.toLowerCase()) ?? BACKBURNER_BAND;
+  };
 }
 
 /** Shape one task into the compact board summary. Unset category/milestone are OMITTED
@@ -698,12 +707,7 @@ export async function getBoardHandler(
     deps.parser.getTasks(),
     deps.parser.getDrafts(),
   ]);
-  const bandByLower = new Map(board.bandOrder.map((b) => [b.toLowerCase(), b]));
-  const resolveBand = (t: Task): string => {
-    const m = t.milestone?.trim();
-    if (!m) return BACKBURNER_BAND;
-    return bandByLower.get(m.toLowerCase()) ?? BACKBURNER_BAND;
-  };
+  const resolveBand = makeBandResolver(board);
   const catF = args.category?.trim().toLowerCase();
   const mileF = args.milestone?.trim().toLowerCase();
   const statF = args.status?.trim().toLowerCase();

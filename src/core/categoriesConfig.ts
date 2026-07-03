@@ -8,16 +8,58 @@
 import { BUGS_LANE, MISC_LANE, BACKBURNER_BAND } from './treeLayout';
 
 /** Reserved lane names owned by the layout module; never user categories. */
-export const RESERVED_CATEGORIES = [BUGS_LANE, MISC_LANE, BACKBURNER_BAND];
+const RESERVED_CATEGORIES = [BUGS_LANE, MISC_LANE, BACKBURNER_BAND];
 
-/** Parse the `categories: ["A", "B"]` line; [] when absent. */
+/**
+ * Split the inner of a flow array on TOP-LEVEL commas only — a comma inside a quoted
+ * entry (`"A, B"`) belongs to that entry and must not split it. Tracks quote state and
+ * skips backslash-escaped characters so `\"` / `\\` inside a double-quoted entry don't
+ * end the quote prematurely.
+ */
+function splitTopLevel(inner: string): string[] {
+  const segments: string[] = [];
+  let cur = '';
+  let quote: '"' | "'" | null = null;
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (quote) {
+      cur += ch;
+      if (ch === '\\' && i + 1 < inner.length) {
+        cur += inner[++i]; // preserve the escaped char verbatim
+      } else if (ch === quote) {
+        quote = null;
+      }
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      cur += ch;
+    } else if (ch === ',') {
+      segments.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  if (segments.length > 0 || cur.trim()) segments.push(cur);
+  return segments;
+}
+
+/** Strip surrounding quotes from one entry and unescape `\\`/`\"` (double) or `\\`/`\'` (single). */
+function unquoteEntry(segment: string): string {
+  const s = segment.trim();
+  if (s.length >= 2 && s[0] === '"' && s[s.length - 1] === '"') {
+    return s.slice(1, -1).replace(/\\(["\\])/g, '$1');
+  }
+  if (s.length >= 2 && s[0] === "'" && s[s.length - 1] === "'") {
+    return s.slice(1, -1).replace(/\\(['\\])/g, '$1');
+  }
+  return s;
+}
+
+/** Parse the `categories: ["A", "B"]` line; [] when absent. Quoted entries may contain commas. */
 export function parseCategoriesLine(configText: string): string[] {
   const m = configText.match(/^categories:\s*\[(.*)\]\s*$/m);
   if (!m) return [];
-  return m[1]
-    .split(',')
-    .map((s) => s.trim().replace(/^["']|["']$/g, ''))
-    .filter(Boolean);
+  return splitTopLevel(m[1]).map(unquoteEntry).filter(Boolean);
 }
 
 /** True when `name` is a reserved lane (case-insensitive). */
@@ -40,7 +82,7 @@ export function isReservedCategory(name: string): boolean {
  */
 export function addCategoryLine(configText: string, category: string): string {
   const eol = configText.includes('\r\n') ? '\r\n' : '\n';
-  const esc = (s: string) => s.replace(/"/g, '\\"');
+  const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   const next = [...parseCategoriesLine(configText), category];
   const rendered = `categories: [${next.map((c) => `"${esc(c)}"`).join(', ')}]`;
   const lines = configText.split(/\r?\n/);

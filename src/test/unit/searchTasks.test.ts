@@ -54,4 +54,19 @@ describe('searchTasks', () => {
     expect(() => searchTasks(tasks, '')).toThrow(/query/i);
     expect(() => searchTasks(tasks, '   ')).toThrow(/query/i);
   });
+
+  // M2: the limit is agent-supplied and must be clamped, not passed raw to slice().
+  it('clamps a non-positive/non-integer limit instead of mis-slicing (M2)', () => {
+    const many = Array.from({ length: 5 }, (_v, i) =>
+      T({ id: `TASK-${i}`, title: `match ${5 - i}` })
+    ); // TASK-0 scores highest via id tie-break only; all title-match
+    // limit 0 must not slice(0,0) ⇒ empty; clamp to 1 (return at least the top hit).
+    expect(searchTasks(many, 'match', { limit: 0 })).toHaveLength(1);
+    // negative limit must not slice(0,-n) ⇒ silently drop from the END.
+    const neg = searchTasks(many, 'match', { limit: -5 });
+    expect(neg).toHaveLength(1);
+    expect(neg[0].id).toBe('TASK-0'); // top-ranked (id-ascending tie-break), not dropped
+    // non-integer floors to a whole count.
+    expect(searchTasks(many, 'match', { limit: 2.9 })).toHaveLength(2);
+  });
 });

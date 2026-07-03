@@ -25,7 +25,9 @@ export function searchTasks<T extends SearchableTask>(
       'A non-empty search query is required (use get_board to list the whole board).'
     );
   }
-  const limit = opts.limit ?? 20;
+  // Clamp the agent-supplied limit: `?? 20` only guards nullish, so a raw 0/negative/
+  // fractional value would mis-slice (0 ⇒ empty, -n ⇒ drops the top matches from the end).
+  const limit = Math.max(1, Math.floor(opts.limit ?? 20));
   const scored: Array<{ task: T; score: number }> = [];
   for (const t of tasks) {
     const title = t.title.toLowerCase();
