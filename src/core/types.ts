@@ -110,6 +110,9 @@ export interface Task {
   planProgress?: { done: number; total: number };
   /** Board-bus enrichment: true when `claimedBy` equals the current claim identity. */
   claimedByMe?: boolean;
+  /** Board-bus enrichment (tree tab): true when this task's dispatch worktree dir exists
+   *  on disk, so Cancel-dispatch is offered even before the agent writes a claim (GAP-7). */
+  dispatchedWorktree?: boolean;
 }
 
 /**

@@ -30,6 +30,8 @@ import { mergeStateForTask, type MergeTaskState } from '../core/mergeBoard';
 import type { MergeQueue, MergeMode } from '../core/mergeQueue';
 import { loadTreeBoardFromParser } from '../core/treeDerived';
 import { loadPlanProgress } from '../core/loadPlanProgress';
+import { dispatchBranchName } from '../core/dispatchPrompt';
+import { worktreePathFor } from '../core/WorktreeService';
 import { resolvePriorities } from '../core/priorityOrder';
 import { laneOf } from '../core/treeLayout';
 import { readReleaseChecklist, toggleReleaseChecklist } from '../core/milestoneReleaseChecklist';
@@ -332,6 +334,19 @@ export class TasksController {
         mergeQueue = undefined;
       }
 
+      // Cancel-dispatch affordance (GAP-7): a dispatched task's worktree dir may exist on
+      // disk before the agent writes a claim (dispatch seeds active-task + handoff, not a
+      // claim). Flag it so the popover offers Cancel-dispatch. Tree tab only (the sole
+      // consumer); best-effort (a stat failure must not break loading the board).
+      const dispatchedWorktreeFor = (task: Task): boolean => {
+        if (this.viewMode !== 'tree' || !repoRoot) return false;
+        try {
+          return fs.existsSync(worktreePathFor(repoRoot, dispatchBranchName(task)));
+        } catch {
+          return false;
+        }
+      };
+
       const tasksWithBlocks = tasks.map((task) => {
         const enhanced: Task & {
           blocksTaskIds?: string[];
@@ -349,6 +364,7 @@ export class TasksController {
           claimStale: !!task.claimedBy && isClaimStale(task.claimedAt, stalenessMs),
           claimedByMe: !!task.claimedBy && task.claimedBy === claimIdentity,
           mergeState: mergeQueue ? mergeStateForTask(mergeQueue, task.id) : undefined,
+          dispatchedWorktree: dispatchedWorktreeFor(task),
         };
         // Plan-progress for the tree node bar + popover. Synchronous, never throws
         // (missing plan file → exists:false, zeros). Only set when a plan is linked.

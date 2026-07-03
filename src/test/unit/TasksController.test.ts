@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import { createMockExtensionContext } from '../mocks/vscode';
 import { TasksController, TasksHost } from '../../providers/TasksController';
 import { TaskDetailProvider } from '../../providers/TaskDetailProvider';
@@ -9,6 +10,16 @@ import { getClaimIdentity } from '../../providers/claimActions';
 import { BacklogWriter } from '../../core/BacklogWriter';
 import { TreeFieldService } from '../../core/TreeFieldService';
 const currentIdentity = () => getClaimIdentity();
+
+// GAP-7: the tree-tab enrichment calls `fs.existsSync` to detect a dispatched
+// worktree dir. Vitest's ESM `fs` namespace is non-configurable, so `vi.spyOn`
+// can't patch it directly; mock the module but keep every real impl via
+// `...actual` and default `existsSync` to the real one (so config/queue reads
+// and all other tests are unaffected — only the one GAP-7 test overrides it).
+vi.mock('fs', async () => {
+  const actual = await vi.importActual<typeof import('fs')>('fs');
+  return { ...actual, existsSync: vi.fn(actual.existsSync) };
+});
 
 /**
  * Direct unit tests for the host-agnostic TasksController, driven through a mock
@@ -699,6 +710,36 @@ describe('TasksController — tree tab', () => {
       await controller.refresh();
       const tasksMsg = posted.find((m) => m.type === 'tasksUpdated');
       expect((tasksMsg!.tasks as Task[]).some((t) => t.id === 'DRAFT-1')).toBe(false);
+    });
+  });
+
+  describe('TasksController — dispatchedWorktree enrichment (GAP-7)', () => {
+    it('flags dispatchedWorktree when the task worktree dir exists, in the tree tab', async () => {
+      const realExists = (await vi.importActual<typeof import('fs')>('fs')).existsSync;
+      // Only the TASK-9 worktree dir resolves true; every other path delegates to
+      // the real impl so config/queue reads elsewhere in refresh are unaffected.
+      const mocked = vi.mocked(fs.existsSync);
+      mocked.mockImplementation(((p: fs.PathLike) =>
+        String(p).includes('task-9-dispatched') ? true : realExists(p as string)) as typeof fs.existsSync);
+      (mockParser.getTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 'TASK-9', title: 'Dispatched', status: 'In Progress', folder: 'tasks',
+          labels: [], assignee: [], dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
+          filePath: '/fake/backlog/tasks/task-9.md' },
+        { id: 'TASK-8', title: 'Other', status: 'In Progress', folder: 'tasks',
+          labels: [], assignee: [], dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
+          filePath: '/fake/backlog/tasks/task-8.md' },
+      ]);
+      const controller = new TasksController(host, mockParser, mockContext);
+      controller.setViewMode('tree');
+      await controller.refresh();
+      const msg = posted.find((m) => m.type === 'tasksUpdated');
+      const rows = msg!.tasks as Array<Task & { dispatchedWorktree?: boolean }>;
+      const t9 = rows.find((t) => t.id === 'TASK-9')!;
+      const t8 = rows.find((t) => t.id === 'TASK-8')!;
+      expect(t9.dispatchedWorktree).toBe(true); // .worktrees/task-9-dispatched exists
+      expect(t8.dispatchedWorktree).toBe(false); // no worktree dir for task-8-other
+      // Restore the delegating default so any later fs.existsSync reads are real.
+      mocked.mockImplementation(realExists as typeof fs.existsSync);
     });
   });
 });

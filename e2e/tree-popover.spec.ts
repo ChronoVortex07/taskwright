@@ -144,4 +144,43 @@ test.describe('Tree detail popover', () => {
     await page.locator('[data-testid="tp-expand"]').click();
     expect(await getLastPostedMessage(page)).toMatchObject({ type: 'selectTask', taskId: 'TASK-1' });
   });
+
+  test('a dispatched-but-unclaimed in-progress task offers Cancel dispatch (GAP-7)', async ({ page }) => {
+    await postMessageToWebview(page, {
+      type: 'tasksUpdated',
+      tasks: [
+        {
+          id: 'TASK-9', title: 'Dispatched unclaimed', status: 'In Progress',
+          category: 'Misc', milestone: 'v1', labels: [], assignee: [], dependencies: [],
+          acceptanceCriteria: [], definitionOfDone: [],
+          dispatchedWorktree: true, // worktree dir exists; no claim `worktree` field
+          layout: { lane: 'Misc', band: 'v1', depth: 0, subRow: 0 },
+          filePath: '/b/tasks/task-9.md',
+        },
+      ],
+    });
+    await page.waitForTimeout(150);
+    await page.locator('[data-testid="tree-node-TASK-9"]').click();
+    await expect(page.locator('[data-testid="tp-action-cancelDispatch"]')).toBeVisible();
+    await page.locator('[data-testid="tp-action-cancelDispatch"]').click();
+    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'cancelDispatch', taskId: 'TASK-9' });
+  });
+
+  test('an in-progress task with no worktree dir and no claim does NOT offer Cancel dispatch (GAP-7 negative)', async ({ page }) => {
+    await postMessageToWebview(page, {
+      type: 'tasksUpdated',
+      tasks: [
+        {
+          id: 'TASK-9', title: 'In progress no wt', status: 'In Progress',
+          category: 'Misc', milestone: 'v1', labels: [], assignee: [], dependencies: [],
+          acceptanceCriteria: [], definitionOfDone: [],
+          layout: { lane: 'Misc', band: 'v1', depth: 0, subRow: 0 },
+          filePath: '/b/tasks/task-9.md',
+        },
+      ],
+    });
+    await page.waitForTimeout(150);
+    await page.locator('[data-testid="tree-node-TASK-9"]').click();
+    await expect(page.locator('[data-testid="tp-action-cancelDispatch"]')).toHaveCount(0);
+  });
 });

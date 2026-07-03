@@ -48,6 +48,7 @@
   const inProgress = $derived(!isDone && !isDraft && !isTodo && !pendingReview);
   const claimedByMe = $derived(task.claimedByMe === true);
   const hasWorktree = $derived(!!task.worktree);
+  const hasDispatchedWorktree = $derived(task.dispatchedWorktree === true);
   const displayId = $derived(formatTaskIdForDisplay(task.id, taskIdDisplay));
   const lane = $derived(task.layout?.lane ?? '');
   const age = $derived(task.milestone ?? 'Backburner');
@@ -74,7 +75,7 @@
         { key: 'claim', label: 'Claim', kind: 'claim', primary: true },
         { key: 'dispatch', label: 'Dispatch', kind: 'dispatch' },
       ];
-    if (inProgress && hasWorktree)
+    if (inProgress && (hasDispatchedWorktree || hasWorktree))
       return [{ key: 'cancel', label: 'Cancel dispatch', kind: 'cancelDispatch' }];
     if (inProgress && claimedByMe)
       return [
