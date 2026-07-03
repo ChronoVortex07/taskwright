@@ -64,10 +64,17 @@ test.describe('Promote draft nodes', () => {
     expect(msgs).toContainEqual({ type: 'promoteDraft', taskId: 'TASK-1' });
   });
 
-  test('Promote all posts promoteDraft for every draft', async ({ page }) => {
+  test('Promote all posts one bulk promoteDrafts message for every draft', async ({ page }) => {
+    // P4/GAP-3: the "Promote all proposed" button posts a SINGLE bulk `promoteDrafts`
+    // message (taskIds[]) so the remapping core runs across the whole set — not one
+    // per-node `promoteDraft` (that contract is per-node only). Mirrors the 11b assertion
+    // in tree-canvas.spec.ts.
     await page.locator('[data-testid="tree-promote-all"]').click();
     const msgs = await getPostedMessages(page);
-    const promoted = msgs.filter((m) => m.type === 'promoteDraft').map((m) => m.taskId);
-    expect(promoted).toEqual(expect.arrayContaining(['TASK-1', 'TASK-2']));
+    const bulk = msgs.filter((m) => m.type === 'promoteDrafts');
+    expect(bulk).toHaveLength(1);
+    expect(bulk[0].taskIds).toEqual(expect.arrayContaining(['TASK-1', 'TASK-2']));
+    // No per-node promoteDraft messages from the bulk button.
+    expect(msgs.some((m) => m.type === 'promoteDraft')).toBe(false);
   });
 });
