@@ -193,6 +193,27 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   `e2e/tree-popover.spec.ts`. Design:
   `docs/superpowers/specs/2026-07-02-tech-tree-p5-execute-task-skill-design.md`; plan:
   `docs/superpowers/plans/2026-07-03-tech-tree-p5-execute-task-skill.md`.
+- **Tech-tree codebase indexing + status-carrying drafts (P6)** ✅: an `/index-codebase` **skill**
+  (`.claude/skills/index-codebase/SKILL.md`) bootstraps an initial tree over an **existing** repo — git
+  forensics (tags/churn/chronology, module structure, docs) reconstruct the built foundation as **Done
+  `baseline` drafts** in the age they were built and mine `TODO`/`FIXME` gaps as **To-Do drafts**, applied
+  as **draft nodes** (confirm-before-write reconstruction summary; deduped against the live board via
+  `get_board`/`search_tasks`; ages created oldest-first so creation order = left→right bands; AC via a
+  follow-up `edit_task`; **never promotes** — the human does; parity + subscription-safe, no `claude -p`).
+  One new write MCP tool **`create_milestone`** (`{ name, description? }` → wraps the existing
+  `BacklogWriter.createMilestone` writing `backlog/milestones/m-N`; **idempotent** on name like
+  `create_category`; reserved-guard **`Backburner` only**; **no `order`** — band order is creation order;
+  `createMilestoneHandler` in `src/mcp/handlers.ts` + `src/mcp/server.ts` registration via `runTool`;
+  `invalidateMilestoneCache` after the file write). Foundation change **status-carrying drafts (D2)**: a
+  draft is a provisional/discardable state **orthogonal to completion status** (the provisional marker is
+  `folder === 'drafts'`, not a synthetic `status: Draft`), so a **Done baseline can be a draft** —
+  `createDraft` / `createTaskWithTreeFields` accept and write the real status (default
+  `config.default_status ?? 'To Do'`), `getDrafts` / `getTask` reflect it (legacy on-disk `status: Draft`
+  migrates-on-read to the board default), and `promoteDraft` / `demoteTask` **preserve** status (Done
+  draft → Done task) instead of resetting to the board default. Coverage:
+  `src/test/unit/{mcpWriteHandlers,BacklogParser,BacklogWriter,createTaskCore,treeGate}.test.ts`. Design:
+  `docs/superpowers/specs/2026-07-02-tech-tree-p6-codebase-indexing-design.md`; plan:
+  `docs/superpowers/plans/2026-07-04-tech-tree-p6-codebase-indexing-skill.md`.
 
 ## Conventions
 
