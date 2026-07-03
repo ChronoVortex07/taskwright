@@ -394,4 +394,15 @@ describe('createCategoryHandler', () => {
     expect(res.created).toBe(false);
     expect(res.category).toBe('Data');
   });
+
+  it('rejects a multi-line categories: block and leaves the file byte-identical', async () => {
+    const cfgPath = path.join(backlogPath, 'config.yml');
+    const blockCfg =
+      'project_name: "test"\nstatuses: ["To Do", "In Progress", "Done"]\ncategories:\n  - Features\n  - Platform\ndefault_status: "To Do"\ntask_prefix: "task"\n';
+    fs.writeFileSync(cfgPath, blockCfg, 'utf-8');
+    await expect(createCategoryHandler(deps(), { category: 'NewLane' })).rejects.toThrow(
+      /multi-line|block/i
+    );
+    expect(fs.readFileSync(cfgPath, 'utf-8')).toBe(blockCfg); // untouched on disk
+  });
 });

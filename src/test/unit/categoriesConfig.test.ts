@@ -44,4 +44,13 @@ describe('addCategoryLine', () => {
     const out = addCategoryLine(src, 'Features');
     expect(parseCategoriesLine(out)).toEqual(['Features']);
   });
+  it('throws on a block-sequence categories: form instead of inserting a duplicate key', () => {
+    const src =
+      'statuses: ["To Do"]\ncategories:\n  - Features\n  - Platform\ntask_prefix: "task"\n';
+    expect(() => addCategoryLine(src, 'Data')).toThrow(/multi-line|block/i);
+  });
+  it('throws on a categories: line whose array does not close on the same line', () => {
+    const src = 'statuses: ["To Do"]\ncategories: ["Features",\n  "Platform"]\n';
+    expect(() => addCategoryLine(src, 'Data')).toThrow(/multi-line|block/i);
+  });
 });

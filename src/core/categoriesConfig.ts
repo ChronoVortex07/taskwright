@@ -5,8 +5,10 @@
  * arrays are out of scope. All other lines and the file's EOL are preserved.
  */
 
+import { BUGS_LANE, MISC_LANE, BACKBURNER_BAND } from './treeLayout';
+
 /** Reserved lane names owned by the layout module; never user categories. */
-export const RESERVED_CATEGORIES = ['Bugs', 'Misc', 'Backburner'];
+export const RESERVED_CATEGORIES = [BUGS_LANE, MISC_LANE, BACKBURNER_BAND];
 
 /** Parse the `categories: ["A", "B"]` line; [] when absent. */
 export function parseCategoriesLine(configText: string): string[] {
@@ -29,6 +31,12 @@ export function isReservedCategory(name: string): boolean {
  * `statuses:` line (house configs always have one); if that too is absent, append at EOF.
  * Rendering matches mergeStatusConfig.rewriteStatusesLine (double-quoted entries), which
  * is what config.yml already uses for statuses.
+ *
+ * A `categories:` key that is present but NOT in closed single-line `[...]` form (e.g. a
+ * hand-authored block sequence, or a flow array spanning lines) THROWS instead of editing:
+ * treating it as absent would insert a second `categories:` key, YAML parsing would then
+ * fail on the duplicate mapping key, and getConfig() would silently degrade to {} —
+ * losing statuses/labels/task_prefix for the whole board.
  */
 export function addCategoryLine(configText: string, category: string): string {
   const eol = configText.includes('\r\n') ? '\r\n' : '\n';
@@ -37,8 +45,14 @@ export function addCategoryLine(configText: string, category: string): string {
   const rendered = `categories: [${next.map((c) => `"${esc(c)}"`).join(', ')}]`;
   const lines = configText.split(/\r?\n/);
 
-  const idx = lines.findIndex((l) => /^categories:\s*\[/.test(l));
+  const idx = lines.findIndex((l) => /^categories:/.test(l));
   if (idx !== -1) {
+    if (!/^categories:\s*\[.*\]\s*$/.test(lines[idx])) {
+      throw new Error(
+        'The config has a multi-line `categories:` block; the single-line array form is ' +
+          'required for automated edits — convert it to `categories: ["A", "B"]` first.'
+      );
+    }
     lines[idx] = rendered;
     return lines.join(eol);
   }
