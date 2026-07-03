@@ -334,4 +334,40 @@ test.describe('Tech tree canvas', () => {
     const msgs = await getPostedMessages(page);
     expect(msgs.some((m) => m.type === 'minimapViewport')).toBe(true);
   });
+
+  test('cross-branch mode shows the cross-branch empty-state copy (11c)', async ({ page }) => {
+    await postMessageToWebview(page, { type: 'dataSourceChanged', mode: 'cross-branch' });
+    await postMessageToWebview(page, { type: 'tasksUpdated', tasks: [] });
+    await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder: [], bandOrder: [], warnings: [] });
+    await page.waitForTimeout(80);
+    await expect(page.locator('[data-testid="tree-empty-state"]')).toContainText(
+      "isn't available in cross-branch mode"
+    );
+  });
+
+  test('Promote-all counts only non-filtered drafts (11b)', async ({ page }) => {
+    // Two drafts; a search filter that matches only one → the button shows (1) and
+    // promotes only the visible draft.
+    await postMessageToWebview(page, {
+      type: 'tasksUpdated',
+      tasks: [
+        {
+          id: 'TASK-D1', title: 'Alpha draft', status: 'Draft', labels: [], assignee: [],
+          dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
+          filePath: '/b/tasks/task-d1.md', category: 'Features', milestone: 'v1',
+          layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 0 },
+        } as Task,
+        {
+          id: 'TASK-D2', title: 'Beta draft', status: 'Draft', labels: [], assignee: [],
+          dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
+          filePath: '/b/tasks/task-d2.md', category: 'Features', milestone: 'v1',
+          layout: { lane: 'Features', band: 'v1', depth: 1, subRow: 0 },
+        } as Task,
+      ],
+    });
+    await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder: ['Features'], bandOrder: ['v1'], warnings: [] });
+    await postMessageToWebview(page, { type: 'navigatorFilterChanged', search: 'Alpha', priority: '' });
+    await page.waitForTimeout(80);
+    await expect(page.locator('[data-testid="tree-promote-all"]')).toContainText('(1)');
+  });
 });

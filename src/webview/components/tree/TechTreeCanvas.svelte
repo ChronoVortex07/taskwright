@@ -47,6 +47,9 @@
     collapsedLanes?: string[];
     jumpBand?: string;
     jumpNonce?: number;
+    minimapPanX?: number;
+    minimapPanY?: number;
+    minimapPanNonce?: number;
     onSelectTask: (taskId: string, meta?: Pick<Task, 'filePath' | 'source' | 'branch'>) => void;
     /** Open the unified create form (P3a: reportBug; P3b: drop-on-empty click-in-place). */
     onCreateInPlace?: (opts: {
@@ -74,6 +77,9 @@
     collapsedLanes = [],
     jumpBand = '',
     jumpNonce = 0,
+    minimapPanX = 0,
+    minimapPanY = 0,
+    minimapPanNonce = 0,
     onSelectTask,
     onCreateInPlace,
   }: Props = $props();
@@ -135,8 +141,9 @@
   const draftNodes = $derived(
     layoutNodes.filter((t) => t.status === 'Draft' || t.folder === 'drafts')
   );
+  const promotableDrafts = $derived(draftNodes.filter((t) => !fadedIds.has(t.id)));
   function promoteAll() {
-    for (const t of draftNodes) {
+    for (const t of promotableDrafts) {
       vscode.postMessage({ type: 'promoteDraft', taskId: t.id });
     }
   }
@@ -166,6 +173,21 @@
     if (b && viewportEl) {
       setViewport({ scale: vp.scale, tx: -b.x * vp.scale + 40, ty: vp.ty });
     }
+  });
+
+  // Minimap drag-to-pan: center the viewport on the normalized (x,y) world point.
+  let lastMinimapPanNonce = 0;
+  $effect(() => {
+    if (minimapPanNonce === lastMinimapPanNonce) return;
+    lastMinimapPanNonce = minimapPanNonce;
+    if (!viewportEl || geometry.width <= 0 || geometry.height <= 0) return;
+    const worldX = minimapPanX * geometry.width;
+    const worldY = minimapPanY * geometry.height;
+    setViewport({
+      scale: vp.scale,
+      tx: viewportEl.clientWidth / 2 - worldX * vp.scale,
+      ty: viewportEl.clientHeight / 2 - worldY * vp.scale,
+    });
   });
 
   // Feed the navigator minimap with the current normalized viewport rect (debounced).
@@ -717,9 +739,9 @@
       onSendBack={(id) => vscode.postMessage({ type: 'sendBackMerge', taskId: id })}
     />
 
-    {#if draftNodes.length > 0}
+    {#if promotableDrafts.length > 0}
       <button class="tree-promote-all" data-testid="tree-promote-all" onclick={promoteAll}>
-        Promote all proposed ({draftNodes.length})
+        Promote all proposed ({promotableDrafts.length})
       </button>
     {/if}
 

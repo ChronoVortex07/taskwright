@@ -47,6 +47,9 @@
   let collapsedLanes = $state<string[]>([]);
   let jumpBand = $state('');
   let jumpNonce = $state(0);
+  let minimapPanX = $state(0);
+  let minimapPanY = $state(0);
+  let minimapPanNonce = $state(0);
 
   // True while the board is in cross-branch mode (no local tree layout is computed).
   let crossBranch = $state(false);
@@ -182,6 +185,12 @@
       case 'navigatorJump':
         jumpBand = message.band;
         jumpNonce += 1;
+        break;
+
+      case 'navigatorMinimapPan':
+        minimapPanX = message.x;
+        minimapPanY = message.y;
+        minimapPanNonce += 1;
         break;
 
       case 'activeTabChanged':
@@ -610,6 +619,9 @@
       {collapsedLanes}
       {jumpBand}
       {jumpNonce}
+      {minimapPanX}
+      {minimapPanY}
+      {minimapPanNonce}
       onSelectTask={handleSelectTask}
       onCreateInPlace={(opts) =>
         openCreateForm(opts.mode ?? 'full', {

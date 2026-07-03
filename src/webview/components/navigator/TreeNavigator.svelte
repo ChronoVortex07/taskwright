@@ -2,6 +2,7 @@
   import { vscode, onMessage } from '../../stores/vscode.svelte';
   import { onMount } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
+  import { DRAG_THRESHOLD } from '../../lib/treeGeometry';
 
   let lanes = $state<Array<{ name: string; count: number }>>([]);
   let bands = $state<string[]>([]);
@@ -49,6 +50,46 @@
   }
   function jump(band: string) {
     vscode.postMessage({ type: 'navigatorJump', band });
+  }
+
+  let minimapEl: HTMLDivElement | undefined = $state();
+  let panning = $state(false);
+  let panPress: { x: number; y: number; pointerId: number } | null = null;
+  function emitPan(e: PointerEvent) {
+    if (!minimapEl) return;
+    const r = minimapEl.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    const y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+    vscode.postMessage({ type: 'navigatorMinimapPan', x, y });
+  }
+  function onMinimapDown(e: PointerEvent) {
+    // Q2: record the press only — capture + pan start after DRAG_THRESHOLD, so a
+    // plain click leaves the column buttons' onclick jump intact.
+    panPress = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
+  }
+  function onMinimapMove(e: PointerEvent) {
+    if (!panPress) return;
+    // Re-review m7 guard: a press that leaves the minimap under-threshold and is released
+    // outside never reaches onMinimapUp (no capture yet); without this, the stale panPress
+    // turns the next buttonless hover into an unintended pan.
+    if (!(e.buttons & 1)) {
+      panPress = null;
+      panning = false;
+      return;
+    }
+    if (!panning) {
+      if (Math.hypot(e.clientX - panPress.x, e.clientY - panPress.y) < DRAG_THRESHOLD) return;
+      panning = true;
+      minimapEl?.setPointerCapture(panPress.pointerId);
+    }
+    emitPan(e);
+  }
+  function onMinimapUp(e: PointerEvent) {
+    if (panning) minimapEl?.releasePointerCapture?.(e.pointerId);
+    panning = false;
+    panPress = null;
+    // Sub-threshold pointerup = plain click: nothing was emitted/captured; a column's
+    // onclick jump fires normally.
   }
 </script>
 
@@ -111,7 +152,15 @@
 
   <div class="nav-section">
     <div class="nav-title">Minimap</div>
-    <div class="nav-minimap" data-testid="nav-minimap">
+    <div
+      class="nav-minimap"
+      data-testid="nav-minimap"
+      bind:this={minimapEl}
+      onpointerdown={onMinimapDown}
+      onpointermove={onMinimapMove}
+      onpointerup={onMinimapUp}
+      role="presentation"
+    >
       <div class="nav-minimap-grid">
         {#each bands as band (band)}
           <button class="nav-minimap-col" data-testid="nav-minimap-{band}" title={band} onclick={() => jump(band)} aria-label="Jump to {band}"></button>
