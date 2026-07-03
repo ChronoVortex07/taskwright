@@ -591,6 +591,43 @@ export async function createCategoryHandler(
   return { created: true, category };
 }
 
+export interface CreateMilestoneResult {
+  created: boolean;
+  id: string;
+  milestone: string;
+}
+
+/** Add a milestone band (age) to the board by wrapping BacklogWriter.createMilestone (files
+ *  under backlog/milestones/). Idempotent on a case-insensitive NAME match against the existing
+ *  milestones -> { created:false, id, milestone }. Rejects blank and the reserved 'Backburner'
+ *  band (the virtual rightmost band for no-milestone tasks). Band order is CREATION order
+ *  (monotonic m-N ids), so there is no `order` param. */
+export async function createMilestoneHandler(
+  deps: McpHandlerDeps,
+  args: { name: string; description?: string }
+): Promise<CreateMilestoneResult> {
+  const name = args.name?.trim();
+  if (!name) throw new Error('A milestone name is required.');
+  if (name.toLowerCase() === BACKBURNER_BAND.toLowerCase()) {
+    throw new Error(
+      `"${name}" is the reserved virtual band (Backburner, for no-milestone tasks) and cannot be created as a milestone.`
+    );
+  }
+  // Idempotent on a case-insensitive name match (mirror create_category's dupe contract).
+  const existing = await deps.parser.getMilestones();
+  const match = existing.find((m) => m.name.toLowerCase() === name.toLowerCase());
+  if (match) return { created: false, id: match.id, milestone: match.name };
+
+  const milestone = await deps.writer.createMilestone(
+    deps.backlogPath,
+    name,
+    args.description,
+    deps.parser // dedup backstop
+  );
+  deps.parser.invalidateMilestoneCache();
+  return { created: true, id: milestone.id, milestone: milestone.name };
+}
+
 export interface CategorySummary {
   category: string;
   count: number;
@@ -919,7 +956,7 @@ export async function promoteDraftsHandler(
   return promoteDrafts(deps, args.taskIds ?? []);
 }
 
-/** Demote a task to a draft (new DRAFT-N id, status Draft). */
+/** Demote a task to a draft (new DRAFT-N id; status preserved, P6/D2e). */
 export async function demoteTaskHandler(
   deps: McpHandlerDeps,
   args: { taskId: string }

@@ -31,6 +31,7 @@ import {
   searchTasksHandler,
   createTaskHandler,
   createCategoryHandler,
+  createMilestoneHandler,
   editTaskHandler,
   completeTaskHandler,
   archiveTaskHandler,
@@ -231,6 +232,20 @@ async function main(): Promise<void> {
       },
     },
     async (args) => runTool(() => createCategoryHandler(deps, args))
+  );
+
+  server.registerTool(
+    'create_milestone',
+    {
+      title: 'Create milestone',
+      description:
+        'Add a new milestone band (age) to the board. Milestones are ordered by CREATION order (oldest → newest, left → right on the tech-tree), so create them in chronological order. Idempotent: an existing milestone (case-insensitive name) returns { created:false, id, milestone } rather than erroring. The reserved virtual band "Backburner" (the rightmost band for tasks with no milestone) is refused. See list_milestones for the current bands.',
+      inputSchema: {
+        name: z.string().describe('The milestone/age name, e.g. "v1.0" or "Foundation".'),
+        description: z.string().optional().describe('Optional milestone description.'),
+      },
+    },
+    async (args) => runTool(() => createMilestoneHandler(deps, args))
   );
 
   server.registerTool(

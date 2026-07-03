@@ -20,6 +20,8 @@ import {
   getActiveTask,
   claimTaskHandler,
   createCategoryHandler,
+  createMilestoneHandler,
+  listMilestonesHandler,
 } from '../../mcp/handlers';
 import type { McpHandlerDeps } from '../../mcp/handlers';
 import { writeActiveTask } from '../../core/activeTask';
@@ -427,5 +429,56 @@ describe('createCategoryHandler', () => {
       /multi-line|block/i
     );
     expect(fs.readFileSync(cfgPath, 'utf-8')).toBe(blockCfg); // untouched on disk
+  });
+});
+
+describe('createMilestoneHandler', () => {
+  it('creates the first milestone as m-0, writes the file, and list_milestones reflects it', async () => {
+    const d = deps();
+    const res = await createMilestoneHandler(d, { name: 'Foundation', description: 'The baseline age.' });
+    expect(res).toEqual({ created: true, id: 'm-0', milestone: 'Foundation' });
+    const files = fs.readdirSync(path.join(backlogPath, 'milestones'));
+    expect(files.some((f) => /^m-0 - foundation\.md$/.test(f))).toBe(true);
+    const bands = await listMilestonesHandler(d);
+    expect(bands.some((b) => b.name === 'Foundation')).toBe(true);
+  });
+
+  it('is idempotent on a case-insensitive name dupe (created:false, same id)', async () => {
+    const d = deps();
+    await createMilestoneHandler(d, { name: 'v1.0' });
+    const res = await createMilestoneHandler(d, { name: 'V1.0' });
+    expect(res.created).toBe(false);
+    expect(res.id).toBe('m-0');
+    expect(res.milestone).toBe('v1.0'); // returns the existing canonical name
+    expect(fs.readdirSync(path.join(backlogPath, 'milestones'))).toHaveLength(1); // not duplicated
+  });
+
+  it('allocates ids in creation order (m-0 then m-1) so band order is creation order (D4)', async () => {
+    const d = deps();
+    const a = await createMilestoneHandler(d, { name: 'Alpha' });
+    const b = await createMilestoneHandler(d, { name: 'Beta' });
+    expect(a.id).toBe('m-0');
+    expect(b.id).toBe('m-1');
+    const bands = await listMilestonesHandler(d);
+    const order = bands.filter((x) => x.name === 'Alpha' || x.name === 'Beta').sort((x, y) => x.order - y.order);
+    expect(order.map((x) => x.name)).toEqual(['Alpha', 'Beta']); // Alpha (m-0) left of Beta (m-1)
+  });
+
+  it('rejects the reserved Backburner band (case-insensitive) — D6', async () => {
+    const d = deps();
+    await expect(createMilestoneHandler(d, { name: 'Backburner' })).rejects.toThrow(/reserved|Backburner/i);
+    await expect(createMilestoneHandler(d, { name: 'backburner' })).rejects.toThrow(/reserved|Backburner/i);
+  });
+
+  it('rejects a blank name', async () => {
+    await expect(createMilestoneHandler(deps(), { name: '   ' })).rejects.toThrow(/required/);
+  });
+
+  it('passes the description through to the milestone file', async () => {
+    const d = deps();
+    await createMilestoneHandler(d, { name: 'Gamma', description: 'Third age notes.' });
+    const file = fs.readdirSync(path.join(backlogPath, 'milestones')).find((f) => /^m-0 - gamma/.test(f))!;
+    const content = fs.readFileSync(path.join(backlogPath, 'milestones', file), 'utf-8');
+    expect(content).toContain('Third age notes.');
   });
 });
