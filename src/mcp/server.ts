@@ -27,6 +27,8 @@ import {
   attachPlanHandler,
   listCategoriesHandler,
   listMilestonesHandler,
+  getBoardHandler,
+  searchTasksHandler,
   createTaskHandler,
   editTaskHandler,
   completeTaskHandler,
@@ -156,6 +158,35 @@ async function main(): Promise<void> {
         'List milestone bands in board order (declared → discovered → Backburner) with task/done counts each. Read this to slot a task into the milestone where the work lands in the flow; default to Backburner when unknown.',
     },
     async () => jsonContent(await listMilestonesHandler(deps))
+  );
+
+  server.registerTool(
+    'get_board',
+    {
+      title: 'Get board',
+      description:
+        'Get a compact, filterable view of the board (active tasks + draft proposals) for tree traversal: each row is { id, title, status, priority?, category?, milestone?, type?, causedBy?, dependencies, blockedBy, locked, draft }. Filter by category / milestone / status to keep output bounded on large boards. Unset category means the Misc lane; unset milestone means Backburner.',
+      inputSchema: {
+        category: z.string().optional().describe('Lane filter (incl. reserved "Bugs"/"Misc").'),
+        milestone: z.string().optional().describe('Band filter ("Backburner" matches unset).'),
+        status: z.string().optional().describe('Status filter.'),
+      },
+    },
+    async (args) => jsonContent(await getBoardHandler(deps, args))
+  );
+
+  server.registerTool(
+    'search_tasks',
+    {
+      title: 'Search tasks',
+      description:
+        'Keyword-search the board (active tasks + drafts) by title / description / labels / category, ranked, returning the same compact summaries as get_board. Use this to find related or overlapping work so you LINK to or extend an existing task instead of creating a near-duplicate. All query tokens must match; a blank query is an error (use get_board to list everything).',
+      inputSchema: {
+        query: z.string().describe('Space-separated keywords; all must match somewhere.'),
+        limit: z.number().optional().describe('Max results (default 20).'),
+      },
+    },
+    async (args) => jsonContent(await searchTasksHandler(deps, args))
   );
 
   server.registerTool(

@@ -9,6 +9,7 @@ import { TreeFieldService } from '../core/TreeFieldService';
 import { resolvePriorities } from '../core/priorityOrder';
 import { wouldCreateCycle, resolveDoneStatus } from '../core/treeGate';
 import { createTaskWithTreeFields, normalizeType } from '../core/createTaskCore';
+import { searchTasks } from '../core/searchTasks';
 import { promoteDrafts, type PromoteDraftsResult } from '../core/promoteDrafts';
 import { readActiveTask } from '../core/activeTask';
 import { loadPlanProgress } from '../core/loadPlanProgress';
@@ -534,15 +535,17 @@ export async function listCategoriesHandler(deps: McpHandlerDeps): Promise<Categ
     deps.parser.getTasks(),
     deps.parser.getDrafts(),
   ]);
+  // Key by lowercased lane so a task whose stored category casing differs from the
+  // canonical laneOrder entry is still counted (mirrors the milestone bandByLower defense).
   const counts = new Map<string, number>();
   for (const t of [...tasks, ...drafts]) {
-    const lane = laneOf(t);
+    const lane = laneOf(t).toLowerCase();
     counts.set(lane, (counts.get(lane) ?? 0) + 1);
   }
   const reserved = new Set([MISC_LANE, BUGS_LANE]);
   return board.laneOrder.map((category) => ({
     category,
-    count: counts.get(category) ?? 0,
+    count: counts.get(category.toLowerCase()) ?? 0,
     reserved: reserved.has(category),
   }));
 }
@@ -587,6 +590,97 @@ export async function listMilestonesHandler(deps: McpHandlerDeps): Promise<Miles
     const id = name === BACKBURNER_BAND ? undefined : idByName.get(name.toLowerCase());
     return { ...(id ? { id } : {}), name, order, taskCount: agg.taskCount, doneCount: agg.doneCount };
   });
+}
+
+export interface BoardTaskSummary {
+  id: string;
+  title: string;
+  status: string;
+  priority?: string;
+  category?: string;
+  milestone?: string;
+  type?: string;
+  causedBy?: string;
+  dependencies: string[];
+  blockedBy: string[];
+  locked: boolean;
+  draft: boolean;
+}
+
+/** Shape one task into the compact board summary. Unset category/milestone are OMITTED
+ *  (callers read reserved lane/band names from list_categories/list_milestones — the
+ *  fields themselves are never synthesized to Misc/Backburner). */
+function toBoardSummary(
+  task: Task,
+  board: Awaited<ReturnType<typeof loadTreeBoardFromParser>>
+): BoardTaskSummary {
+  const st = board.states.get(task.id.trim().toUpperCase());
+  return {
+    id: task.id,
+    title: task.title,
+    status: task.status,
+    priority: task.priority,
+    category: task.category?.trim() || undefined,
+    milestone: task.milestone?.trim() || undefined,
+    type: task.type,
+    causedBy: task.causedBy,
+    dependencies: task.dependencies,
+    blockedBy: st?.blockedBy ?? [],
+    locked: st?.locked ?? false,
+    draft: task.folder === 'drafts',
+  };
+}
+
+export interface GetBoardArgs {
+  category?: string;
+  milestone?: string;
+  status?: string;
+}
+
+/** Compact, filterable board view over the tasks+drafts universe (completed/archived
+ *  gate only, never appear). Filters use laneOf/band semantics so 'Bugs'/'Misc'/
+ *  'Backburner' work. */
+export async function getBoardHandler(
+  deps: McpHandlerDeps,
+  args: GetBoardArgs = {}
+): Promise<BoardTaskSummary[]> {
+  const [board, tasks, drafts] = await Promise.all([
+    loadTreeBoardFromParser(deps.parser),
+    deps.parser.getTasks(),
+    deps.parser.getDrafts(),
+  ]);
+  const bandByLower = new Map(board.bandOrder.map((b) => [b.toLowerCase(), b]));
+  const resolveBand = (t: Task): string => {
+    const m = t.milestone?.trim();
+    if (!m) return BACKBURNER_BAND;
+    return bandByLower.get(m.toLowerCase()) ?? BACKBURNER_BAND;
+  };
+  const catF = args.category?.trim().toLowerCase();
+  const mileF = args.milestone?.trim().toLowerCase();
+  const statF = args.status?.trim().toLowerCase();
+  const out: BoardTaskSummary[] = [];
+  for (const t of [...tasks, ...drafts]) {
+    if (catF && laneOf(t).toLowerCase() !== catF) continue;
+    if (mileF && resolveBand(t).toLowerCase() !== mileF) continue;
+    if (statF && t.status.toLowerCase() !== statF) continue;
+    out.push(toBoardSummary(t, board));
+  }
+  return out;
+}
+
+/** Ranked keyword search over the tasks+drafts universe; returns the same compact
+ *  summaries as get_board. Empty query throws (use get_board for the whole board). */
+export async function searchTasksHandler(
+  deps: McpHandlerDeps,
+  args: { query: string; limit?: number }
+): Promise<BoardTaskSummary[]> {
+  const [board, tasks, drafts] = await Promise.all([
+    loadTreeBoardFromParser(deps.parser),
+    deps.parser.getTasks(),
+    deps.parser.getDrafts(),
+  ]);
+  const ranked = searchTasks([...tasks, ...drafts], args.query, { limit: args.limit });
+  return ranked.map((t) => toBoardSummary(t, board));
 }
 
 /** Re-read a just-written task and shape it for return; throws if it vanished. */

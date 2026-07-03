@@ -12,8 +12,25 @@ import {
   editTaskHandler,
   listCategoriesHandler,
   listMilestonesHandler,
+  getBoardHandler,
+  searchTasksHandler,
 } from '../../mcp/handlers';
 import type { McpHandlerDeps } from '../../mcp/handlers';
+
+/** Write a raw task .md into an arbitrary backlog subfolder (completed/, archive/tasks/). */
+function seedTaskFile(
+  folder: string,
+  id: string,
+  fields: { title: string; status?: string; category?: string; milestone?: string }
+): void {
+  const dir = path.join(backlogPath, folder);
+  fs.mkdirSync(dir, { recursive: true });
+  const lines = [`id: ${id}`, `title: ${fields.title}`, `status: ${fields.status ?? 'Done'}`];
+  if (fields.milestone) lines.push(`milestone: ${fields.milestone}`);
+  if (fields.category) lines.push(`category: ${fields.category}`);
+  const body = `---\n${lines.join('\n')}\n---\n\n## Description\n\n${fields.title}\n`;
+  fs.writeFileSync(path.join(dir, `${id} - ${fields.title}.md`), body, 'utf-8');
+}
 
 let root: string, backlogPath: string;
 function scaffold(configExtra = ''): void {
@@ -70,6 +87,16 @@ describe('listCategoriesHandler', () => {
     const cats = await listCategoriesHandler(d);
     expect(cats.find((c) => c.category === 'Features')!.count).toBe(1);
   });
+
+  // R1 (Task 4 review): a task whose stored casing differs from the canonical
+  // laneOrder entry must still be counted under that lane (case-insensitive keying).
+  it('counts a task whose stored category casing differs from the canonical lane', async () => {
+    scaffold('categories: ["Features"]\n');
+    const d = deps();
+    await createTaskHandler(d, { title: 'X', category: 'features' }); // lowercase on disk
+    const cats = await listCategoriesHandler(d);
+    expect(cats.find((c) => c.category === 'Features')!.count).toBe(1);
+  });
 });
 
 describe('listMilestonesHandler', () => {
@@ -88,5 +115,96 @@ describe('listMilestonesHandler', () => {
     expect(ms[ms.length - 1].name).toBe('Backburner'); // always last
     // order is 0-based, ascending, matching bandOrder:
     expect(ms.map((m) => m.order)).toEqual(ms.map((_m, i) => i));
+  });
+});
+
+describe('getBoardHandler', () => {
+  it('returns compact summaries over tasks+drafts; drafts flagged; unset lane/band omitted', async () => {
+    const d = deps();
+    await createTaskHandler(d, { title: 'Feature X', category: 'Features', milestone: 'v1' });
+    await createTaskHandler(d, { title: 'Loose' }); // Misc + Backburner (omitted)
+    await createTaskHandler(d, { title: 'Idea', draft: true });
+    const board = await getBoardHandler(d, {});
+    const byId = new Map(board.map((b) => [b.id, b]));
+    expect(byId.get('TASK-1')!.category).toBe('Features');
+    expect(byId.get('TASK-2')!.category).toBeUndefined(); // Misc not synthesized
+    expect(byId.get('TASK-2')!.milestone).toBeUndefined(); // Backburner not synthesized
+    expect(byId.get('DRAFT-1')!.draft).toBe(true);
+    expect(byId.get('TASK-1')!.draft).toBe(false);
+  });
+
+  it('filters by category (Misc/Bugs match), milestone (Backburner matches unset), status', async () => {
+    const d = deps();
+    await createTaskHandler(d, { title: 'A', category: 'Features', milestone: 'v1' });
+    await createTaskHandler(d, { title: 'B' }); // Misc + Backburner
+    expect((await getBoardHandler(d, { category: 'Features' })).map((b) => b.id)).toEqual([
+      'TASK-1',
+    ]);
+    expect((await getBoardHandler(d, { category: 'Misc' })).map((b) => b.id)).toEqual(['TASK-2']);
+    expect((await getBoardHandler(d, { milestone: 'Backburner' })).map((b) => b.id)).toEqual([
+      'TASK-2',
+    ]);
+    expect(
+      (await getBoardHandler(d, { status: 'To Do' })).map((b) => b.id).sort()
+    ).toEqual(['TASK-1', 'TASK-2']);
+  });
+
+  it('reports locked/blockedBy from the derivation', async () => {
+    const d = deps();
+    await createTaskHandler(d, { title: 'Base' }); // TASK-1
+    await createTaskHandler(d, { title: 'Dep', dependencies: ['TASK-1'] }); // TASK-2 blocked by TASK-1
+    const board = await getBoardHandler(d, {});
+    const t2 = board.find((b) => b.id === 'TASK-2')!;
+    expect(t2.locked).toBe(true);
+    expect(t2.blockedBy).toEqual(['TASK-1']);
+  });
+});
+
+describe('searchTasksHandler', () => {
+  it('ranks compact summaries over the tasks+drafts universe', async () => {
+    const d = deps();
+    await createTaskHandler(d, { title: 'Login flow' });
+    await createTaskHandler(d, { title: 'Dashboard', description: 'login widget' });
+    const res = await searchTasksHandler(d, { query: 'login' });
+    expect(res.map((r) => r.id)).toEqual(['TASK-1', 'TASK-2']);
+    expect(res[0]).toHaveProperty('locked'); // compact summary shape (same as get_board)
+  });
+
+  it('errors on a blank query', async () => {
+    await expect(searchTasksHandler(deps(), { query: '  ' })).rejects.toThrow(/query/i);
+  });
+});
+
+// R2 (Task 4 review): completed/ and archive/tasks/ tasks gate the derivation but
+// must never be counted or emitted by the read tools.
+describe('universe exclusion (completed/archive)', () => {
+  it('excludes completed/archived tasks from counts and get_board output', async () => {
+    scaffold('categories: ["Features"]\n');
+    const d = deps();
+    await createTaskHandler(d, { title: 'Live', category: 'Features', milestone: 'v1' });
+    await editTaskHandler(d, { taskId: 'TASK-1', status: 'Done' });
+    seedTaskFile('completed', 'TASK-90', {
+      title: 'Done one',
+      status: 'Done',
+      category: 'Features',
+      milestone: 'v1',
+    });
+    seedTaskFile('archive/tasks', 'TASK-91', {
+      title: 'Archived one',
+      status: 'Done',
+      category: 'Features',
+      milestone: 'v1',
+    });
+
+    const cats = await listCategoriesHandler(d);
+    expect(cats.find((c) => c.category === 'Features')!.count).toBe(1); // only the live task
+
+    const ms = await listMilestonesHandler(d);
+    const v1 = ms.find((m) => m.name === 'v1')!;
+    expect(v1.taskCount).toBe(1);
+    expect(v1.doneCount).toBe(1);
+
+    const board = await getBoardHandler(d, {});
+    expect(board.map((b) => b.id).sort()).toEqual(['TASK-1']);
   });
 });
