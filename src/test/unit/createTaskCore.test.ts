@@ -117,6 +117,55 @@ describe('createTaskWithTreeFields — linkTo post-create wiring', () => {
   });
 });
 
+describe('createTaskWithTreeFields — draft field completeness (GAP-2)', () => {
+  it('draft create folds priority/milestone/labels/assignee into the same updateTask', async () => {
+    const m = makeDeps();
+    await createTaskWithTreeFields(m.deps, {
+      title: 'Spike caching', draft: true,
+      priority: 'high', milestone: 'v1', labels: ['spike'], assignee: ['@alice'],
+    });
+    expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, { title: 'Spike caching', description: undefined });
+    expect(m.createTask).not.toHaveBeenCalled();
+    // ONE updateTask carrying the draft-only canonical fields:
+    expect(m.updateTask).toHaveBeenCalledWith(
+      'DRAFT-1',
+      expect.objectContaining({ priority: 'high', milestone: 'v1', labels: ['spike'], assignee: ['@alice'] }),
+      m.deps.parser
+    );
+  });
+
+  it('draft create still applies type/dependencies through the SAME updateTask (one write)', async () => {
+    const m = makeDeps();
+    await createTaskWithTreeFields(m.deps, {
+      title: 'Bug spike', draft: true, type: 'bug', causedBy: 'TASK-1',
+      dependencies: ['TASK-2'], priority: 'medium',
+    });
+    // exactly one updateTask, carrying type + dependencies + priority together:
+    expect(m.updateTask).toHaveBeenCalledTimes(1);
+    expect(m.updateTask).toHaveBeenCalledWith(
+      'DRAFT-1',
+      expect.objectContaining({ type: 'bug', dependencies: ['TASK-2'], priority: 'medium' }),
+      m.deps.parser
+    );
+    expect(m.setCausedBy).toHaveBeenCalledWith('DRAFT-1', 'TASK-1', m.deps.parser);
+  });
+
+  it('draft create with an explicit status throws (drafts are always Draft)', async () => {
+    const m = makeDeps();
+    await expect(
+      createTaskWithTreeFields(m.deps, { title: 'x', draft: true, status: 'To Do' })
+    ).rejects.toThrow('drafts always have status Draft');
+    expect(m.createDraft).not.toHaveBeenCalled();
+  });
+
+  it('non-draft create is unchanged: fields go to createTask, not a second updateTask', async () => {
+    const m = makeDeps();
+    await createTaskWithTreeFields(m.deps, { title: 'y', priority: 'high', milestone: 'v1', labels: ['f'] });
+    expect(m.createTask).toHaveBeenCalledWith('/b', expect.objectContaining({ priority: 'high', milestone: 'v1', labels: ['f'] }), m.deps.parser);
+    expect(m.updateTask).not.toHaveBeenCalled(); // no type/deps → no canonical updateTask
+  });
+});
+
 describe('normalizeType', () => {
   it('accepts bug, blanks to undefined, rejects others', () => {
     expect(normalizeType('bug')).toBe('bug');

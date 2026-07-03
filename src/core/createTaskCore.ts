@@ -82,6 +82,9 @@ export async function createTaskWithTreeFields(
     throw new Error('caused_by can only be set on a bug (type: bug).');
   }
   const dependencies = args.dependencies ?? [];
+  if (args.draft && args.status !== undefined) {
+    throw new Error('drafts always have status Draft; do not set status on a draft.');
+  }
 
   let id: string;
   if (args.draft) {
@@ -105,10 +108,18 @@ export async function createTaskWithTreeFields(
     ));
   }
 
-  // type / dependencies go through BacklogWriter (both serialized there).
+  // type / dependencies go through BacklogWriter (both serialized there). On the DRAFT
+  // path, createDraft accepts only title/description, so priority/milestone/labels/
+  // assignee are folded into the SAME updateTask (GAP-2 — one write, not two).
   const canonical: Partial<Task> = {};
   if (type !== undefined) canonical.type = type;
   if (dependencies.length > 0) canonical.dependencies = dependencies;
+  if (args.draft) {
+    if (args.priority !== undefined) canonical.priority = args.priority;
+    if (args.milestone !== undefined) canonical.milestone = args.milestone;
+    if (args.labels !== undefined) canonical.labels = args.labels;
+    if (args.assignee !== undefined) canonical.assignee = args.assignee;
+  }
   if (Object.keys(canonical).length > 0) {
     await deps.writer.updateTask(id, canonical, deps.parser);
   }

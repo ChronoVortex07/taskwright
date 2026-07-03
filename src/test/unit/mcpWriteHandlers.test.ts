@@ -89,6 +89,22 @@ describe('createTaskHandler', () => {
       true
     );
   });
+
+  it('draft create writes priority + milestone into the DRAFT file (GAP-2)', async () => {
+    const d = deps();
+    // seed a milestone-less config; priority is validated against config priorities
+    const summary = await createTaskHandler(d, {
+      title: 'Proposed feature', draft: true, priority: 'high', milestone: 'v1', category: 'Features',
+    });
+    expect(summary.id).toBe('DRAFT-1');
+    const file = fs.readFileSync(
+      path.join(backlogPath, 'drafts', 'draft-1 - Proposed-feature.md'), 'utf-8'
+    );
+    expect(file).toMatch(/^priority:\s*high/m);
+    expect(file).toMatch(/^milestone:\s*v1/m);
+    expect(file).toMatch(/^category:\s*Features/m);
+    expect(file).toMatch(/^status:\s*Draft/m); // never rewritten to a board status
+  });
 });
 
 describe('editTaskHandler', () => {
