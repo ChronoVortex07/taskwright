@@ -167,6 +167,21 @@ export async function materializeRefToWorktree(
   ).stdout.trim();
   const refFiles = new Set(listed.length > 0 ? listed.split('\n') : []);
 
+  // Refuse to write anything outside the board subdirs. A board commit only
+  // ever contains backlog/{tasks,drafts,completed,archive} paths; anything else
+  // means the ref points at the wrong commit (e.g. a code branch), and
+  // `checkout-index --all --force` below would overwrite the user's repo root
+  // with it — which is exactly how a poisoned ref once mass-reverted the root.
+  const allowedPrefixes = BOARD_SUBDIRS.map((sub) => `${backlogDir}/${sub}/`);
+  for (const rel of refFiles) {
+    if (!allowedPrefixes.some((prefix) => rel.startsWith(prefix))) {
+      throw new Error(
+        `materialize refused: ref "${opts.ref}" contains non-board path "${rel}" — ` +
+          `a board commit must only touch ${backlogDir}/{${BOARD_SUBDIRS.join(',')}}`
+      );
+    }
+  }
+
   // Pre-create leading directories (e.g. archive/tasks/) so checkout-index can
   // write nested paths regardless of git version, then write the files out.
   for (const rel of refFiles) {
@@ -195,6 +210,20 @@ export async function setLocalRef(
 }
 
 /**
+ * Private ref where `fetchRef` stages the fetched tip. FETCH_HEAD is never
+ * read: it is a single unlocked file shared by every fetch in the repo, so a
+ * concurrent full `git fetch` (VS Code autofetch, GitKraken, another session)
+ * can overwrite it between our fetch and our read. That race once resolved the
+ * board ref to a stale `origin/main` and materialized that entire code tree
+ * over the repo root. A ref update is atomic, and at worst a concurrent
+ * `fetchRef` of the same ref stages a *fresher* tip of the same remote ref.
+ */
+function fetchStagingRef(ref: string): string {
+  const short = ref.startsWith('refs/') ? ref.slice('refs/'.length).replace(/\//g, '-') : ref;
+  return `refs/taskwright/fetch/${short}`;
+}
+
+/**
  * Fetch `ref` from `remote` and return the fetched remote tip, or null when the
  * remote does not have the ref. Does not move any local branch itself.
  */
@@ -204,13 +233,16 @@ export async function fetchRef(
   ref: string,
   exec: BoardGitExec = defaultBoardExec
 ): Promise<string | null> {
+  const staging = fetchStagingRef(ref);
   try {
-    await exec(repoRoot, ['fetch', '--quiet', remote, qualifyRef(ref)]);
+    // `+` forces the staging update: board compaction rewrites the ref history
+    // (lease-guarded force-push), so the fetch must accept non-fast-forward moves.
+    await exec(repoRoot, ['fetch', '--quiet', remote, `+${qualifyRef(ref)}:${staging}`]);
   } catch {
     return null; // remote has no such ref (or unreachable)
   }
   try {
-    const { stdout } = await exec(repoRoot, ['rev-parse', '--verify', '--quiet', 'FETCH_HEAD']);
+    const { stdout } = await exec(repoRoot, ['rev-parse', '--verify', '--quiet', staging]);
     const sha = stdout.trim();
     return sha.length > 0 ? sha : null;
   } catch {

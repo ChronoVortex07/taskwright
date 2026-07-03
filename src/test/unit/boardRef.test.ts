@@ -15,9 +15,11 @@ import {
   setLocalRef,
   fetchRef,
   pushRef,
+  pushRefForceWithLease,
   isAncestor,
   revCount,
   commitTreeRoot,
+  type BoardGitExec,
 } from '../../core/boardRef';
 import { makeTempGitRepo, TempRepo } from './helpers/tempGitRepo';
 
@@ -179,6 +181,28 @@ describe('materializeRefToWorktree', () => {
   });
   afterEach(() => repo.cleanup());
 
+  it('refuses to materialize a ref whose tree contains non-board paths', async () => {
+    // Point the board ref at the repo's HEAD — a full code tree, simulating the
+    // ref being poisoned with a code commit (the 2026-07 root-flush incident).
+    await repo.git(['update-ref', 'refs/heads/taskwright-board', await repo.headSha()]);
+    repo.writeFile('README.md', 'local-work\n');
+
+    await expect(
+      materializeRefToWorktree({
+        repoRoot: repo.root,
+        ref: 'taskwright-board',
+        indexFile: indexFile(),
+        exec: defaultBoardExec,
+      })
+    ).rejects.toThrow(/non-board path/);
+
+    // Nothing outside the board dirs was written…
+    expect(read('README.md')).toBe('local-work\n');
+    // …and local board files were NOT pruned against the bogus tree.
+    expect(exists('backlog/tasks/task-1 - A.md')).toBe(true);
+    expect(exists('backlog/tasks/task-2 - B.md')).toBe(true);
+  });
+
   it('overwrites, adds, and prunes local board files to match the ref', async () => {
     // Diverge the working copy: A modified locally, B removed, C added locally.
     repo.writeFile('backlog/tasks/task-1 - A.md', 'A-local-edit\n');
@@ -333,6 +357,78 @@ describe('remote ref helpers', () => {
     expect(push.rejected).toBe(true);
 
     cloneB.cleanup();
+  });
+});
+
+describe('fetchRef FETCH_HEAD immunity (root-flush regression)', () => {
+  let origin: string;
+  let clone: TempRepo;
+  let cleanup: () => void;
+  const indexFile = () => path.join(clone.root, '.taskwright', 'board.index');
+
+  beforeEach(async () => {
+    ({ origin, clone, cleanup } = await makeOriginAndClone());
+    clone.addGitignore(['.taskwright/', 'backlog/tasks/']);
+    clone.writeFile('backlog/tasks/task-1 - A.md', 'A\n');
+  });
+  afterEach(() => cleanup());
+
+  it('returns the fetched board tip even when FETCH_HEAD is concurrently overwritten', async () => {
+    const { commit } = await snapshotBoardToRef({
+      repoRoot: clone.root,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      message: 'seed',
+      exec: defaultBoardExec,
+    });
+    await pushRef(clone.root, 'origin', 'taskwright-board', defaultBoardExec);
+
+    // Simulate a concurrent full `git fetch origin` (VS Code autofetch, GitKraken):
+    // immediately after fetchRef's own fetch completes, FETCH_HEAD is rewritten
+    // with `main`'s (old) tip as its for-merge line. Resolving via FETCH_HEAD
+    // would return this interloper sha — which is exactly how the board poll once
+    // materialized a stale `origin/main` over the whole repo root.
+    const interloperSha = await clone.headSha();
+    expect(interloperSha).not.toBe(commit);
+    const poisoningExec: BoardGitExec = async (cwd, args, env) => {
+      const out = await defaultBoardExec(cwd, args, env);
+      if (args[0] === 'fetch') {
+        fs.writeFileSync(
+          path.join(clone.root, '.git', 'FETCH_HEAD'),
+          `${interloperSha}\t\tbranch 'main' of ${origin}\n`
+        );
+      }
+      return out;
+    };
+
+    expect(await fetchRef(clone.root, 'origin', 'taskwright-board', poisoningExec)).toBe(commit);
+  });
+
+  it('follows a compacted (force-moved) remote board ref', async () => {
+    const { commit: first } = await snapshotBoardToRef({
+      repoRoot: clone.root,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      message: 's1',
+      exec: defaultBoardExec,
+    });
+    await pushRef(clone.root, 'origin', 'taskwright-board', defaultBoardExec);
+    expect(await fetchRef(clone.root, 'origin', 'taskwright-board', defaultBoardExec)).toBe(first);
+
+    // Compact: replace the history with a parentless commit and force-push (lease).
+    const root = await commitTreeRoot(clone.root, 'taskwright-board', 'compact', defaultBoardExec);
+    await setLocalRef(clone.root, 'taskwright-board', root, defaultBoardExec);
+    const push = await pushRefForceWithLease(
+      clone.root,
+      'origin',
+      'taskwright-board',
+      first,
+      defaultBoardExec
+    );
+    expect(push.ok).toBe(true);
+
+    // The fetch must survive the non-fast-forward move of the remote ref.
+    expect(await fetchRef(clone.root, 'origin', 'taskwright-board', defaultBoardExec)).toBe(root);
   });
 });
 
