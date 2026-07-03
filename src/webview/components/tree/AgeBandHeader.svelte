@@ -6,14 +6,17 @@
     scale: number;
     tx: number;
     onOpenMilestone: (band: string) => void;
+    /** Name of the band to emphasize while a reslot drag hovers it (null = none). */
+    emphasis?: string | null;
   }
-  let { bands, scale, tx, onOpenMilestone }: Props = $props();
+  let { bands, scale, tx, onOpenMilestone, emphasis = null }: Props = $props();
 </script>
 
 <div class="tree-band-headers" data-testid="tree-band-headers">
   {#each bands as band (band.name)}
     <button
       class="tree-band-header"
+      class:emphasized={band.name === emphasis}
       data-testid="tree-band-{band.name}"
       style="left:{band.x * scale + tx}px; width:{band.width * scale}px;"
       onclick={() => onOpenMilestone(band.name)}
@@ -51,6 +54,11 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
     background: color-mix(in srgb, var(--vscode-editor-background) 85%, transparent);
+  }
+  .tree-band-header.emphasized {
+    color: var(--vscode-foreground);
+    background: color-mix(in srgb, var(--vscode-focusBorder) 18%, var(--vscode-editor-background));
+    border-left-color: var(--vscode-focusBorder);
   }
   .tree-band-label {
     padding: 0 8px;

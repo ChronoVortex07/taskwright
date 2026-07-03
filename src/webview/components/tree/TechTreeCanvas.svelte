@@ -16,6 +16,7 @@
     type Point,
   } from '../../lib/treeGeometry';
   import { wouldCreateCycle } from '../../../core/treeGate';
+  import { calculateOrdinalsForDrop } from '../../../core/ordinalUtils';
   import DragLayer, { type DragState } from './DragLayer.svelte';
   import TreeNode from './TreeNode.svelte';
   import EdgeLayer from './EdgeLayer.svelte';
@@ -466,16 +467,93 @@
       ? { taskId: overId, dependsOn: fromId }
       : { taskId: fromId, dependsOn: overId };
   }
+  /**
+   * Reslot validity (M2): bugs are reorder-only. A bug drop onto another LANE is
+   * refused here (red). The band axis is enforced in onReslotDrop (bug ⇒ never
+   * reslotTask) rather than by a literal band comparison: bugs have `band: ''` and
+   * anchor under the FIRST populated band's x-range, so bandAtX always resolves some
+   * band and a literal sameBand check would mark every bug drag invalid — forbidding
+   * the in-lane ordinal reorder directive 9 requires.
+   */
   function reslotValid(
-    _t: Task | undefined,
-    _lane: string | undefined,
+    t: Task | undefined,
+    lane: string | undefined,
     _band: string | undefined,
     _overId: string | null
   ): boolean {
+    if (!t) return false;
+    if (t.type === 'bug') {
+      // A bug stays on the Bugs lane; only in-lane drops are valid (they reorder).
+      return (lane ?? t.layout?.lane) === (t.layout?.lane ?? 'Bugs');
+    }
     return true;
   }
   function onReslotDrop() {
-    /* Task 5 */
+    if (!drag || drag.mode !== 'reslot') return;
+    const t = layoutNodes.find((n) => n.id === drag!.taskId);
+    if (!t || !t.layout) return;
+    if (!drag.valid) return; // bug cross-lane etc. — refused (DragLayer showed red)
+
+    // M2 (directive 9): bugs are reorder-only. NEVER post reslotTask for a bug — a
+    // horizontal drag must not assign a milestone; any in-lane drop reorders ordinal.
+    if (t.type === 'bug') {
+      const updates = inCellReorder(t, drag.cursor.y);
+      if (updates.length > 0) vscode.postMessage({ type: 'reorderTasks', updates });
+      return;
+    }
+
+    const fromLane = t.layout.lane;
+    const fromBand = t.layout.band || 'Backburner';
+    const toLane = drag.targetLane ?? fromLane;
+    const toBand = drag.targetBand ?? fromBand;
+    const laneChanged = toLane !== fromLane;
+    const bandChanged = toBand !== fromBand;
+
+    if (!laneChanged && !bandChanged) {
+      // Same cell → ordinal reorder among the cell's siblings (kanban path parity).
+      const updates = inCellReorder(t, drag.cursor.y);
+      if (updates.length > 0) vscode.postMessage({ type: 'reorderTasks', updates });
+      return;
+    }
+
+    // Lane and/or band changed → reslot the changed field(s) only.
+    const msg: { type: 'reslotTask'; taskId: string; category?: string; milestone?: string } = {
+      type: 'reslotTask',
+      taskId: t.id,
+    };
+    if (laneChanged) msg.category = toLane; // controller maps Misc → clearCategory
+    if (bandChanged) msg.milestone = toBand; // controller maps Backburner → clear
+    vscode.postMessage(msg);
+  }
+
+  /** In-cell ordinal reorder: order same-cell siblings, find the drop index by cursor Y. */
+  function inCellReorder(dragged: Task, cursorWorldY: number) {
+    const lane = dragged.layout!.lane;
+    const band = dragged.layout!.band;
+    const siblings = layoutNodes
+      .filter((n) => n.layout?.lane === lane && (n.layout?.band || '') === (band || ''))
+      .map((n) => ({ taskId: n.id, ordinal: n.ordinal, priority: n.priority }));
+    if (siblings.length <= 1) return [];
+    const sorted = sortSiblingsByBox(siblings);
+    // Drop index = count of siblings whose row-center is above the cursor.
+    let dropIndex = 0;
+    for (const s of sorted) {
+      const box = geometry.nodes.get(s.taskId);
+      if (box && box.y + box.height / 2 < cursorWorldY && s.taskId !== dragged.id) dropIndex++;
+    }
+    return calculateOrdinalsForDrop(
+      sorted,
+      { taskId: dragged.id, ordinal: dragged.ordinal, priority: dragged.priority },
+      dropIndex
+    );
+  }
+
+  function sortSiblingsByBox(cards: Array<{ taskId: string; ordinal?: number; priority?: string }>) {
+    return [...cards].sort((a, b) => {
+      const ba = geometry.nodes.get(a.taskId);
+      const bb = geometry.nodes.get(b.taskId);
+      return (ba?.y ?? 0) - (bb?.y ?? 0);
+    });
   }
   function onConnectDrop() {
     if (!drag || drag.mode !== 'connect') return;
@@ -660,8 +738,19 @@
       role="application"
       aria-label="Tech tree canvas"
     >
-      <AgeBandHeader bands={geometry.bands} scale={vp.scale} tx={vp.tx} onOpenMilestone={openMilestone} />
-      <LaneBand lanes={geometry.lanes} scale={vp.scale} ty={vp.ty} />
+      <AgeBandHeader
+        bands={geometry.bands}
+        scale={vp.scale}
+        tx={vp.tx}
+        onOpenMilestone={openMilestone}
+        emphasis={drag?.mode === 'reslot' ? (dragBandTarget?.name ?? null) : null}
+      />
+      <LaneBand
+        lanes={geometry.lanes}
+        scale={vp.scale}
+        ty={vp.ty}
+        emphasis={drag?.mode === 'reslot' ? (dragLaneTarget?.name ?? null) : null}
+      />
 
       <div
         class="tree-surface"
