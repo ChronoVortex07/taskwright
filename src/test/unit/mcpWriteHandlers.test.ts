@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -17,6 +19,7 @@ import {
   promoteDraftsHandler,
   demoteTaskHandler,
   createSubtaskHandler,
+  attachPlanHandler,
   getActiveTask,
   claimTaskHandler,
   createCategoryHandler,
@@ -25,6 +28,10 @@ import {
 } from '../../mcp/handlers';
 import type { McpHandlerDeps } from '../../mcp/handlers';
 import { writeActiveTask } from '../../core/activeTask';
+import { snapshotBoardToRef, pushRef } from '../../core/boardRef';
+import { makeTempGitRepo, type TempRepo } from './helpers/tempGitRepo';
+
+const execFileAsync = promisify(execFile);
 
 let root: string;
 let backlogPath: string;
@@ -98,11 +105,16 @@ describe('createTaskHandler', () => {
     const d = deps();
     // seed a milestone-less config; priority is validated against config priorities
     const summary = await createTaskHandler(d, {
-      title: 'Proposed feature', draft: true, priority: 'high', milestone: 'v1', category: 'Features',
+      title: 'Proposed feature',
+      draft: true,
+      priority: 'high',
+      milestone: 'v1',
+      category: 'Features',
     });
     expect(summary.id).toBe('DRAFT-1');
     const file = fs.readFileSync(
-      path.join(backlogPath, 'drafts', 'draft-1 - Proposed-feature.md'), 'utf-8'
+      path.join(backlogPath, 'drafts', 'draft-1 - Proposed-feature.md'),
+      'utf-8'
     );
     expect(file).toMatch(/^priority:\s*high/m);
     expect(file).toMatch(/^milestone:\s*v1/m);
@@ -196,10 +208,16 @@ describe('draft lifecycle', () => {
 
   it('a Done baseline draft round-trips its status and promotes to a Done task (P6/D2)', async () => {
     const d = deps();
-    const draft = await createTaskHandler(d, { title: 'Auth subsystem', draft: true, status: 'Done', category: 'Platform' });
+    const draft = await createTaskHandler(d, {
+      title: 'Auth subsystem',
+      draft: true,
+      status: 'Done',
+      category: 'Platform',
+    });
     expect(draft.id).toBe('DRAFT-1');
     const file = fs.readFileSync(
-      path.join(backlogPath, 'drafts', 'draft-1 - Auth-subsystem.md'), 'utf-8'
+      path.join(backlogPath, 'drafts', 'draft-1 - Auth-subsystem.md'),
+      'utf-8'
     );
     expect(file).toMatch(/^status:\s*Done/m); // NOT a synthetic 'Draft'
     const promoted = await promoteDraftHandler(d, { taskId: 'DRAFT-1' });
@@ -440,7 +458,10 @@ describe('createCategoryHandler', () => {
 describe('createMilestoneHandler', () => {
   it('creates the first milestone as m-0, writes the file, and list_milestones reflects it', async () => {
     const d = deps();
-    const res = await createMilestoneHandler(d, { name: 'Foundation', description: 'The baseline age.' });
+    const res = await createMilestoneHandler(d, {
+      name: 'Foundation',
+      description: 'The baseline age.',
+    });
     expect(res).toEqual({ created: true, id: 'm-0', milestone: 'Foundation' });
     const files = fs.readdirSync(path.join(backlogPath, 'milestones'));
     expect(files.some((f) => /^m-0 - foundation\.md$/.test(f))).toBe(true);
@@ -465,14 +486,20 @@ describe('createMilestoneHandler', () => {
     expect(a.id).toBe('m-0');
     expect(b.id).toBe('m-1');
     const bands = await listMilestonesHandler(d);
-    const order = bands.filter((x) => x.name === 'Alpha' || x.name === 'Beta').sort((x, y) => x.order - y.order);
+    const order = bands
+      .filter((x) => x.name === 'Alpha' || x.name === 'Beta')
+      .sort((x, y) => x.order - y.order);
     expect(order.map((x) => x.name)).toEqual(['Alpha', 'Beta']); // Alpha (m-0) left of Beta (m-1)
   });
 
   it('rejects the reserved Backburner band (case-insensitive) — D6', async () => {
     const d = deps();
-    await expect(createMilestoneHandler(d, { name: 'Backburner' })).rejects.toThrow(/reserved|Backburner/i);
-    await expect(createMilestoneHandler(d, { name: 'backburner' })).rejects.toThrow(/reserved|Backburner/i);
+    await expect(createMilestoneHandler(d, { name: 'Backburner' })).rejects.toThrow(
+      /reserved|Backburner/i
+    );
+    await expect(createMilestoneHandler(d, { name: 'backburner' })).rejects.toThrow(
+      /reserved|Backburner/i
+    );
   });
 
   it('rejects a blank name', async () => {
@@ -482,8 +509,212 @@ describe('createMilestoneHandler', () => {
   it('passes the description through to the milestone file', async () => {
     const d = deps();
     await createMilestoneHandler(d, { name: 'Gamma', description: 'Third age notes.' });
-    const file = fs.readdirSync(path.join(backlogPath, 'milestones')).find((f) => /^m-0 - gamma/.test(f))!;
+    const file = fs
+      .readdirSync(path.join(backlogPath, 'milestones'))
+      .find((f) => /^m-0 - gamma/.test(f))!;
     const content = fs.readFileSync(path.join(backlogPath, 'milestones', file), 'utf-8');
     expect(content).toContain('Third age notes.');
+  });
+});
+
+describe('synced-board write routing (TASK-28)', () => {
+  const OFF_CFG = {
+    mode: 'off' as const,
+    ref: 'taskwright-board',
+    remote: 'origin',
+    pollSeconds: 20,
+  };
+  const GITHUB_CFG = { ...OFF_CFG, mode: 'github' as const };
+
+  /** Plain deps pinned to mode=off (fixture seeding must not route through the engine). */
+  function offDeps(): McpHandlerDeps {
+    return { ...deps(), syncConfigForRoot: async () => OFF_CFG };
+  }
+
+  /** Deps pinned to mode=github with a spy engine that runs `apply` and records the message. */
+  function syncedDeps(): { d: McpHandlerDeps; messages: string[] } {
+    const messages: string[] = [];
+    const d: McpHandlerDeps = {
+      ...deps(),
+      syncConfigForRoot: async () => GITHUB_CFG,
+      boardWriteSynced: async (_target, message, apply) => {
+        const result = await apply();
+        messages.push(typeof message === 'function' ? message(result) : message);
+        return { status: 'ok', commit: 'spy-commit', result };
+      },
+    };
+    return { d, messages };
+  }
+
+  const cases: Array<{
+    tool: string;
+    seed?: (d: McpHandlerDeps) => Promise<unknown>;
+    invoke: (d: McpHandlerDeps) => Promise<unknown>;
+    message: RegExp;
+  }> = [
+    {
+      tool: 'create_task',
+      invoke: (d) => createTaskHandler(d, { title: 'Routed' }),
+      message: /^create TASK-1$/,
+    },
+    {
+      tool: 'edit_task',
+      seed: (d) => createTaskHandler(d, { title: 'A' }),
+      invoke: (d) => editTaskHandler(d, { taskId: 'TASK-1', priority: 'high' }),
+      message: /^edit TASK-1$/,
+    },
+    {
+      tool: 'create_subtask',
+      seed: (d) => createTaskHandler(d, { title: 'A' }),
+      invoke: (d) => createSubtaskHandler(d, { parentTaskId: 'TASK-1', title: 'Sub' }),
+      message: /^create subtask TASK-1\.1$/,
+    },
+    {
+      tool: 'attach_plan',
+      seed: (d) => createTaskHandler(d, { title: 'A' }),
+      invoke: (d) => attachPlanHandler(d, { taskId: 'TASK-1', plan: 'docs/plan.md' }),
+      message: /^attach plan TASK-1$/,
+    },
+    {
+      tool: 'complete_task',
+      seed: (d) => createTaskHandler(d, { title: 'A' }),
+      invoke: (d) => completeTaskHandler(d, { taskId: 'TASK-1' }),
+      message: /^complete TASK-1$/,
+    },
+    {
+      tool: 'archive_task',
+      seed: (d) => createTaskHandler(d, { title: 'A' }),
+      invoke: (d) => archiveTaskHandler(d, { taskId: 'TASK-1' }),
+      message: /^archive TASK-1$/,
+    },
+    {
+      tool: 'restore_task',
+      seed: async (d) => {
+        await createTaskHandler(d, { title: 'A' });
+        await archiveTaskHandler(d, { taskId: 'TASK-1' });
+      },
+      invoke: (d) => restoreTaskHandler(d, { taskId: 'TASK-1' }),
+      message: /^restore TASK-1$/,
+    },
+    {
+      tool: 'promote_draft',
+      seed: (d) => createTaskHandler(d, { title: 'A', draft: true }),
+      invoke: (d) => promoteDraftHandler(d, { taskId: 'DRAFT-1' }),
+      message: /^promote DRAFT-1$/,
+    },
+    {
+      tool: 'promote_drafts',
+      seed: (d) => createTaskHandler(d, { title: 'A', draft: true }),
+      invoke: (d) => promoteDraftsHandler(d, { taskIds: ['DRAFT-1'] }),
+      message: /^promote DRAFT-1$/,
+    },
+    {
+      tool: 'demote_task',
+      seed: (d) => createTaskHandler(d, { title: 'A' }),
+      invoke: (d) => demoteTaskHandler(d, { taskId: 'TASK-1' }),
+      message: /^demote TASK-1$/,
+    },
+  ];
+
+  for (const c of cases) {
+    it(`${c.tool} routes its board write through the sync engine when sync is on`, async () => {
+      if (c.seed) await c.seed(offDeps());
+      const { d, messages } = syncedDeps();
+      await c.invoke(d);
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatch(c.message);
+    });
+  }
+
+  it('mode=off never invokes the engine (legacy local write path)', async () => {
+    const d: McpHandlerDeps = {
+      ...offDeps(),
+      boardWriteSynced: async () => {
+        throw new Error('engine must not be called in off mode');
+      },
+    };
+    const summary = await createTaskHandler(d, { title: 'Local only' });
+    expect(summary.id).toBe('TASK-1');
+    expect(fs.existsSync(path.join(backlogPath, 'tasks', 'task-1 - Local-only.md'))).toBe(true);
+  });
+
+  it('a failed synced write surfaces as an error instead of pretending success', async () => {
+    const d: McpHandlerDeps = {
+      ...deps(),
+      syncConfigForRoot: async () => GITHUB_CFG,
+      boardWriteSynced: async () => ({ status: 'failed', reason: 'push failed' }),
+    };
+    await expect(createTaskHandler(d, { title: 'Doomed' })).rejects.toThrow(/push failed/);
+  });
+});
+
+describe('synced-board create -> claim race (TASK-28 integration)', () => {
+  let origin: string;
+  let repo: TempRepo;
+  let syncedRepoDeps: McpHandlerDeps;
+
+  beforeEach(async () => {
+    origin = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-create-claim-origin-'));
+    await execFileAsync('git', ['init', '-q', '--bare', '-b', 'main', origin]);
+
+    repo = await makeTempGitRepo();
+    await repo.git(['remote', 'add', 'origin', origin]);
+    await repo.git(['push', '-q', 'origin', 'main']);
+    repo.addGitignore(['.taskwright/', 'backlog/tasks/', 'backlog/drafts/']);
+    fs.mkdirSync(path.join(repo.root, 'backlog', 'tasks'), { recursive: true });
+    repo.writeFile(
+      'backlog/config.yml',
+      'project_name: "test"\nstatuses: ["To Do", "In Progress", "Done"]\ndefault_status: "To Do"\ntask_prefix: "task"\n'
+    );
+
+    // Seed + publish an empty board ref (what enableSync's reconcile does).
+    await snapshotBoardToRef({
+      repoRoot: repo.root,
+      ref: 'taskwright-board',
+      indexFile: path.join(repo.root, '.taskwright', 'board.index'),
+      message: 'seed',
+    });
+    await pushRef(repo.root, 'origin', 'taskwright-board');
+
+    const repoBacklog = path.join(repo.root, 'backlog');
+    syncedRepoDeps = {
+      root: repo.root,
+      backlogPath: repoBacklog,
+      parser: new BacklogParser(repoBacklog),
+      writer: new BacklogWriter(),
+      claimService: new ClaimService(),
+      planService: new PlanService(),
+      treeFieldService: new TreeFieldService(),
+      syncConfigForRoot: async () => ({
+        mode: 'github',
+        ref: 'taskwright-board',
+        remote: 'origin',
+        pollSeconds: 20,
+      }),
+    };
+  });
+
+  afterEach(() => {
+    repo.cleanup();
+    fs.rmSync(origin, { recursive: true, force: true });
+  });
+
+  it('claim_task right after create_task must not delete the just-created task', async () => {
+    const created = await createTaskHandler(syncedRepoDeps, { title: 'New task' });
+    expect(created.id).toBe('TASK-1');
+    const taskFile = path.join(repo.root, 'backlog', 'tasks', 'task-1 - New-task.md');
+    expect(fs.existsSync(taskFile)).toBe(true);
+
+    // The very next poll-window claim runs the engine's fetch->materialize,
+    // which prunes local board files absent from the ref. Before the fix this
+    // silently deleted the created-but-unpushed task file.
+    const claim = await claimTaskHandler(syncedRepoDeps, { taskId: 'TASK-1' });
+    expect(claim.claimed).toBe(true);
+    expect(fs.existsSync(taskFile)).toBe(true);
+
+    // The create must have landed on the shared board ref (snapshot+push).
+    const onRef = await repo.git(['ls-tree', '-r', '--name-only', 'refs/heads/taskwright-board']);
+    expect(onRef).toContain('backlog/tasks/task-1 - New-task.md');
+    expect(fs.readFileSync(taskFile, 'utf-8')).toContain('claimed_by');
   });
 });

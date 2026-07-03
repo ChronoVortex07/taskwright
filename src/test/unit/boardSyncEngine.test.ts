@@ -9,6 +9,7 @@ import {
   claimTaskSynced,
   releaseTaskSynced,
   setStatusSynced,
+  applyBoardWriteSynced,
   refreshBoard,
   MAX_SYNC_ATTEMPTS,
   type SyncEngineDeps,
@@ -255,6 +256,150 @@ describe('setStatusSynced', () => {
       deps: fakeDeps({ findTaskFile: () => null }),
     });
     expect(out).toEqual({ status: 'failed', reason: 'Task TASK-1 not found on the board' });
+  });
+});
+
+describe('applyBoardWriteSynced', () => {
+  it('materializes before apply, snapshots after, pushes, and returns the apply result', async () => {
+    const order: string[] = [];
+    const out = await applyBoardWriteSynced(
+      TARGET,
+      'create TASK-9',
+      async () => {
+        order.push('apply');
+        return 'TASK-9';
+      },
+      {
+        deps: fakeDeps({
+          materialize: async () => {
+            order.push('materialize');
+          },
+          snapshot: async () => {
+            order.push('snapshot');
+            return { commit: 'write-commit' };
+          },
+          pushRef: async () => {
+            order.push('push');
+            return { ok: true, rejected: false, stderr: '' };
+          },
+        }),
+      }
+    );
+    expect(order).toEqual(['materialize', 'apply', 'snapshot', 'push']);
+    expect(out).toEqual({ status: 'ok', commit: 'write-commit', result: 'TASK-9' });
+  });
+
+  it('re-runs apply after a rejected push (the remote advanced)', async () => {
+    let applies = 0;
+    let pushes = 0;
+    const out = await applyBoardWriteSynced(
+      TARGET,
+      'create',
+      async () => {
+        applies += 1;
+        return applies;
+      },
+      {
+        deps: fakeDeps({
+          pushRef: async () => {
+            pushes += 1;
+            return pushes === 1
+              ? { ok: false, rejected: true, stderr: 'non-fast-forward' }
+              : { ok: true, rejected: false, stderr: '' };
+          },
+        }),
+      }
+    );
+    expect(applies).toBe(2); // the write is re-applied onto the freshly materialized board
+    expect(out).toMatchObject({ status: 'ok', result: 2 });
+  });
+
+  it('computes the snapshot message from the apply result', async () => {
+    let message: string | undefined;
+    await applyBoardWriteSynced(
+      TARGET,
+      (id: string) => `create ${id}`,
+      async () => 'TASK-3',
+      {
+        deps: fakeDeps({
+          snapshot: async (a) => {
+            message = a.message;
+            return { commit: 'c' };
+          },
+        }),
+      }
+    );
+    expect(message).toBe('create TASK-3');
+  });
+
+  it('fails after MAX_SYNC_ATTEMPTS of persistent rejection', async () => {
+    let pushes = 0;
+    const out = await applyBoardWriteSynced(TARGET, 'create', async () => 'x', {
+      deps: fakeDeps({
+        pushRef: async () => {
+          pushes += 1;
+          return { ok: false, rejected: true, stderr: 'rejected' };
+        },
+      }),
+    });
+    expect(out.status).toBe('failed');
+    expect(pushes).toBe(MAX_SYNC_ATTEMPTS);
+  });
+
+  it('fails immediately on a non-rejected push error', async () => {
+    const out = await applyBoardWriteSynced(TARGET, 'create', async () => 'x', {
+      deps: fakeDeps({
+        pushRef: async () => ({ ok: false, rejected: false, stderr: 'auth denied' }),
+      }),
+    });
+    expect(out).toEqual({ status: 'failed', reason: 'auth denied' });
+  });
+
+  it('local mode (no remote) skips push and records the materialized marker', async () => {
+    let pushed = false;
+    let marker: string | undefined;
+    const out = await applyBoardWriteSynced(
+      { ...TARGET, remote: undefined },
+      'create',
+      async () => 'x',
+      {
+        deps: fakeDeps({
+          snapshot: async () => ({ commit: 'local-commit' }),
+          pushRef: async () => {
+            pushed = true;
+            return { ok: true, rejected: false, stderr: '' };
+          },
+          writeMaterialized: (_t, sha) => {
+            marker = sha;
+          },
+        }),
+      }
+    );
+    expect(out).toMatchObject({ status: 'ok', commit: 'local-commit' });
+    expect(pushed).toBe(false);
+    expect(marker).toBe('local-commit');
+  });
+
+  it('propagates an apply exception (validation errors surface to the caller)', async () => {
+    let snapshotted = false;
+    await expect(
+      applyBoardWriteSynced(
+        TARGET,
+        'create',
+        async () => {
+          throw new Error('Invalid status "Nope"');
+        },
+        {
+          deps: fakeDeps({
+            snapshot: async () => {
+              snapshotted = true;
+              return { commit: 'c' };
+            },
+          }),
+        }
+      )
+    ).rejects.toThrow('Invalid status "Nope"');
+    expect(snapshotted).toBe(false); // nothing committed when the write itself failed
   });
 });
 

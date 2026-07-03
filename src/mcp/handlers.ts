@@ -52,6 +52,8 @@ import {
   claimTaskSynced,
   releaseTaskSynced,
   setStatusSynced,
+  applyBoardWriteSynced,
+  type BoardWriteOutcome,
   type SyncTarget,
   type SyncEngineDeps,
   type ClaimOutcome,
@@ -103,6 +105,12 @@ export interface McpHandlerDeps {
   ) => Promise<{ status: 'released' } | { status: 'failed'; reason: string }>;
   /** Injectable sync-config resolver (defaults to reading sync-config.json). Tests override. */
   syncConfigForRoot?: (root: string) => Promise<SyncConfig>;
+  /** Injectable synced-board write loop (defaults to the real engine). Tests override. */
+  boardWriteSynced?: <T>(
+    target: SyncTarget,
+    message: string | ((result: T) => string),
+    apply: () => Promise<T>
+  ) => Promise<BoardWriteOutcome<T>>;
 }
 
 export interface PlanProgressSummary {
@@ -476,6 +484,30 @@ function syncTargetFor(root: string, cfg: SyncConfig): SyncTarget {
   };
 }
 
+/**
+ * Run a local board write under the sync engine when the board is synced
+ * (mode !== 'off'). On a synced board every write to
+ * backlog/{tasks,drafts,completed,archive} must land on the shared board ref:
+ * the engine fetches + materializes the current board first (so `apply` sees
+ * fresh state — ID allocation, dependency validation) and then snapshots +
+ * pushes the result. A local-only write is silently destroyed by the next
+ * materialize's prune/overwrite — e.g. a `create_task` immediately followed by
+ * `claim_task` used to delete the just-created task (TASK-28). In `off` mode
+ * this is exactly `apply()`.
+ */
+async function withSyncedBoardWrite<T>(
+  deps: McpHandlerDeps,
+  message: string | ((result: T) => string),
+  apply: () => Promise<T>
+): Promise<T> {
+  const cfg = await resolveSyncConfig(deps);
+  if (cfg.mode === 'off') return apply();
+  const write = deps.boardWriteSynced ?? applyBoardWriteSynced;
+  const out = await write(syncTargetFor(deps.root, cfg), message, apply);
+  if (out.status !== 'ok') throw new Error(`Synced-board write failed: ${out.reason}`);
+  return out.result;
+}
+
 /** Place an advisory claim on a task so other sessions can see it is in progress. */
 export async function claimTaskHandler(
   deps: McpHandlerDeps,
@@ -545,7 +577,9 @@ export async function attachPlanHandler(
   deps: McpHandlerDeps,
   args: { taskId: string; plan: string }
 ): Promise<AttachPlanResult> {
-  const plan = await deps.planService.attachPlan(args.taskId, args.plan, deps.parser);
+  const plan = await withSyncedBoardWrite(deps, `attach plan ${args.taskId}`, () =>
+    deps.planService.attachPlan(args.taskId, args.plan, deps.parser)
+  );
   return { attached: true, taskId: args.taskId, plan };
 }
 
@@ -690,7 +724,13 @@ export async function listMilestonesHandler(deps: McpHandlerDeps): Promise<Miles
   return board.bandOrder.map((name, order) => {
     const agg = totals.get(name) ?? { taskCount: 0, doneCount: 0 };
     const id = name === BACKBURNER_BAND ? undefined : idByName.get(name.toLowerCase());
-    return { ...(id ? { id } : {}), name, order, taskCount: agg.taskCount, doneCount: agg.doneCount };
+    return {
+      ...(id ? { id } : {}),
+      name,
+      order,
+      taskCount: agg.taskCount,
+      doneCount: agg.doneCount,
+    };
   });
 }
 
@@ -858,12 +898,22 @@ export async function createTaskHandler(
   deps: McpHandlerDeps,
   args: CreateTaskArgs
 ): Promise<TaskSummary> {
-  const config = await deps.parser.getConfig();
-  if (args.status !== undefined) assertValidStatus(args.status, config.statuses ?? []);
-  if (args.priority !== undefined) assertValidPriority(args.priority, resolvePriorities(config));
-  await assertDependenciesValid(deps, args.dependencies ?? []); // no targetId: new task cannot form a cycle
+  // Validation runs inside the synced write so it sees the freshly
+  // materialized board (dependency targets created elsewhere, current IDs).
+  const id = await withSyncedBoardWrite(
+    deps,
+    (r: string) => `create ${r}`,
+    async () => {
+      const config = await deps.parser.getConfig();
+      if (args.status !== undefined) assertValidStatus(args.status, config.statuses ?? []);
+      if (args.priority !== undefined)
+        assertValidPriority(args.priority, resolvePriorities(config));
+      await assertDependenciesValid(deps, args.dependencies ?? []); // no targetId: new task cannot form a cycle
 
-  const { id } = await createTaskWithTreeFields(deps, args);
+      const created = await createTaskWithTreeFields(deps, args);
+      return created.id;
+    }
+  );
   return requireSummary(deps, id);
 }
 
@@ -899,20 +949,22 @@ export async function completeTaskHandler(
   deps: McpHandlerDeps,
   args: { taskId: string }
 ): Promise<MoveResult> {
-  const task = await deps.parser.getTask(args.taskId);
-  if (task?.type === 'bug') {
-    const cause = task.causedBy?.trim();
-    if (!cause) {
-      throw new Error(
-        'A bug must be traced to the task that caused it (set caused_by) before it can be completed.'
-      );
+  const dest = await withSyncedBoardWrite(deps, `complete ${args.taskId}`, async () => {
+    const task = await deps.parser.getTask(args.taskId);
+    if (task?.type === 'bug') {
+      const cause = task.causedBy?.trim();
+      if (!cause) {
+        throw new Error(
+          'A bug must be traced to the task that caused it (set caused_by) before it can be completed.'
+        );
+      }
+      const causeTask = await deps.parser.getTask(cause);
+      if (!causeTask) {
+        throw new Error(`caused_by references ${cause} which does not exist.`);
+      }
     }
-    const causeTask = await deps.parser.getTask(cause);
-    if (!causeTask) {
-      throw new Error(`caused_by references ${cause} which does not exist.`);
-    }
-  }
-  const dest = await deps.writer.completeTask(args.taskId, deps.parser);
+    return deps.writer.completeTask(args.taskId, deps.parser);
+  });
   return { taskId: args.taskId, outcome: 'completed', path: dest };
 }
 
@@ -921,7 +973,9 @@ export async function archiveTaskHandler(
   deps: McpHandlerDeps,
   args: { taskId: string }
 ): Promise<MoveResult> {
-  const dest = await deps.writer.archiveTask(args.taskId, deps.parser);
+  const dest = await withSyncedBoardWrite(deps, `archive ${args.taskId}`, () =>
+    deps.writer.archiveTask(args.taskId, deps.parser)
+  );
   return { taskId: args.taskId, outcome: 'archived', path: dest };
 }
 
@@ -930,7 +984,9 @@ export async function restoreTaskHandler(
   deps: McpHandlerDeps,
   args: { taskId: string }
 ): Promise<MoveResult> {
-  const dest = await deps.writer.restoreArchivedTask(args.taskId, deps.parser);
+  const dest = await withSyncedBoardWrite(deps, `restore ${args.taskId}`, () =>
+    deps.writer.restoreArchivedTask(args.taskId, deps.parser)
+  );
   return { taskId: args.taskId, outcome: 'restored', path: dest };
 }
 
@@ -941,7 +997,9 @@ export async function promoteDraftHandler(
   deps: McpHandlerDeps,
   args: { taskId: string }
 ): Promise<TaskSummary> {
-  const { promoted } = await promoteDrafts(deps, [args.taskId]);
+  const { promoted } = await withSyncedBoardWrite(deps, `promote ${args.taskId}`, () =>
+    promoteDrafts(deps, [args.taskId])
+  );
   const to = promoted[0]?.to;
   if (!to) throw new Error(`Draft ${args.taskId} could not be promoted.`);
   return requireSummary(deps, to);
@@ -953,7 +1011,8 @@ export async function promoteDraftsHandler(
   deps: McpHandlerDeps,
   args: { taskIds: string[] }
 ): Promise<PromoteDraftsResult> {
-  return promoteDrafts(deps, args.taskIds ?? []);
+  const ids = args.taskIds ?? [];
+  return withSyncedBoardWrite(deps, `promote ${ids.join(' ')}`, () => promoteDrafts(deps, ids));
 }
 
 /** Demote a task to a draft (new DRAFT-N id; status preserved, P6/D2e). */
@@ -961,7 +1020,9 @@ export async function demoteTaskHandler(
   deps: McpHandlerDeps,
   args: { taskId: string }
 ): Promise<TaskSummary> {
-  const newId = await deps.writer.demoteTask(args.taskId, deps.parser);
+  const newId = await withSyncedBoardWrite(deps, `demote ${args.taskId}`, () =>
+    deps.writer.demoteTask(args.taskId, deps.parser)
+  );
   return requireSummary(deps, newId);
 }
 
@@ -970,62 +1031,64 @@ export async function editTaskHandler(
   deps: McpHandlerDeps,
   args: EditTaskArgs
 ): Promise<TaskSummary> {
-  const config = await deps.parser.getConfig();
-  if (args.status !== undefined) assertValidStatus(args.status, config.statuses ?? []);
-  if (args.priority !== undefined) assertValidPriority(args.priority, resolvePriorities(config));
+  await withSyncedBoardWrite(deps, `edit ${args.taskId}`, async () => {
+    const config = await deps.parser.getConfig();
+    if (args.status !== undefined) assertValidStatus(args.status, config.statuses ?? []);
+    if (args.priority !== undefined) assertValidPriority(args.priority, resolvePriorities(config));
 
-  const existing = await deps.parser.getTask(args.taskId);
-  if (!existing) throw new Error(`Task ${args.taskId} not found`);
+    const existing = await deps.parser.getTask(args.taskId);
+    if (!existing) throw new Error(`Task ${args.taskId} not found`);
 
-  const nextType = args.type !== undefined ? normalizeType(args.type) : existing.type;
-  const causedBy = args.causedBy?.trim();
-  if (args.causedBy !== undefined && causedBy && nextType !== 'bug') {
-    throw new Error('caused_by can only be set on a bug (type: bug).');
-  }
-  if (args.dependencies !== undefined) {
-    await assertDependenciesValid(deps, args.dependencies, args.taskId);
-  }
+    const nextType = args.type !== undefined ? normalizeType(args.type) : existing.type;
+    const causedBy = args.causedBy?.trim();
+    if (args.causedBy !== undefined && causedBy && nextType !== 'bug') {
+      throw new Error('caused_by can only be set on a bug (type: bug).');
+    }
+    if (args.dependencies !== undefined) {
+      await assertDependenciesValid(deps, args.dependencies, args.taskId);
+    }
 
-  const updates: Record<string, unknown> = {};
-  if (args.title !== undefined) updates.title = args.title;
-  if (args.status !== undefined) updates.status = args.status;
-  if (args.priority !== undefined) updates.priority = args.priority;
-  if (args.labels !== undefined) updates.labels = args.labels;
-  if (args.assignee !== undefined) updates.assignee = args.assignee;
-  if (args.milestone !== undefined) updates.milestone = args.milestone;
-  if (args.description !== undefined) updates.description = args.description;
-  if (args.acceptanceCriteria !== undefined)
-    updates.acceptanceCriteria = renderChecklist(args.acceptanceCriteria);
-  if (args.definitionOfDone !== undefined)
-    updates.definitionOfDone = renderChecklist(args.definitionOfDone);
-  if (args.implementationPlan !== undefined) updates.implementationPlan = args.implementationPlan;
-  if (args.implementationNotes !== undefined)
-    updates.implementationNotes = args.implementationNotes;
-  if (args.finalSummary !== undefined) updates.finalSummary = args.finalSummary;
-  if (args.dependencies !== undefined) updates.dependencies = args.dependencies;
-  if (args.references !== undefined) updates.references = args.references;
-  // Only a non-empty `type` (i.e. 'bug') routes through BacklogWriter; clearing is surgical (below).
-  if (args.type !== undefined && nextType !== undefined) updates.type = nextType;
+    const updates: Record<string, unknown> = {};
+    if (args.title !== undefined) updates.title = args.title;
+    if (args.status !== undefined) updates.status = args.status;
+    if (args.priority !== undefined) updates.priority = args.priority;
+    if (args.labels !== undefined) updates.labels = args.labels;
+    if (args.assignee !== undefined) updates.assignee = args.assignee;
+    if (args.milestone !== undefined) updates.milestone = args.milestone;
+    if (args.description !== undefined) updates.description = args.description;
+    if (args.acceptanceCriteria !== undefined)
+      updates.acceptanceCriteria = renderChecklist(args.acceptanceCriteria);
+    if (args.definitionOfDone !== undefined)
+      updates.definitionOfDone = renderChecklist(args.definitionOfDone);
+    if (args.implementationPlan !== undefined) updates.implementationPlan = args.implementationPlan;
+    if (args.implementationNotes !== undefined)
+      updates.implementationNotes = args.implementationNotes;
+    if (args.finalSummary !== undefined) updates.finalSummary = args.finalSummary;
+    if (args.dependencies !== undefined) updates.dependencies = args.dependencies;
+    if (args.references !== undefined) updates.references = args.references;
+    // Only a non-empty `type` (i.e. 'bug') routes through BacklogWriter; clearing is surgical (below).
+    if (args.type !== undefined && nextType !== undefined) updates.type = nextType;
 
-  if (Object.keys(updates).length > 0) {
-    await deps.writer.updateTask(args.taskId, updates as Partial<Task>, deps.parser);
-  }
+    if (Object.keys(updates).length > 0) {
+      await deps.writer.updateTask(args.taskId, updates as Partial<Task>, deps.parser);
+    }
 
-  // Clearing `type` is surgical: BacklogWriter has no omit-if-empty path for `type`,
-  // so removing the field (rather than writing an empty value) keeps the file clean.
-  if (args.type !== undefined && nextType === undefined) {
-    await deps.treeFieldService.clearType(args.taskId, deps.parser);
-  }
-  // category / caused_by are Taskwright-only surgical fields.
-  if (args.category !== undefined) {
-    if (args.category.trim() === '')
-      await deps.treeFieldService.clearCategory(args.taskId, deps.parser);
-    else await deps.treeFieldService.setCategory(args.taskId, args.category, deps.parser);
-  }
-  if (args.causedBy !== undefined) {
-    if (causedBy) await deps.treeFieldService.setCausedBy(args.taskId, causedBy, deps.parser);
-    else await deps.treeFieldService.clearCausedBy(args.taskId, deps.parser);
-  }
+    // Clearing `type` is surgical: BacklogWriter has no omit-if-empty path for `type`,
+    // so removing the field (rather than writing an empty value) keeps the file clean.
+    if (args.type !== undefined && nextType === undefined) {
+      await deps.treeFieldService.clearType(args.taskId, deps.parser);
+    }
+    // category / caused_by are Taskwright-only surgical fields.
+    if (args.category !== undefined) {
+      if (args.category.trim() === '')
+        await deps.treeFieldService.clearCategory(args.taskId, deps.parser);
+      else await deps.treeFieldService.setCategory(args.taskId, args.category, deps.parser);
+    }
+    if (args.causedBy !== undefined) {
+      if (causedBy) await deps.treeFieldService.setCausedBy(args.taskId, causedBy, deps.parser);
+      else await deps.treeFieldService.clearCausedBy(args.taskId, deps.parser);
+    }
+  });
 
   return requireSummary(deps, args.taskId);
 }
@@ -1035,9 +1098,21 @@ export async function createSubtaskHandler(
   deps: McpHandlerDeps,
   args: { parentTaskId: string; title?: string; description?: string }
 ): Promise<TaskSummary> {
-  const { id } = await deps.writer.createSubtask(args.parentTaskId, deps.backlogPath, deps.parser, {
-    title: args.title,
-    description: args.description,
-  });
+  const id = await withSyncedBoardWrite(
+    deps,
+    (r: string) => `create subtask ${r}`,
+    async () => {
+      const created = await deps.writer.createSubtask(
+        args.parentTaskId,
+        deps.backlogPath,
+        deps.parser,
+        {
+          title: args.title,
+          description: args.description,
+        }
+      );
+      return created.id;
+    }
+  );
   return requireSummary(deps, id);
 }

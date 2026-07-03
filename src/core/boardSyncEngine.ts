@@ -227,10 +227,73 @@ export async function claimTaskSynced(
   return { status: 'failed', reason: 'exhausted retries (remote kept advancing)' };
 }
 
+/** Thrown inside an `apply` to abort the CAS loop with a `failed` outcome instead of an exception. */
+class BoardWriteAbort extends Error {}
+
+export type BoardWriteOutcome<T> =
+  | { status: 'ok'; commit: string; result: T }
+  | { status: 'failed'; reason: string };
+
 /**
- * Shared CAS loop for an unconditional single-file board mutation: fetch →
- * fast-forward local → materialize → locate the task file → `mutate` it →
- * snapshot → ff-only push, retrying when the remote advances. Unlike
+ * Shared CAS loop for an arbitrary local board write: fetch → fast-forward
+ * local → materialize → `apply` the write to the fresh working copy → snapshot →
+ * ff-only push, retrying when the remote advances. Because a re-materialize
+ * fully resets the board subdirs to the ref, retrying re-runs `apply` from a
+ * clean slate (e.g. a task create re-allocates its ID against the advanced
+ * board). This is what keeps a local-only write — a `create_task` between two
+ * polls — from being silently pruned/overwritten by the next materialize
+ * (TASK-28). `message` may be computed from the apply result (the snapshot
+ * happens after `apply`), so e.g. a create can label its commit with the ID it
+ * allocated. Exceptions from `apply` (validation, missing files) propagate to
+ * the caller; nothing is snapshotted or pushed in that case.
+ */
+export async function applyBoardWriteSynced<T>(
+  target: SyncTarget,
+  message: string | ((result: T) => string),
+  apply: () => Promise<T> | T,
+  opts: { deps?: Partial<SyncEngineDeps> } = {}
+): Promise<BoardWriteOutcome<T>> {
+  const d: SyncEngineDeps = { ...defaultSyncEngineDeps, ...opts.deps };
+  const backlogDir = target.backlogDir ?? 'backlog';
+
+  for (let attempt = 1; attempt <= MAX_SYNC_ATTEMPTS; attempt += 1) {
+    const base = await syncToRemoteBase(target, d);
+
+    let result: T;
+    try {
+      result = await apply();
+    } catch (e) {
+      if (e instanceof BoardWriteAbort) return { status: 'failed', reason: e.message };
+      throw e;
+    }
+
+    const snap = await d.snapshot({
+      repoRoot: target.repoRoot,
+      ref: target.ref,
+      indexFile: target.indexFile,
+      message: typeof message === 'function' ? message(result) : message,
+      parent: base,
+      backlogDir,
+    });
+
+    if (!target.remote) {
+      d.writeMaterialized(target, snap.commit);
+      return { status: 'ok', commit: snap.commit, result };
+    }
+    const push = await d.pushRef(target.repoRoot, target.remote, target.ref);
+    if (push.ok) {
+      d.writeMaterialized(target, snap.commit);
+      return { status: 'ok', commit: snap.commit, result };
+    }
+    if (!push.rejected) return { status: 'failed', reason: push.stderr || 'push failed' };
+    await d.sleep(backoffMs(attempt));
+  }
+  return { status: 'failed', reason: 'exhausted retries (remote kept advancing)' };
+}
+
+/**
+ * CAS loop for an unconditional single-file board mutation: locate the task
+ * file on the freshly materialized board and `mutate` it. Unlike
  * `claimTaskSynced` there is no surrender check — the caller already owns the
  * right to write (e.g. releasing its own claim, or `request_merge` driving the
  * task it holds through the merge). Returns the new commit on success.
@@ -243,36 +306,17 @@ async function mutateTaskSynced(
   d: SyncEngineDeps
 ): Promise<{ status: 'ok'; commit: string } | { status: 'failed'; reason: string }> {
   const backlogDir = target.backlogDir ?? 'backlog';
-
-  for (let attempt = 1; attempt <= MAX_SYNC_ATTEMPTS; attempt += 1) {
-    const base = await syncToRemoteBase(target, d);
-
-    const file = d.findTaskFile(target.repoRoot, backlogDir, taskId);
-    if (!file) return { status: 'failed', reason: `Task ${taskId} not found on the board` };
-
-    mutate(file, d);
-    const snap = await d.snapshot({
-      repoRoot: target.repoRoot,
-      ref: target.ref,
-      indexFile: target.indexFile,
-      message,
-      parent: base,
-      backlogDir,
-    });
-
-    if (!target.remote) {
-      d.writeMaterialized(target, snap.commit);
-      return { status: 'ok', commit: snap.commit };
-    }
-    const push = await d.pushRef(target.repoRoot, target.remote, target.ref);
-    if (push.ok) {
-      d.writeMaterialized(target, snap.commit);
-      return { status: 'ok', commit: snap.commit };
-    }
-    if (!push.rejected) return { status: 'failed', reason: push.stderr || 'push failed' };
-    await d.sleep(backoffMs(attempt));
-  }
-  return { status: 'failed', reason: 'exhausted retries (remote kept advancing)' };
+  const out = await applyBoardWriteSynced<void>(
+    target,
+    message,
+    () => {
+      const file = d.findTaskFile(target.repoRoot, backlogDir, taskId);
+      if (!file) throw new BoardWriteAbort(`Task ${taskId} not found on the board`);
+      mutate(file, d);
+    },
+    { deps: d }
+  );
+  return out.status === 'ok' ? { status: 'ok', commit: out.commit } : out;
 }
 
 export async function releaseTaskSynced(
