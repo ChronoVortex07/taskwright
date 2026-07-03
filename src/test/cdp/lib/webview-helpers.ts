@@ -193,6 +193,62 @@ export async function clickInWebview(
 }
 
 /**
+ * Pointer-click an element in a webview: dispatch `pointerdown` → `pointerup` at the
+ * element's center, in the inner frame's JS context so Svelte handlers fire.
+ *
+ * The tech-tree canvas (P3b) drives node selection through a pointer gesture machine
+ * (`onpointerdown`/`onpointerup` on `.tree-viewport`) — tree nodes have no `onclick`,
+ * so a bare `MouseEvent('click')` (clickInWebview) never selects one. Both events use
+ * the same coordinates, keeping the gesture under DRAG_THRESHOLD so it classifies as
+ * a click/select rather than a drag or pan.
+ *
+ * `setPointerCapture`/`releasePointerCapture` are stubbed for the dispatch (and
+ * restored right after): a synthetic pointerId is not an active pointer, so the real
+ * methods throw and would abort the gesture handlers mid-flight. `dispatchEvent` runs
+ * handlers synchronously, so restoring immediately afterwards is safe.
+ */
+export async function pointerClickInWebview(
+  cdp: CdpClient,
+  role: WebviewRole,
+  selector: string
+): Promise<boolean> {
+  const sessionId = await findWebviewByRole(cdp, role);
+  if (!sessionId) return false;
+
+  const result = await evaluateInWebview(
+    cdp,
+    sessionId,
+    `
+    const el = doc.querySelector(${JSON.stringify(selector)});
+    if (!el) return 'not-found';
+    const rect = el.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const proto = win.Element.prototype;
+    const origSet = proto.setPointerCapture;
+    const origRel = proto.releasePointerCapture;
+    proto.setPointerCapture = function () {};
+    proto.releasePointerCapture = function () {};
+    try {
+      for (const type of ['pointerdown', 'pointerup']) {
+        el.dispatchEvent(new win.PointerEvent(type, {
+          bubbles: true, cancelable: true, composed: true, view: win,
+          pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0,
+          buttons: type === 'pointerdown' ? 1 : 0,
+          clientX: cx, clientY: cy,
+        }));
+      }
+    } finally {
+      proto.setPointerCapture = origSet;
+      proto.releasePointerCapture = origRel;
+    }
+    return 'clicked';
+    `
+  );
+  return result === 'clicked';
+}
+
+/**
  * Click an element containing specific text in a webview.
  * Searches within elements matching `selector`.
  */

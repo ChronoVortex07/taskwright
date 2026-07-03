@@ -19,6 +19,7 @@ import {
 } from './lib/wait-helpers';
 import {
   clickInWebview,
+  pointerClickInWebview,
   setSelectValueInWebview,
   clearWebviewSessionCache,
   elementExistsInWebview,
@@ -95,7 +96,13 @@ describe('Tree popover cross-view (CDP)', () => {
 
   it('opening a node popover writes .taskwright/active-task.json', async () => {
     await openTree(instance);
-    const clicked = await clickInWebview(instance.cdp, 'tasks', '[data-testid="tree-node-TASK-1"]');
+    // P3b: node selection is pointer-driven (gesture machine on .tree-viewport;
+    // TreeNode has no onclick) — a bare click no longer opens the popover.
+    const clicked = await pointerClickInWebview(
+      instance.cdp,
+      'tasks',
+      '[data-testid="tree-node-TASK-1"]'
+    );
     expect(clicked).toBe(true);
     const content = await waitForFileContent(activeTaskPath(workspacePath), '"taskId": "TASK-1"', {
       timeoutMs: 12_000,
@@ -105,7 +112,7 @@ describe('Tree popover cross-view (CDP)', () => {
 
   it('closing the popover clears active-task.json', async () => {
     await openTree(instance);
-    await clickInWebview(instance.cdp, 'tasks', '[data-testid="tree-node-TASK-1"]');
+    await pointerClickInWebview(instance.cdp, 'tasks', '[data-testid="tree-node-TASK-1"]');
     await waitForFileContent(activeTaskPath(workspacePath), '"taskId": "TASK-1"', { timeoutMs: 12_000 });
     await clickInWebview(instance.cdp, 'tasks', '[data-testid="tp-close"]');
     await waitForFileGone(activeTaskPath(workspacePath));
@@ -114,7 +121,7 @@ describe('Tree popover cross-view (CDP)', () => {
 
   it('status quick-edit in the popover writes the task file', async () => {
     await openTree(instance);
-    await clickInWebview(instance.cdp, 'tasks', '[data-testid="tree-node-TASK-1"]');
+    await pointerClickInWebview(instance.cdp, 'tasks', '[data-testid="tree-node-TASK-1"]');
     const changed = await setSelectValueInWebview(
       instance.cdp,
       'tasks',
