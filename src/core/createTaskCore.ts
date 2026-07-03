@@ -82,15 +82,16 @@ export async function createTaskWithTreeFields(
     throw new Error('caused_by can only be set on a bug (type: bug).');
   }
   const dependencies = args.dependencies ?? [];
-  if (args.draft && args.status !== undefined) {
-    throw new Error('drafts always have status Draft; do not set status on a draft.');
-  }
 
   let id: string;
   if (args.draft) {
+    // P6/D2a: a draft is status-carrying (orthogonal to the provisional folder marker).
+    // The MCP handler already rejects an unknown status (assertValidStatus); the core just
+    // routes the caller's status to createDraft, which defaults it when unspecified.
     ({ id } = await deps.writer.createDraft(deps.backlogPath, deps.parser, {
       title,
       description: args.description,
+      status: args.status,
     }));
   } else {
     ({ id } = await deps.writer.createTask(

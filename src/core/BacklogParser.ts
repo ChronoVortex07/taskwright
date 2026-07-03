@@ -277,11 +277,21 @@ export class BacklogParser {
 
   /**
    * Get draft tasks from the drafts/ folder.
-   * Enforces status: 'Draft' on all returned tasks.
+   * Reflects each draft's real parsed status (the drafts/ folder is the provisional marker,
+   * not a synthetic 'Draft' status); legacy on-disk `status: Draft` files are aliased on read
+   * to the board default.
    */
   async getDrafts(): Promise<Task[]> {
     const tasks = await this.getTasksFromFolder('drafts');
-    return tasks.map((t) => ({ ...t, status: 'Draft' }));
+    // P6/D2c: a draft is a provisional OVERLAY (folder === 'drafts', set by
+    // getTasksFromFolder), orthogonal to completion status — the folder is the marker, not a
+    // synthetic 'Draft' status. Reflect each draft's real parsed status. Legacy drafts written
+    // pre-P6 (frontmatter status: Draft, which parseStatus normalizes to 'Draft') are aliased
+    // on read to the board default so they land in a real column (migrate-on-read; the file is
+    // not rewritten until its next promote/edit).
+    const config = await this.getConfig();
+    const fallback = config.default_status || 'To Do';
+    return tasks.map((t) => (t.status === 'Draft' ? { ...t, status: fallback } : t));
   }
 
   /**

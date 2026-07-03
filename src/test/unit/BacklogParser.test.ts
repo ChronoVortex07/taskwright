@@ -2193,10 +2193,10 @@ status: To Do
 
         expect(drafts).toHaveLength(1);
         expect(drafts[0].folder).toBe('drafts');
-        expect(drafts[0].status).toBe('Draft');
+        expect(drafts[0].status).toBe('To Do');
       });
 
-      it('should enforce Draft status on all drafts', async () => {
+      it('reflects the real frontmatter status of a draft (P6/D2c)', async () => {
         vi.mocked(fs.existsSync).mockReturnValue(true);
         (fs.readdirSync as ReturnType<typeof vi.fn>).mockReturnValue(['draft-1 - Active-Draft.md']);
         vi.mocked(fs.readFileSync).mockReturnValue(`---
@@ -2210,7 +2210,17 @@ status: In Progress
         const drafts = await parser.getDrafts();
 
         expect(drafts).toHaveLength(1);
-        expect(drafts[0].status).toBe('Draft');
+        expect(drafts[0].status).toBe('In Progress');
+      });
+
+      it('aliases a legacy status: Draft on-disk draft to the board default (P6 back-compat)', async () => {
+        vi.mocked(fs.existsSync).mockReturnValue(true);
+        (fs.readdirSync as ReturnType<typeof vi.fn>).mockReturnValue(['draft-1 - Legacy.md']);
+        vi.mocked(fs.readFileSync).mockReturnValue('---\nid: DRAFT-1\ntitle: Legacy\nstatus: Draft\n---\n');
+        const parser = new BacklogParser('/fake/backlog');
+        const drafts = await parser.getDrafts();
+        expect(drafts[0].status).toBe('To Do'); // no config default → 'To Do'
+        expect(drafts[0].folder).toBe('drafts'); // provisional marker intact
       });
 
       it('should return empty array when no drafts folder exists', async () => {

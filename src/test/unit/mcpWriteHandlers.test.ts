@@ -105,7 +105,7 @@ describe('createTaskHandler', () => {
     expect(file).toMatch(/^priority:\s*high/m);
     expect(file).toMatch(/^milestone:\s*v1/m);
     expect(file).toMatch(/^category:\s*Features/m);
-    expect(file).toMatch(/^status:\s*Draft/m); // never rewritten to a board status
+    expect(file).toMatch(/^status:\s*To Do/m); // D2: a no-status draft defaults to the board status, not a synthetic 'Draft'
   });
 });
 
@@ -184,7 +184,20 @@ describe('draft lifecycle', () => {
     await createTaskHandler(deps(), { title: 'Too early' });
     const demoted = await demoteTaskHandler(deps(), { taskId: 'TASK-1' });
     expect(demoted.id).toMatch(/^DRAFT-\d+$/);
-    expect(demoted.status).toBe('Draft');
+    expect(demoted.status).toBe('To Do'); // P6/D2e: demote preserves the real status
+  });
+
+  it('a Done baseline draft round-trips its status and promotes to a Done task (P6/D2)', async () => {
+    const d = deps();
+    const draft = await createTaskHandler(d, { title: 'Auth subsystem', draft: true, status: 'Done', category: 'Platform' });
+    expect(draft.id).toBe('DRAFT-1');
+    const file = fs.readFileSync(
+      path.join(backlogPath, 'drafts', 'draft-1 - Auth-subsystem.md'), 'utf-8'
+    );
+    expect(file).toMatch(/^status:\s*Done/m); // NOT a synthetic 'Draft'
+    const promoted = await promoteDraftHandler(d, { taskId: 'DRAFT-1' });
+    expect(promoted.id).toMatch(/^TASK-\d+$/);
+    expect(promoted.status).toBe('Done'); // preserved on promote
   });
 });
 

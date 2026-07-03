@@ -77,7 +77,7 @@ describe('createTaskWithTreeFields — writer sequence', () => {
     const m = makeDeps();
     const res = await createTaskWithTreeFields(m.deps, { title: 'Spike', description: 'd', draft: true });
     expect(res).toEqual({ id: 'DRAFT-1' });
-    expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, { title: 'Spike', description: 'd' });
+    expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, { title: 'Spike', description: 'd', status: undefined });
     expect(m.createTask).not.toHaveBeenCalled();
   });
 
@@ -124,7 +124,7 @@ describe('createTaskWithTreeFields — draft field completeness (GAP-2)', () => 
       title: 'Spike caching', draft: true,
       priority: 'high', milestone: 'v1', labels: ['spike'], assignee: ['@alice'],
     });
-    expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, { title: 'Spike caching', description: undefined });
+    expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, { title: 'Spike caching', description: undefined, status: undefined });
     expect(m.createTask).not.toHaveBeenCalled();
     // ONE updateTask carrying the draft-only canonical fields:
     expect(m.updateTask).toHaveBeenCalledWith(
@@ -150,12 +150,21 @@ describe('createTaskWithTreeFields — draft field completeness (GAP-2)', () => 
     expect(m.setCausedBy).toHaveBeenCalledWith('DRAFT-1', 'TASK-1', m.deps.parser);
   });
 
-  it('draft create with an explicit status throws (drafts are always Draft)', async () => {
+  it('draft create accepts a valid status and passes it to createDraft (P6/D2a)', async () => {
     const m = makeDeps();
-    await expect(
-      createTaskWithTreeFields(m.deps, { title: 'x', draft: true, status: 'To Do' })
-    ).rejects.toThrow('drafts always have status Draft');
-    expect(m.createDraft).not.toHaveBeenCalled();
+    await createTaskWithTreeFields(m.deps, { title: 'Baseline', draft: true, status: 'Done' });
+    expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, {
+      title: 'Baseline', description: undefined, status: 'Done',
+    });
+    expect(m.createTask).not.toHaveBeenCalled();
+  });
+
+  it('draft create with no status passes status: undefined (writer applies the default)', async () => {
+    const m = makeDeps();
+    await createTaskWithTreeFields(m.deps, { title: 'Gap', draft: true });
+    expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, {
+      title: 'Gap', description: undefined, status: undefined,
+    });
   });
 
   it('non-draft create is unchanged: fields go to createTask, not a second updateTask', async () => {

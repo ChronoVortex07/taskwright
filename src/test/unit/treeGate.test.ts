@@ -70,6 +70,16 @@ describe('computeBlockedBy / isLocked', () => {
     const t = task({ id: 'TASK-1' });
     expect(isLocked(t, byId([t]), done)).toBe(false);
   });
+
+  it('a Done baseline draft satisfies a dependent (P6/D2 — Done draft unlocks its gap dependent)', () => {
+    const dependent = task({ id: 'TASK-2', dependencies: ['DRAFT-1'] });
+    const map = byId([
+      dependent,
+      task({ id: 'DRAFT-1', status: 'Done', folder: 'drafts' }), // a Done baseline draft
+    ]);
+    expect(computeBlockedBy(dependent, map, done)).toEqual([]); // unlocked
+    expect(isLocked(dependent, map, done)).toBe(false);
+  });
 });
 
 describe('wouldCreateCycle', () => {

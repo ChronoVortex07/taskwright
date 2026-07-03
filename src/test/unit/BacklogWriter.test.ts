@@ -1730,6 +1730,24 @@ status: Draft
       expect(frontmatter.id).toBe('TASK-1');
     });
 
+    it('preserves a real status on promote (P6/D2d — Done draft → Done task)', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      mockReaddirSync([]);
+      vi.spyOn(mockParser, 'getTask').mockResolvedValue({
+        id: 'DRAFT-1', title: 'Baseline', status: 'Done', folder: 'drafts',
+        filePath: '/fake/backlog/drafts/draft-1 - Baseline.md',
+        description: '', labels: [], assignee: [], dependencies: [],
+        acceptanceCriteria: [], definitionOfDone: [],
+      } as never);
+      vi.spyOn(mockParser, 'getConfig').mockResolvedValue({});
+      vi.mocked(fs.readFileSync).mockReturnValue('---\nid: DRAFT-1\ntitle: Baseline\nstatus: Done\n---\n');
+      await writer.promoteDraft('DRAFT-1', mockParser);
+      const writtenContent = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+      const frontmatter = yaml.load(writtenContent.match(/^---\n([\s\S]*?)\n---/)![1]) as Record<string, unknown>;
+      expect(frontmatter.status).toBe('Done');
+      expect(frontmatter.id).toBe('TASK-1');
+    });
+
     it('should throw error when task not found', async () => {
       vi.spyOn(mockParser, 'getTask').mockResolvedValue(undefined);
 
@@ -1791,7 +1809,28 @@ status: Draft
       const frontmatter = yaml.load(match![1]) as Record<string, unknown>;
       expect(frontmatter.id).toBe('DRAFT-1');
       expect(frontmatter.title).toBe('Untitled');
-      expect(frontmatter.status).toBe('Draft');
+      expect(frontmatter.status).toBe('To Do');
+    });
+
+    it('writes the given status when specified (P6/D2b — a Done baseline draft)', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      mockReaddirSync([]);
+      await writer.createDraft('/fake/backlog', undefined, { title: 'Baseline', status: 'Done' });
+      const writtenContent = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+      const match = writtenContent.match(/^---\n([\s\S]*?)\n---/);
+      const frontmatter = yaml.load(match![1]) as Record<string, unknown>;
+      expect(frontmatter.status).toBe('Done');
+    });
+
+    it('defaults unspecified status to config.default_status via the parser', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      mockReaddirSync([]);
+      vi.spyOn(mockParser, 'getConfig').mockResolvedValue({ default_status: 'Backlog' } as never);
+      await writer.createDraft('/fake/backlog', mockParser, { title: 'X' });
+      const writtenContent = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+      const match = writtenContent.match(/^---\n([\s\S]*?)\n---/);
+      const frontmatter = yaml.load(match![1]) as Record<string, unknown>;
+      expect(frontmatter.status).toBe('Backlog');
     });
 
     it('should generate sequential draft IDs', async () => {
@@ -3219,7 +3258,7 @@ Summary
   });
 
   describe('demoteTask', () => {
-    it('should demote a task to a draft', async () => {
+    it('should preserve the task status on demote (P6/D2e)', async () => {
       const taskContent =
         '---\nid: TASK-5\ntitle: Some Task\nstatus: In Progress\n---\n\n## Description\nContent\n';
       vi.mocked(fs.readFileSync).mockReturnValue(taskContent);
@@ -3231,7 +3270,7 @@ Summary
       expect(fs.renameSync).toHaveBeenCalled();
       const writtenContent = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
       expect(writtenContent).toContain('id: DRAFT-1');
-      expect(writtenContent).toContain('status: Draft');
+      expect(writtenContent).toContain('status: In Progress');
     });
   });
 

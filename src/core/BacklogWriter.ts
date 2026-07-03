@@ -352,7 +352,8 @@ export class BacklogWriter {
 
   /**
    * Promote a draft to a regular task: assigns new TASK-N ID, moves from drafts/ to tasks/,
-   * and updates status to the config default (or 'To Do').
+   * and PRESERVES the draft's real status (P6/D2d — a Done draft promotes to a Done task).
+   * Only a legacy/blank synthetic 'Draft' status is reset to the config default (or 'To Do').
    */
   async promoteDraft(
     taskId: string,
@@ -398,7 +399,13 @@ export class BacklogWriter {
     const content = normalizeToLF(rawContent);
     const { frontmatter, body } = this.extractFrontmatter(content);
     frontmatter.id = newTaskId;
-    frontmatter.status = config.default_status || 'To Do';
+    // P6/D2d: preserve the draft's real status on promote — a Done draft promotes to a Done
+    // task (drafts are orthogonal to status). Only a legacy/blank synthetic 'Draft' (which has
+    // no real status to preserve) is reset to the board default.
+    const rawStatus = String(frontmatter.status ?? '').trim();
+    if (!rawStatus || rawStatus.toLowerCase() === 'draft') {
+      frontmatter.status = config.default_status || 'To Do';
+    }
     frontmatter.updated_date = nowTimestamp();
     const updatedContent = restoreLineEndings(this.reconstructFile(frontmatter, body), hasCRLF);
     fs.writeFileSync(destPath, updatedContent, 'utf-8');
@@ -409,7 +416,8 @@ export class BacklogWriter {
 
   /**
    * Demote a task to a draft: assigns new DRAFT-N ID, moves from tasks/ to drafts/,
-   * and sets status to "Draft". Mirrors upstream Backlog.md demote semantics.
+   * and PRESERVES the task's real status (P6/D2e — the drafts/ folder is the provisional
+   * marker, orthogonal to completion status).
    */
   async demoteTask(taskId: string, parser: BacklogParser): Promise<string> {
     const task = await parser.getTask(taskId);
@@ -446,7 +454,9 @@ export class BacklogWriter {
     const content = normalizeToLF(rawContent);
     const { frontmatter, body } = this.extractFrontmatter(content);
     frontmatter.id = newDraftId;
-    frontmatter.status = 'Draft';
+    // P6/D2e: preserve the task's real status on demote (symmetric with promoteDraft) — the
+    // drafts/ folder is the provisional marker, so demoting no longer clobbers status to a
+    // synthetic 'Draft' (which would silently lose e.g. a Done task's status).
     frontmatter.updated_date = nowTimestamp();
     const updatedContent = restoreLineEndings(this.reconstructFile(frontmatter, body), hasCRLF);
     fs.writeFileSync(destPath, updatedContent, 'utf-8');
@@ -751,8 +761,8 @@ export class BacklogWriter {
    */
   async createDraft(
     backlogPath: string,
-    _parser?: BacklogParser,
-    opts?: { title?: string; description?: string }
+    parser?: BacklogParser,
+    opts?: { title?: string; description?: string; status?: string }
   ): Promise<{ id: string; filePath: string }> {
     const draftsDir = path.join(backlogPath, 'drafts');
     if (!fs.existsSync(draftsDir)) {
@@ -769,11 +779,16 @@ export class BacklogWriter {
     const fileName = `draft-${nextId} - ${sanitizedTitle}.md`;
     const filePath = path.join(draftsDir, fileName);
 
+    // P6/D2b: a draft carries a real status (the drafts/ folder is the provisional marker,
+    // not a synthetic 'Draft'). Default to the board default when unspecified so authoring a
+    // draft without a status, then promoting, is byte-identical to the pre-P6 flow.
+    const config = parser ? await parser.getConfig() : undefined;
+    const status = opts?.status?.trim() || config?.default_status || 'To Do';
     const today = nowTimestamp();
     const frontmatter: FrontmatterData = {
       id: draftId,
       title,
-      status: 'Draft',
+      status,
       labels: [],
       assignee: [],
       dependencies: [],
