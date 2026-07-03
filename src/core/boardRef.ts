@@ -278,7 +278,16 @@ export interface PushResult {
   stderr: string;
 }
 
-/** Push `ref` to `remote` fast-forward-only; `rejected` marks a non-ff rejection. */
+/**
+ * Push `ref` to `remote` fast-forward-only; `rejected` marks a non-ff rejection.
+ * Uses `--no-verify`: a board-ref push only ever carries a snapshot of
+ * `backlog/{tasks,drafts,completed,archive}` (never code — see the non-board-path
+ * guard in `materializeRefToWorktree`), so a local pre-push hook gating code
+ * quality (lint, depcheck, license checks) has nothing to check and is pure
+ * overhead — in this repo's own hook that overhead is ~90s+, which dwarfs the
+ * git-plumbing exec timeout and made every claim/release/write intermittently
+ * fail as a "push failed" once the hook actually ran (TASK-28 follow-up).
+ */
 export async function pushRef(
   repoRoot: string,
   remote: string,
@@ -287,7 +296,7 @@ export async function pushRef(
 ): Promise<PushResult> {
   const q = qualifyRef(ref);
   try {
-    const { stderr } = await exec(repoRoot, ['push', remote, `${q}:${q}`]);
+    const { stderr } = await exec(repoRoot, ['push', '--no-verify', remote, `${q}:${q}`]);
     return { ok: true, rejected: false, stderr: stderr ?? '' };
   } catch (e: unknown) {
     const err = e as { stderr?: string; message?: string };
@@ -342,7 +351,9 @@ export async function commitTreeRoot(
   return stdout.trim();
 }
 
-/** Force-push `ref` with a lease on `expectedOldTip` (safe CAS force; never blind). */
+/** Force-push `ref` with a lease on `expectedOldTip` (safe CAS force; never blind).
+ *  `--no-verify`: same rationale as {@link pushRef} — board compaction is a data
+ *  rewrite, not code, so local code-quality hooks have nothing to check. */
 export async function pushRefForceWithLease(
   repoRoot: string,
   remote: string,
@@ -354,6 +365,7 @@ export async function pushRefForceWithLease(
   try {
     const { stderr } = await exec(repoRoot, [
       'push',
+      '--no-verify',
       `--force-with-lease=${q}:${expectedOldTip}`,
       remote,
       `${q}:${q}`,

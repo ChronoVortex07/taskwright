@@ -349,6 +349,27 @@ describe('remote ref helpers', () => {
     expect(await fetchRef(clone.root, 'origin', 'taskwright-board', defaultBoardExec)).toBe(commit);
   });
 
+  it('pushRef skips local hooks (board-ref pushes are data snapshots, not code)', async () => {
+    // A pre-push hook that always rejects, standing in for this repo's own
+    // depcheck/license-check hook, which can run for 90+ seconds — far past
+    // any reasonable git-plumbing timeout. Board-ref pushes never carry code,
+    // so they must not be gated by code-quality hooks at all.
+    const hooksDir = path.join(clone.root, '.git', 'hooks');
+    fs.mkdirSync(hooksDir, { recursive: true });
+    const hookPath = path.join(hooksDir, 'pre-push');
+    fs.writeFileSync(hookPath, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+
+    await snapshotBoardToRef({
+      repoRoot: clone.root,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      message: 'seed',
+      exec: defaultBoardExec,
+    });
+    const push = await pushRef(clone.root, 'origin', 'taskwright-board', defaultBoardExec);
+    expect(push.ok).toBe(true);
+  });
+
   it('pushRef reports a non-fast-forward rejection', async () => {
     // Seed origin from clone A.
     await snapshotBoardToRef({
@@ -468,6 +489,32 @@ describe('fetchRef FETCH_HEAD immunity (root-flush regression)', () => {
 
     // The fetch must survive the non-fast-forward move of the remote ref.
     expect(await fetchRef(clone.root, 'origin', 'taskwright-board', defaultBoardExec)).toBe(root);
+  });
+
+  it('pushRefForceWithLease also skips local hooks (compaction is a data rewrite, not code)', async () => {
+    const { commit: first } = await snapshotBoardToRef({
+      repoRoot: clone.root,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      message: 's1',
+      exec: defaultBoardExec,
+    });
+    await pushRef(clone.root, 'origin', 'taskwright-board', defaultBoardExec);
+
+    const hooksDir = path.join(clone.root, '.git', 'hooks');
+    fs.mkdirSync(hooksDir, { recursive: true });
+    fs.writeFileSync(path.join(hooksDir, 'pre-push'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+
+    const root = await commitTreeRoot(clone.root, 'taskwright-board', 'compact', defaultBoardExec);
+    await setLocalRef(clone.root, 'taskwright-board', root, defaultBoardExec);
+    const push = await pushRefForceWithLease(
+      clone.root,
+      'origin',
+      'taskwright-board',
+      first,
+      defaultBoardExec
+    );
+    expect(push.ok).toBe(true);
   });
 });
 
