@@ -147,6 +147,24 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   `src/test/unit/TasksController.test.ts`, `e2e/tree-drag.spec.ts`, `src/test/cdp/tree-reslot.test.ts`.
   Design: `docs/superpowers/specs/2026-07-02-tech-tree-p3-create-edit-design.md`; plan:
   `docs/superpowers/plans/2026-07-03-tech-tree-p3b-drag-surface.md`.
+- **Tech-tree AI authoring (P4)** ✅: a `/create-task` **skill** (`.claude/skills/create-task/SKILL.md`)
+  turns a brief into a set of PR-sized, dependency-linked tasks slotted into lanes/milestones and
+  commits them as **draft proposals** the human reviews and promotes on the canvas (parity: every
+  tool is one a human can drive via P3; subscription-safe — no `claude -p`). New read MCP tools
+  `list_categories` / `list_milestones` / `get_board` / `search_tasks` (built on
+  `loadTreeBoardFromParser` for canvas parity; `search_tasks` core `src/core/searchTasks.ts`) and write
+  tools `create_category` (surgical `config.yml` edit, `src/core/categoriesConfig.ts` mirroring
+  `mergeStatusConfig.ts`) + `promote_drafts` (bulk, `src/core/promoteDrafts.ts` — validate → dep-first
+  topo → per-draft `promoteDraft` → **remap** inbound `dependencies`/`caused_by`). Closes three gaps that
+  made the draft-review loop live: **drafts render on the canvas** (`loadTreeBoardFromParser` +
+  `TasksController` tree-tab union drafts; `TreeNode` `folder==='drafts'` styling), **draft-create carries
+  all fields** (`createTaskWithTreeFields` folds priority/milestone/labels/assignee into the same
+  `updateTask`; `draft`+`status` → error), and **promote keeps edges** (single `promote_draft` + bulk
+  `promote_drafts` + the canvas "Promote all proposed" button all route through the remapping core; the
+  button posts one `promoteDrafts` message). Coverage: `src/test/unit/{promoteDrafts,searchTasks,categoriesConfig,mcpReadHandlers}.test.ts`,
+  `src/test/cdp/tree-promote.test.ts`. Design:
+  `docs/superpowers/specs/2026-07-02-tech-tree-p4-create-task-skill-design.md`; plan:
+  `docs/superpowers/plans/2026-07-03-tech-tree-p4-create-task-skill.md`.
 
 ## Conventions
 
@@ -165,6 +183,6 @@ This project is managed with [Taskwright](https://github.com/ChronoVortex07/task
 2. Call **`claim_task`** with your task ID to mark it in progress, so parallel sessions in other worktrees don't collide. Claiming is advisory.
 3. When you finish or hand off, call **`release_task`**.
 
-The active task is chosen on the Taskwright board ("Set active") or set by a dispatch. If `get_active_task` reports none is set, ask which task to work on rather than assuming.
+The active task is set ephemerally by opening a tree-node popover on the Taskwright board, or by a dispatch. If `get_active_task` reports none is set, ask which task to work on rather than assuming.
 
 <!-- TASKWRIGHT:END -->
