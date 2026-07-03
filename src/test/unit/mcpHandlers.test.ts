@@ -154,6 +154,82 @@ describe('mcp handlers', () => {
     });
   });
 
+  describe('getActiveTask subtasks derivation (FIX 1 — SDD branch)', () => {
+    // create_subtask writes only the CHILD's parent_task_id, never the parent's
+    // frontmatter subtasks[]. getTask populates subtasks ONLY from the parent's
+    // frontmatter, and computeSubtasks (the provider-side derivation) never runs on
+    // the MCP path. So without FIX 1 a dispatched parent returns subtasks: undefined
+    // and /execute-task's independent-subtasks (SDD) branch can never fire.
+    const PARENT = `---
+id: TASK-7
+title: Parent task
+status: To Do
+assignee: []
+dependencies: []
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Parent.
+<!-- SECTION:DESCRIPTION:END -->
+`;
+    const CHILD_A = `---
+id: TASK-7.1
+title: Child A
+status: To Do
+assignee: []
+dependencies: []
+parent_task_id: TASK-7
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Child A.
+<!-- SECTION:DESCRIPTION:END -->
+`;
+    const CHILD_B = `---
+id: TASK-7.2
+title: Child B
+status: To Do
+assignee: []
+dependencies: []
+parent_task_id: TASK-7
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Child B.
+<!-- SECTION:DESCRIPTION:END -->
+`;
+
+    it('derives subtasks from children carrying parent_task_id (not from parent frontmatter)', async () => {
+      // Parent has NO frontmatter subtasks[]; the two children carry parent_task_id.
+      vi.mocked(fs.readdirSync).mockReturnValue([
+        'task-7 - Parent.md',
+        'task-7.1 - Child-A.md',
+        'task-7.2 - Child-B.md',
+      ] as unknown as ReturnType<typeof fs.readdirSync>);
+      vi.mocked(fs.readFileSync).mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const str = String(p).replace(/\\/g, '/');
+        if (str.includes('active-task.json')) {
+          return JSON.stringify({ taskId: 'TASK-7', setAt: 'x' });
+        }
+        if (str.endsWith('task-7.1 - Child-A.md')) return CHILD_A;
+        if (str.endsWith('task-7.2 - Child-B.md')) return CHILD_B;
+        return PARENT;
+      });
+
+      const result = await getActiveTask(makeDeps());
+      expect(result.active).toBe(true);
+      expect(result.task?.id).toBe('TASK-7');
+      // The whole point: subtasks are DERIVED from children, never hand-set on input.
+      expect(result.task?.subtasks).toEqual(['TASK-7.1', 'TASK-7.2']);
+    });
+  });
+
   describe('getActiveTask plan progress', () => {
     it('includes checkbox progress for a task with an attached plan', async () => {
       const taskWithPlan = TASK_CONTENT.replace(

@@ -2,7 +2,7 @@ import { execFile, exec as childExec } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 import * as fs from 'fs';
-import { BacklogParser } from '../core/BacklogParser';
+import { BacklogParser, computeSubtasks } from '../core/BacklogParser';
 import {
   BacklogWriter,
   detectCRLF,
@@ -410,6 +410,21 @@ export async function getActiveTask(deps: McpHandlerDeps): Promise<ActiveTaskRes
       active: false,
       message: `Active task ${active.taskId} was set but no matching task file was found.`,
     };
+  }
+  // Derive subtasks from the full task set (mirror the provider pattern). getTask
+  // populates task.subtasks ONLY from the parent's frontmatter subtasks[], but
+  // create_subtask writes only the CHILD's parent_task_id — and computeSubtasks (the
+  // provider-side derivation) never runs on the MCP path. Without this a dispatched
+  // parent returns subtasks: undefined, so /execute-task's independent-subtasks (SDD)
+  // branch can never fire. Intentional fail-open: a derive/IO error must not brick
+  // get_active_task (matches the queue/plan-progress catches here).
+  try {
+    const all = await deps.parser.getTasks();
+    computeSubtasks(all);
+    const derived = all.find((t) => t.id === task.id);
+    if (derived) task.subtasks = derived.subtasks;
+  } catch {
+    // fail-open — leave task.subtasks as loaded from frontmatter
   }
   let queuePosition: number | undefined;
   try {
