@@ -766,6 +766,8 @@
           {fadedIds}
           width={geometry.width}
           height={geometry.height}
+          onRemoveDependency={(dependentId, prereqId) =>
+            vscode.postMessage({ type: 'removeDependency', taskId: dependentId, dependsOn: prereqId })}
         />
         {#if drag}
           <DragLayer
@@ -824,6 +826,8 @@
         onExpand={onPopoverExpand}
         onQuickEdit={(u) => vscode.postMessage({ type: 'updateTask', taskId: popoverTask.id, updates: u })}
         onAction={onPopoverAction}
+        onRemovePrereq={(taskId, dependsOn) =>
+          vscode.postMessage({ type: 'removeDependency', taskId, dependsOn })}
       />
     {/if}
 

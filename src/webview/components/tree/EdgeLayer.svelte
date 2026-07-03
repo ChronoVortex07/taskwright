@@ -11,14 +11,17 @@
     fadedIds: Set<string>;
     width: number;
     height: number;
+    /** Remove a prereq edge: dependent no longer depends on prereq. */
+    onRemoveDependency?: (dependentId: string, prereqId: string) => void;
   }
-  let { nodes, tasks, doneStatus, hoveredId, selectedId, fadedIds, width, height }: Props = $props();
+  let { nodes, tasks, doneStatus, hoveredId, selectedId, fadedIds, width, height, onRemoveDependency }: Props = $props();
 
   interface Edge {
     id: string;
     from: string;
     to: string;
     d: string;
+    mid: { x: number; y: number };
     kind: 'satisfied' | 'blocking' | 'bug';
   }
 
@@ -44,6 +47,7 @@
           from: dep.id,
           to: t.id,
           d: bezierPath(from, to),
+          mid: { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 },
           kind: done ? 'satisfied' : 'blocking',
         });
       }
@@ -59,6 +63,7 @@
             from: t.id,
             to: cause.id,
             d: bezierPath(from, to),
+            mid: { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 },
             kind: 'bug',
           });
         }
@@ -75,6 +80,8 @@
     if (e.kind !== 'bug') return true;
     return incident(e, hoveredId) || incident(e, selectedId);
   }
+
+  let hoveredEdge = $state<string | null>(null);
 </script>
 
 <svg
@@ -109,6 +116,38 @@
             ? 'url(#tw-arrow-blocking)'
             : 'url(#tw-arrow)'}
       />
+      {#if e.kind !== 'bug'}
+        <!-- m3: enter/leave live on the GROUP (hit-path + ✕ together), so moving the
+             pointer from the hit-stroke onto the ✕ never fires a leave (pointerenter/
+             pointerleave treat descendants as inside) and the ✕ can't unmount mid-hover. -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <g
+          class="tree-edge-interactive"
+          onpointerenter={() => (hoveredEdge = e.id)}
+          onpointerleave={() => (hoveredEdge = null)}
+        >
+          <path class="tree-edge-hit" data-testid="tree-edge-hit-{e.from}-{e.to}" d={e.d} />
+          {#if hoveredEdge === e.id}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <g
+              class="tree-edge-remove"
+              data-testid="tree-edge-remove-{e.from}-{e.to}"
+              transform="translate({e.mid.x} {e.mid.y})"
+              role="button"
+              tabindex="-1"
+              aria-label="Remove dependency"
+              onpointerdown={(ev) => ev.stopPropagation()}
+              onclick={(ev) => {
+                ev.stopPropagation();
+                onRemoveDependency?.(e.to, e.from);
+              }}
+            >
+              <circle r="9" class="tree-edge-remove-bg" />
+              <path d="M -3 -3 L 3 3 M 3 -3 L -3 3" class="tree-edge-remove-x" />
+            </g>
+          {/if}
+        </g>
+      {/if}
     {/if}
   {/each}
 </svg>
@@ -120,6 +159,27 @@
     left: 0;
     pointer-events: none;
     overflow: visible;
+  }
+  .tree-edge-hit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 14;
+    pointer-events: stroke;
+    cursor: pointer;
+  }
+  .tree-edge-remove {
+    pointer-events: all;
+    cursor: pointer;
+  }
+  .tree-edge-remove-bg {
+    fill: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+    stroke: var(--vscode-editorError-foreground, #f14c4c);
+    stroke-width: 1.5;
+  }
+  .tree-edge-remove-x {
+    stroke: var(--vscode-editorError-foreground, #f14c4c);
+    stroke-width: 2;
+    stroke-linecap: round;
   }
   .tree-edge {
     fill: none;

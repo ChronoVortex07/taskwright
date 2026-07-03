@@ -29,8 +29,9 @@
     onExpand: (taskId: string) => void;
     onQuickEdit: (updates: { status?: string; priority?: string }) => void;
     onAction: (kind: PopoverActionKind, taskId: string) => void;
+    onRemovePrereq?: (taskId: string, dependsOn: string) => void;
   }
-  let { task, statuses, priorities, taskIdDisplay, x, y, onClose, onExpand, onQuickEdit, onAction }: Props =
+  let { task, statuses, priorities, taskIdDisplay, x, y, onClose, onExpand, onQuickEdit, onAction, onRemovePrereq }: Props =
     $props();
 
   const doneStatus = $derived(statuses.length > 0 ? statuses[statuses.length - 1] : 'Done');
@@ -171,7 +172,20 @@
   {#if prereqs.length > 0}
     <div class="tp-rel">
       <span class="tp-rel-label">Prereqs</span>
-      {#each prereqs as d (d)}<span class="tp-rel-chip" class:unmet={blockedBy.includes(d)}>{d}</span>{/each}
+      {#each prereqs as d (d)}
+        <span class="tp-rel-chip" class:unmet={blockedBy.includes(d)}>
+          {d}
+          <button
+            class="tp-rel-remove"
+            data-testid="tp-prereq-remove-{d}"
+            title="Remove prerequisite"
+            aria-label="Remove prerequisite {d}"
+            onclick={() => onRemovePrereq?.(task.id, d)}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </span>
+      {/each}
     </div>
   {/if}
   {#if unlocks.length > 0}
@@ -325,6 +339,18 @@
   .tp-rel-chip.unmet {
     background: var(--vscode-editorWarning-foreground, #cca700);
     color: var(--vscode-editor-background, #1e1e1e);
+  }
+  .tp-rel-remove {
+    all: unset;
+    cursor: pointer;
+    display: inline-flex;
+    margin-left: 3px;
+    vertical-align: middle;
+    opacity: 0.7;
+  }
+  .tp-rel-remove:hover {
+    opacity: 1;
+    color: var(--vscode-editorError-foreground, #f14c4c);
   }
   .tp-worker {
     font-size: 11px;
