@@ -105,13 +105,13 @@
   class:lod-mid={lod === 'mid'}
   class:lod-far={lod === 'far'}
   data-testid="tree-node-{task.id}"
+  data-node-id={task.id}
   data-node-x={x}
   data-node-y={y}
   data-lod={lod}
   style="left:{x}px; top:{y}px; width:{w}px; min-height:{h}px;"
   role="button"
   tabindex="0"
-  onclick={select}
   onkeydown={onKey}
   onpointerenter={() => onHover(task.id)}
   onpointerleave={() => onHover(null)}

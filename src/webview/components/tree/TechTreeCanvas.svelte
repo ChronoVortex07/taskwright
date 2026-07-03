@@ -7,9 +7,16 @@
     zoomAt,
     clampViewport,
     lodTier,
+    screenToWorld,
+    cellAt,
+    reslotTargets,
+    DRAG_THRESHOLD,
     type Viewport,
     type GeometryNode,
+    type Point,
   } from '../../lib/treeGeometry';
+  import { wouldCreateCycle } from '../../../core/treeGate';
+  import DragLayer, { type DragState } from './DragLayer.svelte';
   import TreeNode from './TreeNode.svelte';
   import EdgeLayer from './EdgeLayer.svelte';
   import AgeBandHeader from './AgeBandHeader.svelte';
@@ -251,35 +258,219 @@
     });
   }
 
+  // P3b gesture machine. `pending` is the pre-threshold press; `drag` is the promoted gesture.
+  type Pending =
+    | { kind: 'pan'; startX: number; startY: number; tx: number; ty: number }
+    | { kind: 'node'; id: string; startX: number; startY: number }
+    | { kind: 'connect'; id: string; dir: 'needs' | 'unlocks'; startX: number; startY: number };
+  let pending: Pending | null = null;
+  let drag = $state<DragState | null>(null);
+
+  const targets = $derived(reslotTargets(geometry, laneOrder, bandOrder));
+
+  /** In-webview cycle/dupe/self gate for a candidate edge task[taskId].dependencies += dependsOn. */
+  function connectValid(taskId: string, dependsOn: string): boolean {
+    const a = taskId.trim().toUpperCase();
+    const b = dependsOn.trim().toUpperCase();
+    if (a === b) return false; // self
+    const dep = layoutNodes.find((t) => t.id.trim().toUpperCase() === a);
+    if (dep?.dependencies.some((d) => d.trim().toUpperCase() === b)) return false; // dupe
+    return !wouldCreateCycle(layoutNodes, taskId, dependsOn);
+  }
+
+  /** World point under a client event, relative to the viewport. */
+  function worldAt(e: PointerEvent): Point {
+    const rect = viewportEl!.getBoundingClientRect();
+    return screenToWorld(vp, e.clientX - rect.left, e.clientY - rect.top);
+  }
+
+  /** Node id under a world point (topmost box hit), else null. */
+  function nodeAt(p: Point): string | null {
+    for (const [id, box] of geometry.nodes) {
+      if (p.x >= box.x && p.x <= box.x + box.width && p.y >= box.y && p.y <= box.y + box.height) {
+        return id;
+      }
+    }
+    return null;
+  }
+
   // Pan by dragging empty canvas.
   let panning = $state(false);
   let panStart = { x: 0, y: 0, tx: 0, ty: 0 };
+
   function onPointerDown(e: PointerEvent) {
     const target = e.target as HTMLElement;
     if (target.closest('.tree-toolbar') || target.closest('.tree-popover')) return;
-    // Band headers live inside the viewport; capturing the pointer here would
-    // swallow their native click (same reason `.tree-node` returns early), so
-    // the milestone popover would never open. Let the header's onclick fire.
-    if (target.closest('.tree-node') || target.closest('.tree-band-header')) return;
+    if (target.closest('.tree-band-header')) return; // let the milestone popover open
+    if (target.closest('.tree-edge-remove')) return; // edge ✕ handles its own click (Task 6)
+
+    const handle = target.closest('.tree-connect-handle') as HTMLElement | null;
+    if (handle) {
+      // (a) connect-handle press — starts a connect gesture on threshold (Task 4 renders handles).
+      e.stopPropagation();
+      pending = {
+        kind: 'connect',
+        id: handle.dataset.connectId ?? '',
+        dir: (handle.dataset.connectDir as 'needs' | 'unlocks') ?? 'unlocks',
+        startX: e.clientX,
+        startY: e.clientY,
+      };
+      viewportEl?.setPointerCapture(e.pointerId);
+      return;
+    }
+
+    const node = target.closest('.tree-node') as HTMLElement | null;
+    if (node) {
+      // (b) node-body press — select on click, reslot on drag.
+      pending = { kind: 'node', id: node.dataset.nodeId ?? '', startX: e.clientX, startY: e.clientY };
+      viewportEl?.setPointerCapture(e.pointerId);
+      return;
+    }
+
+    // (c) empty viewport — pan on drag, click-in-place create on click.
     closePopover();
     closeMilestone();
-    panning = true;
+    pending = { kind: 'pan', startX: e.clientX, startY: e.clientY, tx: vp.tx, ty: vp.ty };
     panStart = { x: e.clientX, y: e.clientY, tx: vp.tx, ty: vp.ty };
     viewportEl?.setPointerCapture(e.pointerId);
   }
+
   function onPointerMove(e: PointerEvent) {
-    if (!panning) return;
-    setViewport({
-      scale: vp.scale,
-      tx: panStart.tx + (e.clientX - panStart.x),
-      ty: panStart.ty + (e.clientY - panStart.y),
-    });
+    if (!pending) return;
+    const dist = Math.hypot(e.clientX - pending.startX, e.clientY - pending.startY);
+
+    if (pending.kind === 'pan') {
+      if (!panning && dist < DRAG_THRESHOLD) return;
+      panning = true;
+      setViewport({
+        scale: vp.scale,
+        tx: panStart.tx + (e.clientX - panStart.x),
+        ty: panStart.ty + (e.clientY - panStart.y),
+      });
+      return;
+    }
+
+    if (dist < DRAG_THRESHOLD && !drag) return;
+    const cursor = worldAt(e);
+
+    if (pending.kind === 'node') {
+      const overId = nodeAt(cursor);
+      const t = layoutNodes.find((n) => n.id === pending!.id);
+      // Bugs are reorder-only (M2): Task 5's reslotValid shows cross-lane red and its
+      // onReslotDrop never posts reslotTask for a bug.
+      const cell = cellAt(geometry, cursor.x, cursor.y);
+      const laneT = laneTargetAt(cursor.y);
+      const bandT = bandTargetAt(cursor.x);
+      drag = {
+        mode: 'reslot',
+        taskId: pending.id,
+        cursor,
+        targetLane: laneT?.name ?? cell.lane,
+        targetBand: bandT?.name ?? cell.band,
+        valid: reslotValid(t, laneT?.name ?? cell.lane, bandT?.name ?? cell.band, overId),
+      };
+      dragLaneTarget = laneT ?? null;
+      dragBandTarget = bandT ?? null;
+      return;
+    }
+
+    if (pending.kind === 'connect') {
+      const overId = nodeAt(cursor);
+      const edge = connectEdge(pending.id, pending.dir, overId);
+      drag = {
+        mode: 'connect',
+        fromId: pending.id,
+        dir: pending.dir,
+        cursor,
+        targetId: overId && overId !== pending.id ? overId : null,
+        valid: edge ? connectValid(edge.taskId, edge.dependsOn) : true, // empty target = create (valid)
+      };
+    }
   }
+
   function onPointerUp(e: PointerEvent) {
-    if (!panning) return;
-    panning = false;
+    const p = pending;
+    pending = null;
     viewportEl?.releasePointerCapture?.(e.pointerId);
-    persistNow();
+    if (!p) return;
+    const wasDrag = !!drag || panning;
+
+    if (p.kind === 'pan') {
+      if (panning) {
+        panning = false;
+        persistNow();
+      } else {
+        // Click-in-place create (empty canvas): infer lane/band; Misc / Backburner defaults.
+        const world = worldAt(e);
+        const cell = cellAt(geometry, world.x, world.y);
+        onCreateInPlace?.({ mode: 'full', category: cell.lane, milestone: cell.band });
+      }
+      finishDrag();
+      return;
+    }
+
+    if (p.kind === 'node') {
+      if (!wasDrag) handleSelect(p.id); // click → open popover (replaces onclick)
+      else onReslotDrop(); // Task 5 fills this
+      finishDrag();
+      return;
+    }
+
+    // connect
+    if (wasDrag) onConnectDrop(); // Task 4 fills this
+    finishDrag();
+  }
+
+  function onPointerLeave(e: PointerEvent) {
+    // Abort any in-flight gesture when the pointer leaves the viewport.
+    if (pending || drag) {
+      if (panning) {
+        panning = false;
+        persistNow();
+      }
+      pending = null;
+      finishDrag();
+      viewportEl?.releasePointerCapture?.(e.pointerId);
+    }
+  }
+
+  function finishDrag() {
+    drag = null;
+    dragLaneTarget = null;
+    dragBandTarget = null;
+  }
+
+  // Reslot target strips highlighted under the cursor (band-expand visual, Task 5).
+  let dragLaneTarget = $state<{ name: string; y: number; height: number } | null>(null);
+  let dragBandTarget = $state<{ name: string; x: number; width: number } | null>(null);
+  function laneTargetAt(worldY: number) {
+    return targets.lanes.find((l) => worldY >= l.y && worldY < l.y + l.height) ?? null;
+  }
+  function bandTargetAt(worldX: number) {
+    return targets.bands.find((b) => worldX >= b.x && worldX < b.x + b.width) ?? null;
+  }
+
+  // Filled by Task 4 (connect) / Task 5 (reslot). Stubs keep the bundle green now.
+  function connectEdge(
+    _fromId: string,
+    _dir: 'needs' | 'unlocks',
+    _overId: string | null
+  ): { taskId: string; dependsOn: string } | null {
+    return null;
+  }
+  function reslotValid(
+    _t: Task | undefined,
+    _lane: string | undefined,
+    _band: string | undefined,
+    _overId: string | null
+  ): boolean {
+    return true;
+  }
+  function onReslotDrop() {
+    /* Task 5 */
+  }
+  function onConnectDrop() {
+    /* Task 4 */
   }
 
   function onWheel(e: WheelEvent) {
@@ -438,7 +629,7 @@
       onpointerdown={onPointerDown}
       onpointermove={onPointerMove}
       onpointerup={onPointerUp}
-      onpointerleave={onPointerUp}
+      onpointerleave={onPointerLeave}
       onwheel={onWheel}
       onkeydown={onCanvasKeydown}
       role="application"
@@ -462,6 +653,16 @@
           width={geometry.width}
           height={geometry.height}
         />
+        {#if drag}
+          <DragLayer
+            {drag}
+            nodes={geometry.nodes}
+            laneTarget={dragLaneTarget}
+            bandTarget={dragBandTarget}
+            width={geometry.width}
+            height={geometry.height}
+          />
+        {/if}
         {#each layoutNodes as task (task.id)}
           {@const box = geometry.nodes.get(task.id)}
           {#if box}

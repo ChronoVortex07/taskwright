@@ -171,4 +171,13 @@ test.describe('Tree authoring — create form', () => {
     await expect(page.locator('[data-testid="tree-canvas"]')).toBeVisible();
     expect((await getPostedMessages(page)).some((m) => m.type === 'setViewMode')).toBe(false);
   });
+
+  test('clicking empty canvas opens the create form (click-in-place)', async ({ page }) => {
+    // A single click on empty viewport space (no node) opens the full form.
+    const viewport = page.locator('[data-testid="tree-viewport"]');
+    const box = (await viewport.boundingBox())!;
+    // Bottom-right corner is empty in the single-node fixture.
+    await page.mouse.click(box.x + box.width - 20, box.y + box.height - 20);
+    await expect(page.locator('[data-testid="create-form"]')).toBeVisible();
+  });
 });
