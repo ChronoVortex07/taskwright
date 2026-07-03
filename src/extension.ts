@@ -21,9 +21,10 @@ import { detectPackageManager } from './core/AgentIntegrationDetector';
 import { claimTaskForCurrentUser, releaseTaskClaim } from './providers/claimActions';
 import { dispatchTask } from './providers/dispatchActions';
 import { cancelDispatch } from './core/cancelDispatch';
+import { writeCancellationMarker } from './core/cancellationMarker';
 import { removeWorktree } from './core/finishTask';
 import { dispatchBranchName } from './core/dispatchPrompt';
-import type { GitExecFn } from './core/WorktreeService';
+import { worktreePathFor, type GitExecFn } from './core/WorktreeService';
 import { approveMergeInQueue, sendBackMerge } from './providers/mergeActions';
 import { categorizeWithClaude } from './providers/intakeActions';
 import { attachPlanForTask, detachPlanForTask } from './providers/planActions';
@@ -1156,6 +1157,9 @@ export function activate(context: vscode.ExtensionContext) {
 
       await cancelDispatch(
         {
+          // Absolute worktree root so the marker lands in .worktrees/<branch>/.taskwright/.
+          writeCancellationMarker: (id) =>
+            writeCancellationMarker(worktreePathFor(repoRoot, branch), id),
           releaseClaim: (id) => releaseTaskClaim(id, activeParser),
           setStatus: (id, status) => writer.updateTask(id, { status }, activeParser),
           removeWorktree: (rel) => removeWorktree(exec, repoRoot, rel),

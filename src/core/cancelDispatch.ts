@@ -6,6 +6,9 @@
  * the MCP/commands use (parity). Best-effort: one failing step never blocks the rest.
  */
 export interface CancelDispatchDeps {
+  /** Write the task/worktree-scoped cancellation marker into the worktree's `.taskwright/`.
+   *  Invoked FIRST, before any teardown — the ordering is load-bearing (see cancelDispatch). */
+  writeCancellationMarker: (taskId: string) => void;
   releaseClaim: (taskId: string) => Promise<void>;
   setStatus: (taskId: string, status: string) => Promise<void>;
   removeWorktree: (worktreeRelPath: string) => Promise<void>;
@@ -34,17 +37,33 @@ export async function cancelDispatch(
   deps: CancelDispatchDeps,
   input: CancelDispatchInput
 ): Promise<void> {
+  // Marker FIRST — the order is load-bearing (see the block comment below).
+  await attempt(() => deps.writeCancellationMarker(input.taskId));
   await attempt(() => deps.releaseClaim(input.taskId));
   await attempt(() => deps.setStatus(input.taskId, input.toDoStatus));
   await attempt(() => deps.removeWorktree(`.worktrees/${input.branch}`));
   await attempt(() => deps.disposeTerminal(input.terminalName));
 
-  // TODO(P5): write a task/worktree-scoped cancellation marker that the dispatched
-  // agent detects at its next checkpoint (the P5 cancellation-signal protocol — see
-  // the P5 spec §6). P2 only tears down local state; it does not signal a live agent.
+  // Ordering rationale (P5, GAP-1): the marker is written before removeWorktree, never
+  // after. removeWorktree runs `git worktree remove --force` (finishTask.ts:209-224),
+  // which sweeps the whole dir including the git-ignored `.taskwright/`. Writing the
+  // marker AFTER a successful removal would resurrect `.worktrees/<branch>/.taskwright/`
+  // via mkdirSync — and the next dispatch's createWorktree sees the dir exists, SKIPS
+  // `git worktree add` (WorktreeService.ts:74-79), and runs the agent in a plain dir git
+  // resolves up to the PRIMARY tree (isolation silently defeated).
   //
-  // Q2 (adjudicated, v1): "dispatched/agent" is inferred from the `worktree` claim
-  // field — a human claiming from a worktree, or a dispatched-but-unclaimed task, are
-  // accepted edge cases for v1. A firmer marker (`dispatched_at` frontmatter) lands
-  // with this P5 cancellation protocol, not now.
+  // Detection (P5, GAP-2) is presence-only (src/core/cancellationMarker.ts) and co-equal
+  // with the worktree-vanished backstop: on POSIX `git worktree remove --force` unlinks
+  // the busy dir and DELETES the marker, so the vanished worktree is the only signal
+  // there; on Windows a busy removal may leave the marker AND LEAK the worktree — a
+  // single cancelDispatch call does not `prune`-reclaim it (`git worktree prune` only
+  // deregisters worktrees whose directory is already missing). The self-heal is the next
+  // dispatch of the same task, which reuses the dir after clearing the stale marker
+  // (dispatchActions clearCancellationMarker, GAP-3).
+  //
+  // We deliberately do NOT add a `dispatched_at` frontmatter field (GAP-8): teardown
+  // derives the worktree path from the task id (extension wiring: worktreePathFor +
+  // dispatchBranchName), so it would buy zero cancellation-correctness and only add
+  // Backlog.md byte-compat surface. The Cancel-dispatch affordance is gated on
+  // worktree-dir existence (TasksController `dispatchedWorktree`), not the claim field.
 }
