@@ -41,7 +41,8 @@ export class TreeNavigatorProvider implements vscode.WebviewViewProvider {
       if (
         message.type === 'navigatorFilterChanged' ||
         message.type === 'navigatorLaneToggle' ||
-        message.type === 'navigatorJump'
+        message.type === 'navigatorJump' ||
+        message.type === 'navigatorMinimapPan'
       ) {
         this.relayToBoard(message as unknown as ExtensionMessage);
       }

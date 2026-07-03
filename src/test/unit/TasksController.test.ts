@@ -7,6 +7,7 @@ import { BacklogParser } from '../../core/BacklogParser';
 import { ExtensionMessage, Task } from '../../core/types';
 import { getClaimIdentity } from '../../providers/claimActions';
 import { BacklogWriter } from '../../core/BacklogWriter';
+import { TreeFieldService } from '../../core/TreeFieldService';
 const currentIdentity = () => getClaimIdentity();
 
 /**
@@ -55,6 +56,7 @@ describe('TasksController', () => {
       getArchivedTasks: vi.fn().mockResolvedValue([]),
       getCategories: vi.fn().mockResolvedValue([]),
       getBacklogPath: vi.fn().mockReturnValue('/fake/backlog'),
+      resolveMilestone: vi.fn(),
     } as unknown as BacklogParser;
   });
 
@@ -534,6 +536,7 @@ describe('TasksController — tree tab', () => {
       getArchivedTasks: vi.fn().mockResolvedValue([]),
       getCategories: vi.fn().mockResolvedValue(['Features']),
       getBacklogPath: vi.fn().mockReturnValue('/fake/backlog'),
+      resolveMilestone: vi.fn(),
     } as unknown as BacklogParser;
   });
 
@@ -576,5 +579,71 @@ describe('TasksController — tree tab', () => {
     controller.setViewMode('tree');
     expect(posted).toContainEqual({ type: 'activeTabChanged', tab: 'tree' });
     expect(posted.some((m) => m.type === 'viewModeChanged')).toBe(false);
+  });
+
+  describe('TasksController — P3b drag writes', () => {
+    it('reslotTask: category via TreeFieldService.setCategory, milestone via updateTask (resolved)', async () => {
+      const setCat = vi.spyOn(TreeFieldService.prototype, 'setCategory').mockResolvedValue('Features');
+      const updateSpy = vi.spyOn(BacklogWriter.prototype, 'updateTask').mockResolvedValue(undefined as never);
+      (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [], dependencies: [],
+        acceptanceCriteria: [], definitionOfDone: [], filePath: '/fake/backlog/tasks/task-1.md',
+      } as Task);
+      (mockParser.resolveMilestone as ReturnType<typeof vi.fn>).mockResolvedValue('v1');
+      const controller = new TasksController(host, mockParser, mockContext);
+      await controller.handleMessage({ type: 'reslotTask', taskId: 'TASK-1', category: 'Features', milestone: 'v1' });
+      expect(setCat).toHaveBeenCalledWith('TASK-1', 'Features', mockParser);
+      expect(updateSpy).toHaveBeenCalledWith('TASK-1', { milestone: 'v1' }, mockParser);
+    });
+
+    it('reslotTask: Misc clears the category, Backburner clears the milestone', async () => {
+      const clearCat = vi.spyOn(TreeFieldService.prototype, 'clearCategory').mockResolvedValue(undefined as never);
+      const updateSpy = vi.spyOn(BacklogWriter.prototype, 'updateTask').mockResolvedValue(undefined as never);
+      (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [], dependencies: [],
+        acceptanceCriteria: [], definitionOfDone: [], filePath: '/fake/backlog/tasks/task-1.md',
+      } as Task);
+      const controller = new TasksController(host, mockParser, mockContext);
+      await controller.handleMessage({ type: 'reslotTask', taskId: 'TASK-1', category: 'Misc', milestone: 'Backburner' });
+      expect(clearCat).toHaveBeenCalledWith('TASK-1', mockParser);
+      // Backburner clears milestone via an empty string (updateTask omits empty milestone on write).
+      expect(updateSpy).toHaveBeenCalledWith('TASK-1', { milestone: '' }, mockParser);
+    });
+
+    it('addDependency: writes task[taskId].dependencies += dependsOn (deduped) via updateTask', async () => {
+      const updateSpy = vi.spyOn(BacklogWriter.prototype, 'updateTask').mockResolvedValue(undefined as never);
+      (mockParser.getTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 'TASK-1', dependencies: [] }, { id: 'TASK-2', dependencies: [] },
+      ]);
+      (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [], dependencies: [],
+        acceptanceCriteria: [], definitionOfDone: [], filePath: '/fake/backlog/tasks/task-1.md',
+      } as Task);
+      const controller = new TasksController(host, mockParser, mockContext);
+      await controller.handleMessage({ type: 'addDependency', taskId: 'TASK-1', dependsOn: 'TASK-2' });
+      expect(updateSpy).toHaveBeenCalledWith('TASK-1', { dependencies: ['TASK-2'] }, mockParser);
+    });
+
+    it('addDependency: refuses a cycle (no write)', async () => {
+      const updateSpy = vi.spyOn(BacklogWriter.prototype, 'updateTask').mockResolvedValue(undefined as never);
+      // TASK-2 already depends on TASK-1, so adding TASK-2 to TASK-1 closes 1→2→1.
+      (mockParser.getTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { id: 'TASK-1', dependencies: [] }, { id: 'TASK-2', dependencies: ['TASK-1'] },
+      ]);
+      const controller = new TasksController(host, mockParser, mockContext);
+      await controller.handleMessage({ type: 'addDependency', taskId: 'TASK-1', dependsOn: 'TASK-2' });
+      expect(updateSpy).not.toHaveBeenCalled();
+    });
+
+    it('removeDependency: writes the pruned dependency array via updateTask', async () => {
+      const updateSpy = vi.spyOn(BacklogWriter.prototype, 'updateTask').mockResolvedValue(undefined as never);
+      (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [], dependencies: ['TASK-2', 'TASK-3'],
+        acceptanceCriteria: [], definitionOfDone: [], filePath: '/fake/backlog/tasks/task-1.md',
+      } as Task);
+      const controller = new TasksController(host, mockParser, mockContext);
+      await controller.handleMessage({ type: 'removeDependency', taskId: 'TASK-1', dependsOn: 'TASK-2' });
+      expect(updateSpy).toHaveBeenCalledWith('TASK-1', { dependencies: ['TASK-3'] }, mockParser);
+    });
   });
 });

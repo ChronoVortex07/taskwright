@@ -16,6 +16,7 @@ import { BacklogParser, computeSubtasks } from '../core/BacklogParser';
 import { BacklogWriter } from '../core/BacklogWriter';
 import { TreeFieldService } from '../core/TreeFieldService';
 import { createTaskWithTreeFields } from '../core/createTaskCore';
+import { wouldCreateCycle } from '../core/treeGate';
 import { TaskDetailProvider } from './TaskDetailProvider';
 import { StatusCallbackRunner } from '../core/StatusCallbackRunner';
 import { detectIntegration } from '../core/AgentIntegrationDetector';
@@ -693,6 +694,90 @@ export class TasksController {
           for (const update of message.updates) {
             this.host.postMessage({ type: 'taskUpdateSuccess', taskId: update.taskId });
           }
+        }
+        break;
+      }
+
+      case 'reslotTask': {
+        if (!this.parser) break;
+        const task = await this.parser.getTask(message.taskId);
+        if (!task) break;
+        if (isReadOnlyTask(task)) {
+          vscode.window.showErrorMessage(
+            `Cannot move task: ${task.id} is read-only from ${getReadOnlyTaskContext(task)}.`
+          );
+          break;
+        }
+        try {
+          // Category (lane) via the surgical Taskwright-only writer. Misc = no category.
+          if (message.category !== undefined) {
+            if (message.category === 'Misc' || message.category.trim() === '') {
+              await this.treeFieldService.clearCategory(message.taskId, this.parser);
+            } else {
+              await this.treeFieldService.setCategory(message.taskId, message.category, this.parser);
+            }
+          }
+          // Milestone (band) via BacklogWriter. Backburner = no milestone (empty string,
+          // which updateTask omits on write); otherwise resolve to the canonical id.
+          if (message.milestone !== undefined) {
+            if (message.milestone === 'Backburner' || message.milestone.trim() === '') {
+              await this.writer.updateTask(message.taskId, { milestone: '' }, this.parser);
+            } else {
+              const resolved =
+                (await this.parser.resolveMilestone(message.milestone)) ?? message.milestone;
+              await this.writer.updateTask(message.taskId, { milestone: resolved }, this.parser);
+            }
+          }
+          await this.refresh();
+        } catch (error) {
+          console.error('[Taskwright] reslotTask failed:', error);
+          vscode.window.showErrorMessage(
+            `Failed to move task: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+        break;
+      }
+
+      case 'addDependency': {
+        if (!this.parser) break;
+        const task = await this.parser.getTask(message.taskId);
+        if (!task) break;
+        if (isReadOnlyTask(task)) break;
+        try {
+          // Re-validate the cycle guard extension-side (defense in depth; same predicate
+          // MCP edit_task uses). wouldCreateCycle(all, taskId, dependsOn) matches the
+          // addDependency direction: task[taskId].dependencies += dependsOn.
+          const all = await this.parser.getTasks();
+          if (wouldCreateCycle(all, message.taskId, message.dependsOn)) {
+            vscode.window.showWarningMessage(
+              `Linking ${message.dependsOn} into ${message.taskId} would create a dependency cycle.`
+            );
+            break;
+          }
+          const key = message.dependsOn.trim().toUpperCase();
+          if (task.dependencies.some((d) => d.trim().toUpperCase() === key)) break; // dupe
+          const next = [...task.dependencies, message.dependsOn];
+          await this.writer.updateTask(message.taskId, { dependencies: next }, this.parser);
+          await this.refresh();
+        } catch (error) {
+          console.error('[Taskwright] addDependency failed:', error);
+        }
+        break;
+      }
+
+      case 'removeDependency': {
+        if (!this.parser) break;
+        const task = await this.parser.getTask(message.taskId);
+        if (!task) break;
+        if (isReadOnlyTask(task)) break;
+        try {
+          const key = message.dependsOn.trim().toUpperCase();
+          const next = task.dependencies.filter((d) => d.trim().toUpperCase() !== key);
+          if (next.length === task.dependencies.length) break; // nothing removed
+          await this.writer.updateTask(message.taskId, { dependencies: next }, this.parser);
+          await this.refresh();
+        } catch (error) {
+          console.error('[Taskwright] removeDependency failed:', error);
         }
         break;
       }
