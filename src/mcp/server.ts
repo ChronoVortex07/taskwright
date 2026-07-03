@@ -25,6 +25,8 @@ import {
   claimTaskHandler,
   releaseTaskHandler,
   attachPlanHandler,
+  listCategoriesHandler,
+  listMilestonesHandler,
   createTaskHandler,
   editTaskHandler,
   completeTaskHandler,
@@ -134,6 +136,26 @@ async function main(): Promise<void> {
       },
     },
     async (args) => jsonContent(await attachPlanHandler(deps, args))
+  );
+
+  server.registerTool(
+    'list_categories',
+    {
+      title: 'List categories',
+      description:
+        'List the tech-tree lane vocabulary (categories) with a task count each, including the reserved Misc and Bugs lanes. Read this before deciding a new task’s lane: reuse an existing category by sideways traversal; only create a new one (create_category) for a genuinely new area.',
+    },
+    async () => jsonContent(await listCategoriesHandler(deps))
+  );
+
+  server.registerTool(
+    'list_milestones',
+    {
+      title: 'List milestones',
+      description:
+        'List milestone bands in board order (declared → discovered → Backburner) with task/done counts each. Read this to slot a task into the milestone where the work lands in the flow; default to Backburner when unknown.',
+    },
+    async () => jsonContent(await listMilestonesHandler(deps))
   );
 
   server.registerTool(

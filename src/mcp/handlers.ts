@@ -7,12 +7,12 @@ import { ClaimService } from '../core/ClaimService';
 import { PlanService } from '../core/PlanService';
 import { TreeFieldService } from '../core/TreeFieldService';
 import { resolvePriorities } from '../core/priorityOrder';
-import { wouldCreateCycle } from '../core/treeGate';
+import { wouldCreateCycle, resolveDoneStatus } from '../core/treeGate';
 import { createTaskWithTreeFields, normalizeType } from '../core/createTaskCore';
 import { promoteDrafts, type PromoteDraftsResult } from '../core/promoteDrafts';
 import { readActiveTask } from '../core/activeTask';
 import { loadPlanProgress } from '../core/loadPlanProgress';
-import { ChecklistItem, Task } from '../core/types';
+import { ChecklistItem, Milestone, Task } from '../core/types';
 import {
   ChecklistInput,
   assertValidPriority,
@@ -20,8 +20,12 @@ import {
   renderChecklist,
 } from './taskWriteHelpers';
 import { isPrimaryTree } from '../core/worktreeGuard';
-import { loadTreeStateFromParser, type TreeDerivedState } from '../core/treeDerived';
-import type { TreeLayout } from '../core/treeLayout';
+import {
+  loadTreeStateFromParser,
+  loadTreeBoardFromParser,
+  type TreeDerivedState,
+} from '../core/treeDerived';
+import { laneOf, MISC_LANE, BUGS_LANE, BACKBURNER_BAND, type TreeLayout } from '../core/treeLayout';
 import {
   MergeQueueStore,
   mergeQueuePath,
@@ -514,6 +518,75 @@ export async function attachPlanHandler(
 ): Promise<AttachPlanResult> {
   const plan = await deps.planService.attachPlan(args.taskId, args.plan, deps.parser);
   return { attached: true, taskId: args.taskId, plan };
+}
+
+export interface CategorySummary {
+  category: string;
+  count: number;
+  reserved: boolean;
+}
+
+/** The tech-tree lane vocabulary (canvas parity: config order + discovered + Misc + Bugs)
+ *  with a task count per lane over the tasks+drafts universe. */
+export async function listCategoriesHandler(deps: McpHandlerDeps): Promise<CategorySummary[]> {
+  const [board, tasks, drafts] = await Promise.all([
+    loadTreeBoardFromParser(deps.parser),
+    deps.parser.getTasks(),
+    deps.parser.getDrafts(),
+  ]);
+  const counts = new Map<string, number>();
+  for (const t of [...tasks, ...drafts]) {
+    const lane = laneOf(t);
+    counts.set(lane, (counts.get(lane) ?? 0) + 1);
+  }
+  const reserved = new Set([MISC_LANE, BUGS_LANE]);
+  return board.laneOrder.map((category) => ({
+    category,
+    count: counts.get(category) ?? 0,
+    reserved: reserved.has(category),
+  }));
+}
+
+export interface MilestoneSummary {
+  id?: string;
+  name: string;
+  order: number;
+  taskCount: number;
+  doneCount: number;
+}
+
+/** The milestone band order (canvas parity: declared -> discovered -> Backburner) with
+ *  task/done counts per band over the tasks+drafts universe. Backburner absorbs
+ *  tasks with no/unknown milestone (band semantics). */
+export async function listMilestonesHandler(deps: McpHandlerDeps): Promise<MilestoneSummary[]> {
+  const [board, tasks, drafts, milestones, config] = await Promise.all([
+    loadTreeBoardFromParser(deps.parser),
+    deps.parser.getTasks(),
+    deps.parser.getDrafts(),
+    deps.parser.getMilestones(),
+    deps.parser.getConfig(),
+  ]);
+  const doneStatus = resolveDoneStatus(config.statuses);
+  const idByName = new Map(milestones.map((m: Milestone) => [m.name.toLowerCase(), m.id]));
+  const bandByLower = new Map(board.bandOrder.map((b) => [b.toLowerCase(), b]));
+  const resolveBand = (t: Task): string => {
+    const m = t.milestone?.trim();
+    if (!m) return BACKBURNER_BAND;
+    return bandByLower.get(m.toLowerCase()) ?? BACKBURNER_BAND;
+  };
+  const totals = new Map<string, { taskCount: number; doneCount: number }>();
+  for (const t of [...tasks, ...drafts]) {
+    const band = resolveBand(t);
+    const agg = totals.get(band) ?? { taskCount: 0, doneCount: 0 };
+    agg.taskCount++;
+    if (t.status === doneStatus) agg.doneCount++;
+    totals.set(band, agg);
+  }
+  return board.bandOrder.map((name, order) => {
+    const agg = totals.get(name) ?? { taskCount: 0, doneCount: 0 };
+    const id = name === BACKBURNER_BAND ? undefined : idByName.get(name.toLowerCase());
+    return { ...(id ? { id } : {}), name, order, taskCount: agg.taskCount, doneCount: agg.doneCount };
+  });
 }
 
 /** Re-read a just-written task and shape it for return; throws if it vanished. */
