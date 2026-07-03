@@ -266,11 +266,14 @@
   .tree-connect-handle:hover {
     background: var(--vscode-focusBorder);
   }
+  /* Seated fully inside the node: .tree-node clips overflow (rounded corners, long
+     titles), so an edge-straddling -7px offset would halve the grabbable hitbox
+     (branch review Minor 2). */
   .tree-connect-left {
-    left: -7px;
+    left: 0;
   }
   .tree-connect-right {
-    right: -7px;
+    right: 0;
   }
   /* Handles are meaningless at far LOD (nodes are pills). */
   .tree-node.lod-far .tree-connect-handle {

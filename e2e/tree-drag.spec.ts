@@ -83,9 +83,9 @@ async function nodeCenter(page: Pg, id: string) {
 
 /**
  * Hover the node so its connect handle mounts, then return a press point ON the handle.
- * Handles sit at the node edge (left/right:-7px) and the node clips overflow, so only the
- * handle half toward the node CENTER is hittable — pressing the geometric center lands on
- * the node body (a reslot) or empty surface. Nudge inward by `dir`.
+ * Handles sit fully inside the node edge (left/right:0, 14px — unclipped by the node's
+ * overflow:hidden), so the whole circle is grabbable; the small inward nudge just keeps
+ * the press robustly clear of the node border under fractional scaling.
  */
 async function handleCenter(page: Pg, id: string, dir: 'needs' | 'unlocks') {
   const sel = `[data-testid="tree-connect-${dir}-${id}"]`;
@@ -262,6 +262,26 @@ test.describe('Tree drag — connect / reslot / edge removal', () => {
     await page.mouse.up();
     // Never a reslotTask for a bug — no milestone can be assigned by a drag. (With a
     // single bug in the lane there are no siblings, so no reorderTasks either.)
+    expect(await hasType(page, 'reslotTask')).toBe(false);
+    expect(await hasType(page, 'reorderTasks')).toBe(false);
+  });
+
+  test('a non-bug dragged onto the Bugs lane posts NO reslotTask (Bugs-lane guard)', async ({ page }) => {
+    // Symmetric to the bug reorder-only rule: a NON-bug must not enter the Bugs lane
+    // (it would write a literal category:'Bugs'). Drag TASK-1 straight down into the
+    // Bugs lane (own x, bug row's y) and drop — refused, no write.
+    const from = await nodeCenter(page, 'TASK-1');
+    const bug = await nodeCenter(page, 'TASK-4');
+    await clearPostedMessages(page);
+    await dragHold(page, from, { x: from.x, y: bug.y });
+    // Positive control (anti-vacuity): BEFORE releasing, prove the reslot drag genuinely
+    // engaged and is hovering the Bugs lane — ghost up, lane strip painted, Bugs lane
+    // label emphasized. A missed press (background pan) would render none of these.
+    await expect(page.locator('[data-testid="drag-ghost"]')).toBeVisible();
+    await expect(page.locator('[data-testid="drag-lane-target"]')).toHaveCount(1);
+    await expect(page.locator('[data-testid="tree-lane-Bugs"]')).toHaveClass(/emphasized/);
+    await page.mouse.up();
+    // Refused drop: no category write, and no reorder either (the drop no-ops entirely).
     expect(await hasType(page, 'reslotTask')).toBe(false);
     expect(await hasType(page, 'reorderTasks')).toBe(false);
   });

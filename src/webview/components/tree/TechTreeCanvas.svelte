@@ -514,6 +514,9 @@
       // A bug stays on the Bugs lane; only in-lane drops are valid (they reorder).
       return (lane ?? t.layout?.lane) === (t.layout?.lane ?? 'Bugs');
     }
+    // Symmetric guard: a NON-bug must not enter the Bugs lane — it would write a
+    // literal category:'Bugs' and re-home the task among bugs (branch review Minor 1).
+    if (lane === 'Bugs') return false;
     return true;
   }
   function onReslotDrop() {
