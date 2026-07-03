@@ -143,9 +143,7 @@
   );
   const promotableDrafts = $derived(draftNodes.filter((t) => !fadedIds.has(t.id)));
   function promoteAll() {
-    for (const t of promotableDrafts) {
-      vscode.postMessage({ type: 'promoteDraft', taskId: t.id });
-    }
+    vscode.postMessage({ type: 'promoteDrafts', taskIds: promotableDrafts.map((t) => t.id) });
   }
 
   // Q3: per-collapsed-lane summary (name + task counts) for the overlay strip. Uses the

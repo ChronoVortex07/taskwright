@@ -31,6 +31,7 @@ import {
   archiveTaskHandler,
   restoreTaskHandler,
   promoteDraftHandler,
+  promoteDraftsHandler,
   demoteTaskHandler,
   createSubtaskHandler,
   requestMergeHandler,
@@ -237,6 +238,21 @@ async function main(): Promise<void> {
       inputSchema: { taskId: z.string().describe('Draft ID to promote, e.g. DRAFT-3.') },
     },
     async (args) => runTool(() => promoteDraftHandler(deps, args))
+  );
+
+  server.registerTool(
+    'promote_drafts',
+    {
+      title: 'Promote drafts (bulk)',
+      description:
+        'Promote a SET of reviewed draft proposals (DRAFT-N) into real tasks at once, remapping every inbound dependency and bug caused_by reference so a linked proposal set keeps its structure. Use after the human has reviewed the drafts on the board. Returns { promoted: [{from,to}], remapped: [...] }.',
+      inputSchema: {
+        taskIds: z
+          .array(z.string())
+          .describe('Draft IDs to promote together, e.g. ["DRAFT-1","DRAFT-2"].'),
+      },
+    },
+    async (args) => runTool(() => promoteDraftsHandler(deps, args))
   );
 
   server.registerTool(

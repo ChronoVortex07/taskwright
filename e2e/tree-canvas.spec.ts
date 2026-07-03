@@ -369,5 +369,20 @@ test.describe('Tech tree canvas', () => {
     await postMessageToWebview(page, { type: 'navigatorFilterChanged', search: 'Alpha', priority: '' });
     await page.waitForTimeout(80);
     await expect(page.locator('[data-testid="tree-promote-all"]')).toContainText('(1)');
+
+    // Promote-all now posts ONE promoteDrafts message with only the visible (filtered) draft.
+    await page.locator('[data-testid="tree-promote-all"]').click();
+    const msgs = await getPostedMessages(page);
+    const bulk = msgs.filter((m) => m.type === 'promoteDrafts');
+    expect(bulk).toHaveLength(1);
+    expect(bulk[0]).toMatchObject({ type: 'promoteDrafts', taskIds: ['TASK-D1'] });
+    // No per-node promoteDraft messages from the bulk button:
+    expect(msgs.some((m) => m.type === 'promoteDraft')).toBe(false);
+  });
+
+  test('a draft node renders as a proposed tree node (GAP-1 visible)', async ({ page }) => {
+    // treeTasks() includes TASK-4 (status 'Draft'); the tree tab shows it as a proposed node.
+    await expect(page.locator('[data-testid="tree-node-TASK-4"]')).toBeVisible();
+    await expect(page.locator('[data-testid="tree-node-TASK-4"]')).toHaveClass(/draft|proposed/);
   });
 });

@@ -658,6 +658,24 @@ describe('TasksController — tree tab', () => {
     });
   });
 
+  describe('TasksController — promoteDrafts message (GAP-3)', () => {
+    it('promoteDrafts routes taskIds through the bulk core then refreshes', async () => {
+      const spy = vi.spyOn(BacklogWriter.prototype, 'promoteDraft').mockResolvedValue('TASK-9');
+      // parser.getDrafts must return the requested ids as drafts for validation to pass:
+      (mockParser.getDrafts as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: 'DRAFT-1', title: 'a', status: 'Draft', folder: 'drafts', labels: [], assignee: [],
+          dependencies: [], acceptanceCriteria: [], definitionOfDone: [], filePath: '/b/drafts/draft-1.md',
+        },
+      ]);
+      (mockParser.getTasks as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+      const controller = new TasksController(host, mockParser, mockContext);
+      await controller.handleMessage({ type: 'promoteDrafts', taskIds: ['DRAFT-1'] });
+      expect(spy).toHaveBeenCalledWith('DRAFT-1', mockParser);
+      expect(posted.some((m) => m.type === 'tasksUpdated')).toBe(true); // refresh re-emitted
+    });
+  });
+
   describe('TasksController — GAP-1b tree-mode draft union', () => {
     it('tree tab unions drafts into the tasksUpdated payload', async () => {
       (mockParser.getDrafts as ReturnType<typeof vi.fn>).mockResolvedValue([

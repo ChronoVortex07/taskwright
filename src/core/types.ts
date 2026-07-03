@@ -288,6 +288,7 @@ export type WebviewMessage =
   | { type: 'filterByLabel'; label: string }
   | { type: 'completeTask'; taskId: string }
   | { type: 'promoteDraft'; taskId: string }
+  | { type: 'promoteDrafts'; taskIds: string[] }
   | { type: 'demoteTask'; taskId: string }
   | { type: 'discardDraft'; taskId: string }
   | { type: 'requestCompletedTasks' }

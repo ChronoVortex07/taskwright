@@ -9,6 +9,7 @@ import { TreeFieldService } from '../core/TreeFieldService';
 import { resolvePriorities } from '../core/priorityOrder';
 import { wouldCreateCycle } from '../core/treeGate';
 import { createTaskWithTreeFields, normalizeType } from '../core/createTaskCore';
+import { promoteDrafts, type PromoteDraftsResult } from '../core/promoteDrafts';
 import { readActiveTask } from '../core/activeTask';
 import { loadPlanProgress } from '../core/loadPlanProgress';
 import { ChecklistItem, Task } from '../core/types';
@@ -655,13 +656,26 @@ export async function restoreTaskHandler(
   return { taskId: args.taskId, outcome: 'restored', path: dest };
 }
 
-/** Promote a draft (DRAFT-N) to a task (new TASK-N id). */
+/** Promote a draft (DRAFT-N) to a task (new TASK-N id). Routes through the bulk core so
+ *  inbound dependency/caused_by references are remapped (contract unchanged: returns the
+ *  promoted task summary). */
 export async function promoteDraftHandler(
   deps: McpHandlerDeps,
   args: { taskId: string }
 ): Promise<TaskSummary> {
-  const newId = await deps.writer.promoteDraft(args.taskId, deps.parser);
-  return requireSummary(deps, newId);
+  const { promoted } = await promoteDrafts(deps, [args.taskId]);
+  const to = promoted[0]?.to;
+  if (!to) throw new Error(`Draft ${args.taskId} could not be promoted.`);
+  return requireSummary(deps, to);
+}
+
+/** Promote a set of drafts at once, remapping inbound dependency/caused_by edges so a
+ *  linked proposal set keeps its structure. Returns { promoted:[{from,to}], remapped:[] }. */
+export async function promoteDraftsHandler(
+  deps: McpHandlerDeps,
+  args: { taskIds: string[] }
+): Promise<PromoteDraftsResult> {
+  return promoteDrafts(deps, args.taskIds ?? []);
 }
 
 /** Demote a task to a draft (new DRAFT-N id, status Draft). */

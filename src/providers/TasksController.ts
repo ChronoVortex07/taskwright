@@ -16,6 +16,7 @@ import { BacklogParser, computeSubtasks } from '../core/BacklogParser';
 import { BacklogWriter } from '../core/BacklogWriter';
 import { TreeFieldService } from '../core/TreeFieldService';
 import { createTaskWithTreeFields } from '../core/createTaskCore';
+import { promoteDrafts } from '../core/promoteDrafts';
 import { wouldCreateCycle } from '../core/treeGate';
 import { TaskDetailProvider } from './TaskDetailProvider';
 import { StatusCallbackRunner } from '../core/StatusCallbackRunner';
@@ -853,10 +854,31 @@ export class TasksController {
           break;
         }
         try {
-          await this.writer.promoteDraft(message.taskId, this.parser);
+          await promoteDrafts(
+            { parser: this.parser, writer: this.writer, treeFieldService: this.treeFieldService },
+            [message.taskId]
+          );
           await this.refresh();
         } catch (error) {
           vscode.window.showErrorMessage(`Failed to promote draft: ${error}`);
+        }
+        break;
+      }
+
+      case 'promoteDrafts': {
+        if (!this.parser) break;
+        const ids = message.taskIds ?? [];
+        if (ids.length === 0) break;
+        try {
+          await promoteDrafts(
+            { parser: this.parser, writer: this.writer, treeFieldService: this.treeFieldService },
+            ids
+          );
+          await this.refresh();
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `Failed to promote drafts: ${error instanceof Error ? error.message : String(error)}`
+          );
         }
         break;
       }

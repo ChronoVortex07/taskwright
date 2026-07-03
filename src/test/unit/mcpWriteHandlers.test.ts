@@ -14,6 +14,7 @@ import {
   archiveTaskHandler,
   restoreTaskHandler,
   promoteDraftHandler,
+  promoteDraftsHandler,
   demoteTaskHandler,
   createSubtaskHandler,
   getActiveTask,
@@ -183,6 +184,36 @@ describe('draft lifecycle', () => {
     const demoted = await demoteTaskHandler(deps(), { taskId: 'TASK-1' });
     expect(demoted.id).toMatch(/^DRAFT-\d+$/);
     expect(demoted.status).toBe('Draft');
+  });
+});
+
+describe('promoteDraftsHandler', () => {
+  it('bulk-promotes and rewires an inbound dependency', async () => {
+    const d = deps();
+    await createTaskHandler(d, { title: 'Base', draft: true }); // DRAFT-1
+    await createTaskHandler(d, { title: 'Uses', draft: true, dependencies: ['DRAFT-1'] }); // DRAFT-2 → dep DRAFT-1
+    const res = await promoteDraftsHandler(d, { taskIds: ['DRAFT-1', 'DRAFT-2'] });
+    expect(res.promoted).toHaveLength(2);
+    const uses = fs.readFileSync(
+      path.join(
+        backlogPath,
+        'tasks',
+        fs.readdirSync(path.join(backlogPath, 'tasks')).find((f) => f.includes('Uses'))!
+      ),
+      'utf-8'
+    );
+    expect(uses).toMatch(/- TASK-1\b/);
+    expect(uses).not.toMatch(/DRAFT/);
+  });
+});
+
+describe('promoteDraftHandler (single, rerouted through the bulk core)', () => {
+  it('still returns the promoted task summary (contract unchanged)', async () => {
+    const d = deps();
+    await createTaskHandler(d, { title: 'Solo', draft: true }); // DRAFT-1
+    const summary = await promoteDraftHandler(d, { taskId: 'DRAFT-1' });
+    expect(summary.id).toBe('TASK-1');
+    expect(summary.status).toBe('To Do');
   });
 });
 
