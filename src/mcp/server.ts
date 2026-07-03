@@ -30,6 +30,7 @@ import {
   getBoardHandler,
   searchTasksHandler,
   createTaskHandler,
+  createCategoryHandler,
   editTaskHandler,
   completeTaskHandler,
   archiveTaskHandler,
@@ -217,6 +218,19 @@ async function main(): Promise<void> {
       },
     },
     async (args) => runTool(() => createTaskHandler(deps, args))
+  );
+
+  server.registerTool(
+    'create_category',
+    {
+      title: 'Create category',
+      description:
+        'Add a new tech-tree lane (category) to the board config. Idempotent: an existing category (case-insensitive, including discovered ones) returns { created:false, category } rather than erroring. Reserved lane names (Bugs/Misc/Backburner) are refused. Create a category ONLY for a genuinely new area of work, surfaced for the user’s approval — prefer reusing an existing lane (see list_categories).',
+      inputSchema: {
+        category: z.string().describe('The new lane name, e.g. "Platform".'),
+      },
+    },
+    async (args) => runTool(() => createCategoryHandler(deps, args))
   );
 
   server.registerTool(

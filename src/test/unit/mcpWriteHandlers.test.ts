@@ -19,6 +19,7 @@ import {
   createSubtaskHandler,
   getActiveTask,
   claimTaskHandler,
+  createCategoryHandler,
 } from '../../mcp/handlers';
 import type { McpHandlerDeps } from '../../mcp/handlers';
 import { writeActiveTask } from '../../core/activeTask';
@@ -358,5 +359,39 @@ describe('complete_task bug rule (P1)', () => {
     await createTaskHandler(deps(), { title: 'Bug', type: 'bug', causedBy: 'TASK-1' }); // TASK-2
     const result = await completeTaskHandler(deps(), { taskId: 'TASK-2' });
     expect(result.outcome).toBe('completed');
+  });
+});
+
+describe('createCategoryHandler', () => {
+  it('adds a new category to config.yml and reports created:true', async () => {
+    const d = deps();
+    const res = await createCategoryHandler(d, { category: 'Platform' });
+    expect(res).toEqual({ created: true, category: 'Platform' });
+    const cfg = fs.readFileSync(path.join(backlogPath, 'config.yml'), 'utf-8');
+    expect(cfg).toMatch(/^categories:\s*\["Platform"\]/m);
+  });
+
+  it('is idempotent on a case-insensitive dupe (created:false, no error)', async () => {
+    const d = deps();
+    await createCategoryHandler(d, { category: 'Platform' });
+    const res = await createCategoryHandler(d, { category: 'platform' });
+    expect(res.created).toBe(false);
+    expect(res.category).toBe('Platform'); // returns the existing canonical value
+    const cfg = fs.readFileSync(path.join(backlogPath, 'config.yml'), 'utf-8');
+    expect((cfg.match(/Platform/g) ?? []).length).toBe(1); // not duplicated
+  });
+
+  it('rejects reserved names and blanks', async () => {
+    const d = deps();
+    await expect(createCategoryHandler(d, { category: 'Bugs' })).rejects.toThrow(/reserved/);
+    await expect(createCategoryHandler(d, { category: '  ' })).rejects.toThrow(/required/);
+  });
+
+  it('treats a discovered (task-only) category as an existing dupe', async () => {
+    const d = deps();
+    await createTaskHandler(d, { title: 'A', category: 'Data' }); // discovered, not in config
+    const res = await createCategoryHandler(d, { category: 'data' });
+    expect(res.created).toBe(false);
+    expect(res.category).toBe('Data');
   });
 });

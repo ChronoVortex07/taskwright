@@ -1,8 +1,15 @@
 import { execFile, exec as childExec } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
+import * as fs from 'fs';
 import { BacklogParser } from '../core/BacklogParser';
-import { BacklogWriter } from '../core/BacklogWriter';
+import {
+  BacklogWriter,
+  detectCRLF,
+  normalizeToLF,
+  restoreLineEndings,
+} from '../core/BacklogWriter';
+import { addCategoryLine, isReservedCategory } from '../core/categoriesConfig';
 import { ClaimService } from '../core/ClaimService';
 import { PlanService } from '../core/PlanService';
 import { TreeFieldService } from '../core/TreeFieldService';
@@ -519,6 +526,48 @@ export async function attachPlanHandler(
 ): Promise<AttachPlanResult> {
   const plan = await deps.planService.attachPlan(args.taskId, args.plan, deps.parser);
   return { attached: true, taskId: args.taskId, plan };
+}
+
+/** Resolve the board config file (config.yml preferred, then config.yaml). */
+function resolveConfigPath(backlogPath: string): string | undefined {
+  const yml = path.join(backlogPath, 'config.yml');
+  if (fs.existsSync(yml)) return yml;
+  const yaml = path.join(backlogPath, 'config.yaml');
+  if (fs.existsSync(yaml)) return yaml;
+  return undefined;
+}
+
+export interface CreateCategoryResult {
+  created: boolean;
+  category: string;
+}
+
+/** Add a tech-tree lane (category) to config.yml. Idempotent on a case-insensitive dupe
+ *  (against config ∪ discovered ∪ reserved). Rejects blank and reserved names. */
+export async function createCategoryHandler(
+  deps: McpHandlerDeps,
+  args: { category: string }
+): Promise<CreateCategoryResult> {
+  const category = args.category?.trim();
+  if (!category) throw new Error('A category name is required.');
+  if (isReservedCategory(category)) {
+    throw new Error(
+      `"${category}" is a reserved lane (Bugs/Misc/Backburner) and cannot be created as a category.`
+    );
+  }
+  // getCategories() = config ∪ discovered (reserved excluded, sorted). Dupe → idempotent.
+  const existing = await deps.parser.getCategories();
+  const match = existing.find((c) => c.toLowerCase() === category.toLowerCase());
+  if (match) return { created: false, category: match };
+
+  const configPath = resolveConfigPath(deps.backlogPath);
+  if (!configPath) throw new Error('No backlog config.yml was found to add the category to.');
+  const raw = fs.readFileSync(configPath, 'utf-8');
+  const hasCRLF = detectCRLF(raw);
+  const updated = addCategoryLine(normalizeToLF(raw), category);
+  fs.writeFileSync(configPath, restoreLineEndings(updated, hasCRLF), 'utf-8');
+  deps.parser.invalidateConfigCache();
+  return { created: true, category };
 }
 
 export interface CategorySummary {
