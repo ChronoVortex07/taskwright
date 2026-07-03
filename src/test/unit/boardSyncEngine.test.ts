@@ -329,6 +329,33 @@ describe('refreshBoard', () => {
     expect(out).toEqual({ changed: true });
     expect(materialized).toBe(1);
   });
+
+  it('does NOT advance the marker when materialize fails (no false progress)', async () => {
+    // The board.materialized freeze: materialize threw (an unforced prune
+    // rmSync raced a sibling materialize), so writeMaterialized must never run —
+    // the marker stays put and the failure propagates for the caller to surface,
+    // rather than the marker lying that this tip was materialized.
+    let marker: string | null = 'old-tip';
+    let wroteMarker = false;
+    await expect(
+      refreshBoard(TARGET, {
+        deps: fakeDeps({
+          fetchRef: async () => 'new-tip',
+          refTip: async () => 'new-tip',
+          readMaterialized: () => marker,
+          materialize: async () => {
+            throw new Error("ENOENT: no such file or directory, lstat 'backlog/tasks/x.md'");
+          },
+          writeMaterialized: (_t, sha) => {
+            wroteMarker = true;
+            marker = sha;
+          },
+        }),
+      })
+    ).rejects.toThrow(/ENOENT/);
+    expect(wroteMarker).toBe(false); // marker NOT advanced on failure
+    expect(marker).toBe('old-tip');
+  });
 });
 
 describe('two-clone anti-double-claim (integration)', () => {

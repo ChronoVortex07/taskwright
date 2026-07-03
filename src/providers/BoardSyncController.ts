@@ -6,12 +6,19 @@ import { reconcileBoardRef, compactBoardRef } from '../core/boardLifecycle';
 import { refreshBoard, type SyncTarget } from '../core/boardSyncEngine';
 import { GitBranchService } from '../core/GitBranchService';
 
+/** Injectable seams so the poll surfacing (below) is unit-testable without git/vscode. */
+export interface BoardSyncControllerDeps {
+  refresh: (target: SyncTarget) => Promise<{ changed: boolean }>;
+  resolveConfig: () => Promise<{ cfg: SyncConfig; commonDir: string } | undefined>;
+}
+
 /**
  * Orchestrates the synced board inside the extension host: reconciles the board
  * ref on start, polls the shared remote to reflect teammates' changes, compacts
  * the ref history periodically, and reflects state in a status-bar item. All
  * business logic lives in the Plan 1–3 cores; this is orchestration only, so it
- * is verified by F5 + the visual-proof skill rather than unit tests.
+ * is verified by F5 + the visual-proof skill rather than unit tests (the poll's
+ * degraded-state surfacing in `tick` is the exception — it is unit-tested).
  */
 export class BoardSyncController {
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -19,20 +26,25 @@ export class BoardSyncController {
   private syncing = false;
   private pollsSinceCompact = 0;
   private degraded = false;
+  private readonly refresh: BoardSyncControllerDeps['refresh'];
+  private readonly resolveConfigFn: BoardSyncControllerDeps['resolveConfig'];
 
   /** Compact roughly every ~50 polls (≈ every 15–20 min at the default cadence). */
   private static readonly COMPACT_EVERY_POLLS = 50;
 
   constructor(
     private readonly workspaceRoot: string,
-    private readonly onBoardChanged: () => void
+    private readonly onBoardChanged: () => void,
+    deps: Partial<BoardSyncControllerDeps> = {}
   ) {
     this.statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
     this.statusItem.command = 'taskwright.enableSync';
+    this.refresh = deps.refresh ?? ((target) => refreshBoard(target));
+    this.resolveConfigFn = deps.resolveConfig ?? (() => this.resolveConfigImpl());
   }
 
   /** Resolve the shared sync config for this workspace, or undefined when unavailable. */
-  private async resolveConfig(): Promise<{ cfg: SyncConfig; commonDir: string } | undefined> {
+  private async resolveConfigImpl(): Promise<{ cfg: SyncConfig; commonDir: string } | undefined> {
     const git = new GitBranchService(this.workspaceRoot);
     const commonDir = await git.getCommonDir();
     if (!commonDir) return undefined;
@@ -73,7 +85,7 @@ export class BoardSyncController {
   async start(): Promise<void> {
     if (this.timer) clearInterval(this.timer); // idempotent: allow restart after enable
     this.timer = undefined;
-    const resolved = await this.resolveConfig();
+    const resolved = await this.resolveConfigFn();
     if (!resolved || resolved.cfg.mode === 'off') {
       this.statusItem.hide();
       return;
@@ -97,12 +109,14 @@ export class BoardSyncController {
   private async tick(): Promise<void> {
     if (this.syncing) return; // never overlap polls
     this.syncing = true;
+    let cfg: SyncConfig | undefined;
     try {
-      const resolved = await this.resolveConfig();
+      const resolved = await this.resolveConfigFn();
       if (!resolved || resolved.cfg.mode === 'off') return;
-      const target = this.target(resolved.cfg);
+      cfg = resolved.cfg;
+      const target = this.target(cfg);
 
-      const { changed } = await refreshBoard(target);
+      const { changed } = await this.refresh(target);
       this.degraded = false;
       if (changed) this.onBoardChanged();
 
@@ -111,10 +125,16 @@ export class BoardSyncController {
         this.pollsSinceCompact = 0;
         await compactBoardRef(target);
       }
-      this.setStatus(resolved.cfg);
+      this.setStatus(cfg);
     } catch (err) {
+      // Surface the degraded state instead of failing invisibly. A materialize
+      // that throws (e.g. the board.materialized prune race) must show in the
+      // status bar — and the log must fire only on the transition into degraded,
+      // not every ~20s poll, so a persistent failure is visible without spam.
+      const wasDegraded = this.degraded;
       this.degraded = true;
-      console.error('[Taskwright] Board poll failed:', err);
+      if (cfg) this.setStatus(cfg);
+      if (!wasDegraded) console.error('[Taskwright] Board poll failed:', err);
     } finally {
       this.syncing = false;
     }

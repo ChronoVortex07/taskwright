@@ -146,6 +146,30 @@ function listLocalBoardFiles(repoRoot: string, backlogDir: string): Set<string> 
 }
 
 /**
+ * Delete each `listed` local board file that is absent from `keep`, so the board
+ * subdirs match the ref. `listed` is the *snapshot* of local files taken before
+ * this call — it is deliberately decoupled from live disk state, because between
+ * listing and unlinking a sibling materialize on the same shared working tree
+ * (another poll, an MCP session, or `reconcileBoardRef`/`compactBoardRef`) can
+ * unlink one of these paths first. Pruning is an idempotent *ensure-absent*
+ * operation, so `{ force: true }` makes an already-removed target a no-op rather
+ * than an ENOENT that would abort the whole materialize (freezing the
+ * `board.materialized` marker). No `recursive`: `listed` only ever contains
+ * files (see `walkFiles`), never directories.
+ */
+export function pruneStaleBoardFiles(
+  repoRoot: string,
+  listed: Iterable<string>,
+  keep: ReadonlySet<string>
+): void {
+  for (const rel of listed) {
+    if (!keep.has(rel)) {
+      fs.rmSync(path.join(repoRoot, ...rel.split('/')), { force: true });
+    }
+  }
+}
+
+/**
  * Write the ref's tree into the working copy (overwriting) and delete local
  * board files absent from the ref, so the board subdirs exactly match the ref.
  * Uses an isolated index; the user's real index / HEAD are untouched.
@@ -189,12 +213,10 @@ export async function materializeRefToWorktree(
   }
   await exec(opts.repoRoot, [...NO_EOL_CONVERT, 'checkout-index', '--all', '--force'], env);
 
-  // Prune local board files not present on the ref.
-  for (const rel of listLocalBoardFiles(opts.repoRoot, backlogDir)) {
-    if (!refFiles.has(rel)) {
-      fs.rmSync(path.join(opts.repoRoot, ...rel.split('/')));
-    }
-  }
+  // Prune local board files not present on the ref. The listing is snapshotted
+  // first and pruned with force, so a file a concurrent sibling materialize
+  // removes between listing and unlinking cannot abort this materialize.
+  pruneStaleBoardFiles(opts.repoRoot, listLocalBoardFiles(opts.repoRoot, backlogDir), refFiles);
 
   return { files: [...refFiles].sort() };
 }

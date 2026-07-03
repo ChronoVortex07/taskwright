@@ -12,6 +12,7 @@ import {
   defaultBoardExec,
   snapshotBoardToRef,
   materializeRefToWorktree,
+  pruneStaleBoardFiles,
   setLocalRef,
   fetchRef,
   pushRef,
@@ -223,6 +224,44 @@ describe('materializeRefToWorktree', () => {
     expect(read('backlog/config.yml')).toBe('project_name: "temp"\n'); // untouched
     expect(result.files).toEqual(['backlog/tasks/task-1 - A.md', 'backlog/tasks/task-2 - B.md']);
     expect(await repo.headSha()).toBe(headBefore); // user git state untouched
+  });
+});
+
+describe('pruneStaleBoardFiles (prune tolerates concurrent removal)', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskwright-prune-'));
+    fs.mkdirSync(path.join(dir, 'backlog', 'tasks'), { recursive: true });
+  });
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  it('removes listed files absent from the keep set and leaves kept files', () => {
+    const stale = path.join(dir, 'backlog', 'tasks', 'task-9 - Stale.md');
+    const keeper = path.join(dir, 'backlog', 'tasks', 'task-1 - A.md');
+    fs.writeFileSync(stale, 'stale\n');
+    fs.writeFileSync(keeper, 'A\n');
+
+    pruneStaleBoardFiles(
+      dir,
+      ['backlog/tasks/task-1 - A.md', 'backlog/tasks/task-9 - Stale.md'],
+      new Set(['backlog/tasks/task-1 - A.md'])
+    );
+
+    expect(fs.existsSync(stale)).toBe(false); // pruned (absent from keep)
+    expect(fs.existsSync(keeper)).toBe(true); // kept
+  });
+
+  it('does NOT throw when a listed prune target was already removed concurrently', () => {
+    // The snapshot lists a stale file, but a sibling materialize on the same
+    // shared working tree (another poll / an MCP session) unlinks it before we
+    // reach the prune. This is the board.materialized freeze: the unforced
+    // fs.rmSync here threw ENOENT, aborting materialize before it advanced the
+    // marker, so refreshBoard re-materialized on every ~20s poll indefinitely.
+    const listed = ['backlog/tasks/task-9 - Vanished.md'];
+    const abs = path.join(dir, 'backlog', 'tasks', 'task-9 - Vanished.md');
+    expect(fs.existsSync(abs)).toBe(false); // already gone (concurrent unlink)
+
+    expect(() => pruneStaleBoardFiles(dir, listed, new Set<string>())).not.toThrow();
   });
 });
 
