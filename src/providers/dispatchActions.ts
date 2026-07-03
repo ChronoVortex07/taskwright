@@ -119,7 +119,30 @@ export async function dispatchTask(
   // Invariant: handoffPath must match what writeHandoff writes — both derive from src/core/handoff.ts.
   const handoffFile = handoffPath(sessionRoot, taskId);
   const context = dispatchContextFromTask(task, { worktree: branch, handoffFile });
-  const prompt = renderDispatchPrompt(settings.template, context);
+  let prompt = renderDispatchPrompt(settings.template, context);
+
+  // No isolated worktree (opt-out via taskwright.dispatchCreateWorktree=false, or a
+  // creation failure fell back to the repo root). The DEFAULT_DISPATCH_TEMPLATE tells
+  // the session to launch inside `.worktrees/<branch>` and run `/execute-task` — but
+  // /execute-task STOPs in the primary tree (no worktree). Prepend a NOTE so the pasted
+  // prompt is coherent (work in place, manual TDD, no /execute-task) and warn the human.
+  // We touch only the rendered prompt here, never DEFAULT_DISPATCH_TEMPLATE (it is also
+  // the handoff source and the user-customizable `dispatchTemplate` setting).
+  if (!worktreePath) {
+    const note =
+      '> NOTE: No isolated worktree was created for this dispatch ' +
+      '(taskwright.dispatchCreateWorktree is off, or worktree creation failed). ' +
+      'Work this task IN PLACE in the current checkout using the manual TDD / superpowers ' +
+      'workflow, and commit here. Do NOT run the `/execute-task` skill — it requires a ' +
+      'dedicated `.worktrees/<branch>` worktree and will stop when run in the primary tree. ' +
+      'Ignore the worktree-launch instructions below.\n\n';
+    prompt = note + prompt;
+    vscode.window.showWarningMessage(
+      'Taskwright dispatched without an isolated worktree — the pasted prompt works the task ' +
+        'in place with the manual TDD workflow (not /execute-task, which requires a worktree). ' +
+        'Enable taskwright.dispatchCreateWorktree for the full auto-close flow.'
+    );
+  }
   writeHandoff(sessionRoot, taskId, prompt);
   await vscode.env.clipboard.writeText(prompt);
 

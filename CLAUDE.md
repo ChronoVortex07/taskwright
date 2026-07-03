@@ -44,7 +44,7 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
 - **Subscription-safe dispatch** ✅ (Phase 3): `backlog.dispatchTask` renders a paste-ready prompt and copies
   it to the clipboard — **never** spawns `claude -p`. Pure cores: `src/core/dispatchPrompt.ts` (configurable
   template + `{{placeholder}}` substitution; `backlog.dispatchTemplate` setting), `src/core/WorktreeService.ts`
-  (`.worktrees/<branch>` isolation, **on by default** via `taskwright.dispatchCreateWorktree`; set `false` to opt out), `src/core/handoff.ts`
+  (`.worktrees/<branch>` isolation, **on by default** via `taskwright.dispatchCreateWorktree`; set `false` to opt out — but the `false` opt-out is incompatible with the P5 `/execute-task` auto-close flow (worktree required), so a no-worktree dispatch prepends an in-place manual-TDD NOTE to the prompt and warns the human), `src/core/handoff.ts`
   (`.taskwright/handoff/<id>.md`). Orchestration in `src/providers/dispatchActions.ts` (sets active task on the
   session root, optional terminal); "Dispatch" control in the tree-node popover. Visual proof + behavior coverage of
   the kept plan banner lives in `e2e/dispatch.spec.ts` (the claim / set-active / dispatch actions moved to the

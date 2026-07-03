@@ -11,17 +11,38 @@ import { activeTaskPath } from '../../core/activeTask';
 import type { BacklogParser } from '../../core/BacklogParser';
 import type { Task } from '../../core/types';
 
-// Force worktree creation OFF so dispatch seeds into the repo root (the temp dir) with no git.
+// Mutable dispatch settings so a single harness can drive both the no-worktree
+// opt-out (default) and the with-worktree path. Defaults to worktree-OFF so the
+// GAP-3 tests below seed into the repo root (the temp dir) with no git.
+const settings = vi.hoisted(() => ({ createWorktree: false }));
 vi.mock('../../config', () => ({
   getTaskwrightConfig: (key: string, dflt: unknown) =>
-    key === 'dispatchCreateWorktree' ? false : dflt,
+    key === 'dispatchCreateWorktree' ? settings.createWorktree : dflt,
+}));
+
+// Deterministic worktree creation for the with-worktree branch (no real git needed).
+vi.mock('../../core/GitBranchService', () => ({
+  GitBranchService: class {
+    async isGitRepository() {
+      return true;
+    }
+  },
+}));
+vi.mock('../../core/WorktreeService', () => ({
+  createWorktree: vi.fn(async (repoRoot: string, branch: string) => ({
+    path: path.join(repoRoot, '.worktrees', branch),
+    branch,
+  })),
 }));
 
 // Imported AFTER the mock so dispatchActions picks up the mocked config.
 import { dispatchTask } from '../../providers/dispatchActions';
+import * as vscodeMock from 'vscode';
 
 let root: string, backlogPath: string;
 beforeEach(() => {
+  settings.createWorktree = false; // reset per-test
+  vi.clearAllMocks();
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-dispatch-'));
   backlogPath = path.join(root, 'backlog');
   fs.mkdirSync(backlogPath, { recursive: true });
@@ -68,5 +89,43 @@ describe('dispatchTask — clears a stale cancellation marker on seed (GAP-3)', 
     const result = await dispatchTask('TASK-7', stubParser(makeTask()));
     expect(result).toBeDefined();
     expect(isCancelled(root)).toBe(false);
+  });
+});
+
+describe('dispatchTask — no-worktree dispatch prepends a coherence NOTE (FIX 2)', () => {
+  const NOTE_MARK = 'No isolated worktree was created';
+
+  it('prepends the NOTE (and warns) when no worktree is created', async () => {
+    settings.createWorktree = false; // opt-out → sessionRoot = repo root, worktreePath undefined
+    const result = await dispatchTask('TASK-7', stubParser(makeTask()));
+    expect(result).toBeDefined();
+    expect(result!.worktreePath).toBeUndefined();
+
+    // The clipboard, the returned prompt, and the handoff all carry the NOTE.
+    expect(result!.prompt).toContain(NOTE_MARK);
+    expect(result!.prompt).toContain('Do NOT run the `/execute-task` skill');
+    const clipped = vi.mocked(vscodeMock.env.clipboard.writeText).mock.calls[0][0] as string;
+    expect(clipped).toContain(NOTE_MARK);
+    expect(fs.readFileSync(result!.handoffFile, 'utf-8')).toContain(NOTE_MARK);
+
+    // The human is warned to the same effect.
+    const warned = vi
+      .mocked(vscodeMock.window.showWarningMessage)
+      .mock.calls.some((c) => String(c[0]).includes('without an isolated worktree'));
+    expect(warned).toBe(true);
+  });
+
+  it('does NOT prepend the NOTE when a worktree is created', async () => {
+    settings.createWorktree = true; // GitBranchService + createWorktree mocks → worktreePath set
+    const result = await dispatchTask('TASK-7', stubParser(makeTask()));
+    expect(result).toBeDefined();
+    expect(result!.worktreePath).toBe(path.join(root, '.worktrees', 'task-7-thing'));
+
+    expect(result!.prompt).not.toContain(NOTE_MARK);
+    expect(fs.readFileSync(result!.handoffFile, 'utf-8')).not.toContain(NOTE_MARK);
+    const warned = vi
+      .mocked(vscodeMock.window.showWarningMessage)
+      .mock.calls.some((c) => String(c[0]).includes('without an isolated worktree'));
+    expect(warned).toBe(false);
   });
 });

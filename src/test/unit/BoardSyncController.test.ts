@@ -92,6 +92,35 @@ describe('BoardSyncController poll surfacing', () => {
     expect(errSpy).toHaveBeenCalledTimes(2);
   });
 
+  it('repaints a generic degraded status when config resolution itself throws (FIX 4)', async () => {
+    // resolveConfig throwing left cfg undefined, so the catch skipped setStatus and
+    // the bar stayed on a healthy-looking "Board: local" while actually degraded.
+    const { statusItem, tick } = build({
+      resolveConfig: async () => {
+        throw new Error('git rev-parse blew up');
+      },
+    });
+
+    await tick();
+
+    expect(statusItem.text).toContain('degraded');
+    expect(statusItem.show).toHaveBeenCalled();
+  });
+
+  it('logs the config-resolution failure once, not on every poll (de-dup preserved)', async () => {
+    const { tick } = build({
+      resolveConfig: async () => {
+        throw new Error('git down');
+      },
+    });
+
+    await tick();
+    await tick();
+    await tick();
+
+    expect(errSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('shows a healthy status and does not degrade on a successful poll', async () => {
     const { statusItem, onBoardChanged, tick } = build({
       refresh: async () => ({ changed: true }),

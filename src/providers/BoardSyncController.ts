@@ -133,7 +133,18 @@ export class BoardSyncController {
       // not every ~20s poll, so a persistent failure is visible without spam.
       const wasDegraded = this.degraded;
       this.degraded = true;
-      if (cfg) this.setStatus(cfg);
+      if (cfg) {
+        this.setStatus(cfg);
+      } else {
+        // resolveConfig itself threw, so there is no cfg to repaint from — but the
+        // degraded state must still be visible. Without this, a config-resolution
+        // failure left the bar on a healthy-looking "Board: local" (silent after the
+        // first poll, thanks to the de-dup). Show a generic degraded label instead.
+        this.statusItem.text = '$(warning) Board: sync degraded';
+        this.statusItem.tooltip =
+          'Board sync could not resolve its configuration (git/config lookup failed). Working degraded.';
+        this.statusItem.show();
+      }
       if (!wasDegraded) console.error('[Taskwright] Board poll failed:', err);
     } finally {
       this.syncing = false;

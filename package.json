@@ -104,7 +104,7 @@
         "taskwright.dispatchCreateWorktree": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Dispatch each task into its own isolated git worktree at `.worktrees/<branch>` (the default), so parallel sessions never share a working directory or active task. Set to `false` to dispatch into the workspace root instead. Falls back to the workspace root automatically when the folder is not a git repository."
+          "markdownDescription": "Dispatch each task into its own isolated git worktree at `.worktrees/<branch>` (the default), so parallel sessions never share a working directory or active task. Set to `false` to dispatch into the workspace root instead. Falls back to the workspace root automatically when the folder is not a git repository. Note: the `false` opt-out is incompatible with the `/execute-task` auto-close flow (which requires a worktree); such a dispatch pastes an in-place manual-TDD prompt instead."
         },
         "taskwright.dispatchOpenTerminal": {
           "type": "boolean",

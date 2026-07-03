@@ -27,9 +27,12 @@ export interface DispatchContext {
 }
 
 /**
- * Default dispatch prompt. Deliberately tells the session to pull its context
- * through the Taskwright MCP (`get_active_task` / `claim_task` / `release_task`)
- * rather than guessing from the file tree, and to stay scoped to the one task.
+ * Default dispatch prompt. Deliberately delegates to the `/execute-task` skill
+ * rather than inlining the workflow: the skill pulls the session's context via
+ * `get_active_task` (not guessing from the file tree), verifies the worktree and
+ * installs deps, `claim`s the task, executes with the right strategy, records
+ * progress with `edit_task`, and closes with `request_merge` — all in-session and
+ * subscription-safe (never `claude -p`). Stays scoped to the one task.
  */
 export const DEFAULT_DISPATCH_TEMPLATE = `You are a fresh Claude Code session assigned exactly one task. Work only on this task — do not touch unrelated code or other tasks.
 
