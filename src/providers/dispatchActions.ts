@@ -4,6 +4,7 @@ import { BacklogParser } from '../core/BacklogParser';
 import { GitBranchService } from '../core/GitBranchService';
 import { createWorktree } from '../core/WorktreeService';
 import { writeActiveTask } from '../core/activeTask';
+import { clearCancellationMarker } from '../core/cancellationMarker';
 import { writeHandoff, handoffPath } from '../core/handoff';
 import {
   DEFAULT_DISPATCH_TEMPLATE,
@@ -110,8 +111,11 @@ export async function dispatchTask(
   }
 
   // Mark the task active for the session root so the MCP get_active_task resolves
-  // it, then render + persist the paste-ready prompt.
+  // it, then render + persist the paste-ready prompt. Clear any stale cancellation
+  // marker left by a prior (leaked) cancel of the SAME task (deterministic branch =>
+  // reused worktree dir) so this fresh /execute-task does not insta-abort (GAP-3).
   writeActiveTask(sessionRoot, taskId);
+  clearCancellationMarker(sessionRoot);
   // Invariant: handoffPath must match what writeHandoff writes — both derive from src/core/handoff.ts.
   const handoffFile = handoffPath(sessionRoot, taskId);
   const context = dispatchContextFromTask(task, { worktree: branch, handoffFile });
