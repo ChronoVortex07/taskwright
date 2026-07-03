@@ -346,6 +346,12 @@
 
     const node = target.closest('.tree-node') as HTMLElement | null;
     if (node) {
+      // In-node interactive controls (e.g. the draft Promote button) handle their own
+      // onclick + stopPropagation — capturing the pointer here would swallow their
+      // native click and route the press to handleSelect instead (tree-promote
+      // regression). Connect handles are spans, so this guard never catches them
+      // (they returned above anyway).
+      if (target.closest('button')) return;
       // (b) node-body press — select on click, reslot on drag.
       pending = { kind: 'node', id: node.dataset.nodeId ?? '', startX: e.clientX, startY: e.clientY };
       viewportEl?.setPointerCapture(e.pointerId);
