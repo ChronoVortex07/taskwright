@@ -246,12 +246,24 @@ test.describe('Tree drag — connect / reslot / edge removal', () => {
 
   test('a bug dragged horizontally posts NO reslotTask (reorder-only, M2)', async ({ page }) => {
     const from = await nodeCenter(page, 'TASK-4');
+    // Horizontal target: the v2 band's x-range (TASK-3's column) at the bug's own y, so
+    // the cursor stays in the Bugs lane. Bugs (band '') anchor under the FIRST populated
+    // band (v1), so v2 is genuinely a non-origin band.
+    const v2 = await nodeCenter(page, 'TASK-3');
     await clearPostedMessages(page);
-    // Horizontal drag: well into another band's x-range, same y (stays in the Bugs lane).
-    await drag(page, from, { x: from.x + 300, y: from.y });
+    await dragHold(page, from, { x: v2.x, y: from.y });
+    // Positive control (anti-vacuity): BEFORE releasing, prove the reslot drag genuinely
+    // engaged on the bug node — the ghost is up and the hovered band target is v2, not
+    // the origin band. A missed press (background pan) would render none of these, and
+    // this "no message" test would otherwise pass without exercising the bug at all.
+    await expect(page.locator('[data-testid="drag-ghost"]')).toBeVisible();
+    await expect(page.locator('[data-testid="drag-band-target"]')).toHaveCount(1);
+    await expect(page.locator('[data-testid="tree-band-v2"]')).toHaveClass(/emphasized/);
+    await page.mouse.up();
     // Never a reslotTask for a bug — no milestone can be assigned by a drag. (With a
     // single bug in the lane there are no siblings, so no reorderTasks either.)
     expect(await hasType(page, 'reslotTask')).toBe(false);
+    expect(await hasType(page, 'reorderTasks')).toBe(false);
   });
 
   // --- dependency removal (edge ✕ + popover prereq ✕) ------------------------
