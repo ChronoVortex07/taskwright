@@ -630,8 +630,19 @@ describe('TasksController — tree tab', () => {
       (mockParser.getTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
         { id: 'TASK-1', dependencies: [] }, { id: 'TASK-2', dependencies: ['TASK-1'] },
       ]);
+      // getTask must return a real task so the handler reaches the cycle guard
+      // (otherwise it bails at `if (!task) break;` and the test is vacuous).
+      (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [], dependencies: [],
+        acceptanceCriteria: [], definitionOfDone: [], filePath: '/fake/backlog/tasks/task-1.md',
+      } as Task);
       const controller = new TasksController(host, mockParser, mockContext);
       await controller.handleMessage({ type: 'addDependency', taskId: 'TASK-1', dependsOn: 'TASK-2' });
+      // Assert BOTH the user-visible refusal and the no-write, so deleting the
+      // cycle guard turns this test red instead of leaving it vacuously green.
+      expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
+        'Linking TASK-2 into TASK-1 would create a dependency cycle.'
+      );
       expect(updateSpy).not.toHaveBeenCalled();
     });
 
