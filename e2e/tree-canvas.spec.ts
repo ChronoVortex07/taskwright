@@ -385,4 +385,41 @@ test.describe('Tech tree canvas', () => {
     await expect(page.locator('[data-testid="tree-node-TASK-4"]')).toBeVisible();
     await expect(page.locator('[data-testid="tree-node-TASK-4"]')).toHaveClass(/draft|proposed/);
   });
+
+  test('a drafts-folder node carrying a REAL status still renders provisional via the folder clause (P6/D2)', async ({
+    page,
+  }) => {
+    // Positive control for the P6 draft model: a promoted-era draft carries a REAL status, so
+    // `status === 'Draft'` is FALSE. Such a node is provisional ONLY via the `folder === 'drafts'`
+    // clause of the consumer guard (TreeNode/TechTreeCanvas/DetailPopover). Both a Done and a To-Do
+    // drafts-folder node must still get the `proposed` treatment — dropping the `folder === 'drafts'`
+    // clause regresses this (isDraft would be false for a non-'Draft' status → no proposed class).
+    await postMessageToWebview(page, {
+      type: 'tasksUpdated',
+      tasks: [
+        {
+          id: 'TASK-DFD', title: 'Done draft', status: 'Done', folder: 'drafts',
+          labels: [], assignee: [], dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
+          filePath: '/b/drafts/task-dfd.md', category: 'Features', milestone: 'v1',
+          layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 0 },
+        } as Task,
+        {
+          id: 'TASK-DFT', title: 'To-Do draft', status: 'To Do', folder: 'drafts',
+          labels: [], assignee: [], dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
+          filePath: '/b/drafts/task-dft.md', category: 'Features', milestone: 'v1',
+          layout: { lane: 'Features', band: 'v1', depth: 1, subRow: 0 },
+        } as Task,
+      ],
+    });
+    await postMessageToWebview(page, {
+      type: 'treeLayoutUpdated',
+      laneOrder: ['Features'],
+      bandOrder: ['v1'],
+      warnings: [],
+    });
+    await page.waitForTimeout(80);
+    await expect(page.locator('[data-testid="tree-node-TASK-DFD"]')).toBeVisible();
+    await expect(page.locator('[data-testid="tree-node-TASK-DFD"]')).toHaveClass(/proposed/);
+    await expect(page.locator('[data-testid="tree-node-TASK-DFT"]')).toHaveClass(/proposed/);
+  });
 });

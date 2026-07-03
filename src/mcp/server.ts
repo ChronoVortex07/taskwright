@@ -341,7 +341,8 @@ async function main(): Promise<void> {
     'demote_task',
     {
       title: 'Demote task',
-      description: 'Demote a task into a draft (new DRAFT-N id, status Draft).',
+      description:
+        "Demote a task into a draft (new DRAFT-N id; the task's status is preserved — a Done task becomes a Done draft, P6/D2e).",
       inputSchema: { taskId: z.string().describe('Task ID to demote, e.g. TASK-7.') },
     },
     async (args) => runTool(() => demoteTaskHandler(deps, args))

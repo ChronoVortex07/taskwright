@@ -182,11 +182,16 @@ describe('draft lifecycle', () => {
     expect(promoted.status).toBe('To Do');
   });
 
-  it('demotes a task to a draft', async () => {
-    await createTaskHandler(deps(), { title: 'Too early' });
-    const demoted = await demoteTaskHandler(deps(), { taskId: 'TASK-1' });
+  it('demotes a task to a draft, preserving its real (non-default) status (P6/D2e)', async () => {
+    const d = deps();
+    await createTaskHandler(d, { title: 'Too early' });
+    // Seed a NON-default status so the assertion is falsifying: 'Done' ≠ the config default
+    // ('To Do'). If demote regressed to force-writing status:'Draft', getTask's legacy-Draft
+    // migrate-on-read alias would surface the config default ('To Do'), not 'Done' — failing here.
+    await editTaskHandler(d, { taskId: 'TASK-1', status: 'Done' });
+    const demoted = await demoteTaskHandler(d, { taskId: 'TASK-1' });
     expect(demoted.id).toMatch(/^DRAFT-\d+$/);
-    expect(demoted.status).toBe('To Do'); // P6/D2e: demote preserves the real status
+    expect(demoted.status).toBe('Done'); // status preserved through demote
   });
 
   it('a Done baseline draft round-trips its status and promotes to a Done task (P6/D2)', async () => {

@@ -2223,6 +2223,20 @@ status: In Progress
         expect(drafts[0].folder).toBe('drafts'); // provisional marker intact
       });
 
+      it('aliases a legacy status: Draft draft to the CONFIGURED non-default default_status (P6 back-compat)', async () => {
+        // Exercises the `config.default_status || 'To Do'` config-read branch, not just the
+        // fallback: a board whose default is 'Backlog' must alias the legacy draft there, so a
+        // regression that dropped the config read and hardcoded 'To Do' would fail here.
+        vi.mocked(fs.existsSync).mockReturnValue(true);
+        (fs.readdirSync as ReturnType<typeof vi.fn>).mockReturnValue(['draft-1 - Legacy.md']);
+        vi.mocked(fs.readFileSync).mockReturnValue('---\nid: DRAFT-1\ntitle: Legacy\nstatus: Draft\n---\n');
+        const parser = new BacklogParser('/fake/backlog');
+        vi.spyOn(parser, 'getConfig').mockResolvedValue({ default_status: 'Backlog' });
+        const drafts = await parser.getDrafts();
+        expect(drafts[0].status).toBe('Backlog'); // reads config.default_status, not hardcoded 'To Do'
+        expect(drafts[0].folder).toBe('drafts'); // provisional marker intact
+      });
+
       it('should return empty array when no drafts folder exists', async () => {
         vi.mocked(fs.existsSync).mockReturnValue(false);
 
@@ -2345,6 +2359,36 @@ status: Done
 
         const task = await parser.getTask('DRAFT-1');
         expect(task?.status).toBe('To Do'); // was 'Draft' before the getTask alias; agrees with getDrafts now
+        expect(task?.folder).toBe('drafts'); // provisional marker intact
+      });
+
+      it('aliases a legacy status: Draft draft via getTask to the CONFIGURED non-default default_status', async () => {
+        // Config-read branch parity with getDrafts: a board default of 'Backlog' must flow through
+        // getTask's alias too, falsifying a regression that hardcodes 'To Do' on this read path.
+        const parser = new BacklogParser('/fake/backlog');
+        vi.spyOn(parser, 'getConfig').mockResolvedValue({ default_status: 'Backlog' });
+        vi.spyOn(parser, 'getTasksFromFolder').mockImplementation(async (folder: string) => {
+          if (folder === 'drafts') {
+            return [
+              {
+                id: 'DRAFT-1',
+                title: 'Legacy',
+                status: 'Draft' as const,
+                folder: 'drafts' as const,
+                filePath: '/fake/backlog/drafts/draft-1.md',
+                labels: [],
+                assignee: [],
+                dependencies: [],
+                acceptanceCriteria: [],
+                definitionOfDone: [],
+              },
+            ];
+          }
+          return [];
+        });
+
+        const task = await parser.getTask('DRAFT-1');
+        expect(task?.status).toBe('Backlog'); // reads config.default_status, not hardcoded 'To Do'
         expect(task?.folder).toBe('drafts'); // provisional marker intact
       });
 
