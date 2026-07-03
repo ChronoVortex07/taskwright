@@ -17,6 +17,14 @@ import {
   fitToView,
   zoomAt,
   clampViewport,
+  screenToWorld,
+  laneAtY,
+  bandAtX,
+  cellAt,
+  reslotTargets,
+  DRAG_THRESHOLD,
+  RESLOT_MIN_H,
+  RESLOT_MIN_W,
   type GeometryNode,
 } from '../../webview/lib/treeGeometry';
 
@@ -157,5 +165,81 @@ describe('treeGeometry — viewport math', () => {
     const vp = clampViewport({ scale: 1, tx: 5000, ty: 5000 }, 4000, 4000, 800, 800, 80);
     expect(vp.tx).toBeLessThanOrEqual(80);
     expect(vp.ty).toBeLessThanOrEqual(80);
+  });
+});
+
+describe('treeGeometry — inverse mapping', () => {
+  const laneOrder = ['Features', 'Misc', 'Bugs'];
+  const bandOrder = ['v1', 'v2', 'Backburner'];
+  // Populated: Features/v1 (A), Misc/v2 (M). Empty lanes: Bugs. Empty bands: Backburner.
+  const nodes: GeometryNode[] = [
+    node('A', { lane: 'Features', band: 'v1', depth: 0, subRow: 0 }),
+    node('M', { lane: 'Misc', band: 'v2', depth: 0, subRow: 0 }),
+  ];
+  const g = deriveGeometry(nodes, laneOrder, bandOrder);
+
+  it('screenToWorld inverts the viewport transform', () => {
+    const vp = { scale: 2, tx: 40, ty: -30 };
+    // world (100,50) → screen (100*2+40, 50*2-30) = (240,70) → back to (100,50)
+    expect(screenToWorld(vp, 240, 70)).toEqual({ x: 100, y: 50 });
+  });
+
+  it('laneAtY / bandAtX resolve a populated cell and return undefined in a gap', () => {
+    const a = g.nodes.get('A')!;
+    expect(laneAtY(g, a.y + 1)).toBe('Features');
+    expect(bandAtX(g, a.x + 1)).toBe('v1');
+    // far below all lanes → gap
+    expect(laneAtY(g, g.height + 1000)).toBeUndefined();
+    // far right of all bands → gap
+    expect(bandAtX(g, g.width + 1000)).toBeUndefined();
+  });
+
+  it('cellAt returns the lane+band under a world point (undefined components in a gap)', () => {
+    const m = g.nodes.get('M')!;
+    expect(cellAt(g, m.x + 1, m.y + 1)).toEqual({ lane: 'Misc', band: 'v2' });
+    expect(cellAt(g, -9999, -9999)).toEqual({ lane: undefined, band: undefined });
+  });
+
+  it('reslotTargets covers EVERY lane and band, including zero-node ones', () => {
+    const t = reslotTargets(g, laneOrder, bandOrder);
+    expect(t.lanes.map((l) => l.name)).toEqual(laneOrder);
+    expect(t.bands.map((b) => b.name)).toEqual(bandOrder);
+
+    // Populated targets equal the geometry ranges.
+    const feat = t.lanes.find((l) => l.name === 'Features')!;
+    const gFeat = g.lanes.find((l) => l.name === 'Features')!;
+    expect(feat.populated).toBe(true);
+    expect(feat.y).toBe(gFeat.y);
+    expect(feat.height).toBe(gFeat.height);
+
+    // Empty lane 'Bugs' gets a min-height strip below the content, not overlapping any populated range.
+    const bugs = t.lanes.find((l) => l.name === 'Bugs')!;
+    expect(bugs.populated).toBe(false);
+    expect(bugs.height).toBeGreaterThanOrEqual(RESLOT_MIN_H);
+    const maxPopulatedBottom = Math.max(...g.lanes.map((l) => l.y + l.height));
+    expect(bugs.y).toBeGreaterThanOrEqual(maxPopulatedBottom);
+
+    // Empty band 'Backburner' gets a min-width strip right of the content.
+    const bb = t.bands.find((b) => b.name === 'Backburner')!;
+    expect(bb.populated).toBe(false);
+    expect(bb.width).toBeGreaterThanOrEqual(RESLOT_MIN_W);
+    const maxPopulatedRight = Math.max(...g.bands.map((b) => b.x + b.width));
+    expect(bb.x).toBeGreaterThanOrEqual(maxPopulatedRight);
+  });
+
+  it('reslot lane/band targets do not overlap within their axis', () => {
+    const t = reslotTargets(g, laneOrder, bandOrder);
+    const lanes = [...t.lanes].sort((p, q) => p.y - q.y);
+    for (let i = 1; i < lanes.length; i++) {
+      expect(lanes[i].y).toBeGreaterThanOrEqual(lanes[i - 1].y + lanes[i - 1].height);
+    }
+    const bands = [...t.bands].sort((p, q) => p.x - q.x);
+    for (let i = 1; i < bands.length; i++) {
+      expect(bands[i].x).toBeGreaterThanOrEqual(bands[i - 1].x + bands[i - 1].width);
+    }
+  });
+
+  it('DRAG_THRESHOLD is a small positive pixel constant', () => {
+    expect(DRAG_THRESHOLD).toBe(6);
   });
 });

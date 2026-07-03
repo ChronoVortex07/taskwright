@@ -210,3 +210,118 @@ export function clampViewport(
     ty: clamp(vp.ty, viewportH - scaledH - margin, margin),
   };
 }
+
+/* ------------------------------------------------------------------ *
+ * Geometry inverse (P3b) — screen→world + world→lane/band/cell + the  *
+ * hittable reslot strips (covering empty lanes/bands too).            *
+ * ------------------------------------------------------------------ */
+
+/** Pointer-drag threshold (screen px): movement under this is a click, not a drag. */
+export const DRAG_THRESHOLD = 6;
+
+/** Min hittable strip size for empty (zero-node) reslot lanes/bands. */
+export const RESLOT_MIN_W = NODE_WIDTH;
+export const RESLOT_MIN_H = ROW_STRIDE;
+
+export interface ReslotLaneTarget {
+  name: string;
+  y: number;
+  height: number;
+  /** false = synthesized strip for a lane with no nodes. */
+  populated: boolean;
+}
+export interface ReslotBandTarget {
+  name: string;
+  x: number;
+  width: number;
+  populated: boolean;
+}
+export interface ReslotTargets {
+  lanes: ReslotLaneTarget[];
+  bands: ReslotBandTarget[];
+}
+
+/** Screen point → world point under `vp` (inverse of the surface transform). */
+export function screenToWorld(vp: Viewport, screenX: number, screenY: number): Point {
+  return { x: (screenX - vp.tx) / vp.scale, y: (screenY - vp.ty) / vp.scale };
+}
+
+/** Populated lane whose vertical range contains `worldY`; undefined in a gap. */
+export function laneAtY(geometry: TreeGeometry, worldY: number): string | undefined {
+  for (const l of geometry.lanes) {
+    if (worldY >= l.y && worldY < l.y + l.height) return l.name;
+  }
+  return undefined;
+}
+
+/** Populated band whose horizontal range contains `worldX`; undefined in a gap. */
+export function bandAtX(geometry: TreeGeometry, worldX: number): string | undefined {
+  for (const b of geometry.bands) {
+    if (worldX >= b.x && worldX < b.x + b.width) return b.name;
+  }
+  return undefined;
+}
+
+/**
+ * Drop / click cell at a world point. Either component may be undefined (a gap /
+ * empty lane or band) — the caller maps undefined lane → Misc (no category) and
+ * undefined band → Backburner (no milestone).
+ */
+export function cellAt(
+  geometry: TreeGeometry,
+  worldX: number,
+  worldY: number
+): { lane?: string; band?: string } {
+  return { lane: laneAtY(geometry, worldY), band: bandAtX(geometry, worldX) };
+}
+
+/**
+ * Hittable reslot strips covering EVERY lane/band in order. Populated lanes/bands
+ * use their exact geometry range (authoritative — they match rendered nodes); empty
+ * ones get `RESLOT_MIN_*` strips appended past the content bottom/right so they never
+ * overlap a populated range yet stay reachable (band-expand-on-hover makes them easy).
+ */
+export function reslotTargets(
+  geometry: TreeGeometry,
+  laneOrder: string[],
+  bandOrder: string[],
+  minW = RESLOT_MIN_W,
+  minH = RESLOT_MIN_H
+): ReslotTargets {
+  const laneByName = new Map(geometry.lanes.map((l) => [l.name, l]));
+  const bandByName = new Map(geometry.bands.map((b) => [b.name, b]));
+
+  const lanes: ReslotLaneTarget[] = [];
+  for (const name of laneOrder) {
+    const g = laneByName.get(name);
+    if (g) lanes.push({ name, y: g.y, height: g.height, populated: true });
+  }
+  // Empty lanes: stack min-height strips below the last populated row (deriveGeometry:
+  // height = contentBottom + CANVAS_PAD, so contentBottom = height - CANVAS_PAD).
+  let ly = geometry.lanes.length > 0 ? geometry.height - CANVAS_PAD : CANVAS_PAD;
+  for (const name of laneOrder) {
+    if (laneByName.has(name)) continue;
+    lanes.push({ name, y: ly, height: minH, populated: false });
+    ly += minH;
+  }
+
+  const bands: ReslotBandTarget[] = [];
+  for (const name of bandOrder) {
+    const g = bandByName.get(name);
+    if (g) bands.push({ name, x: g.x, width: g.width, populated: true });
+  }
+  // Empty bands: min-width strips right of the last populated column
+  // (width = contentRight + CANVAS_PAD, so contentRight = width - CANVAS_PAD).
+  let bx = geometry.bands.length > 0 ? geometry.width - CANVAS_PAD : CANVAS_PAD;
+  for (const name of bandOrder) {
+    if (bandByName.has(name)) continue;
+    bands.push({ name, x: bx, width: minW, populated: false });
+    bx += minW + BAND_GAP;
+  }
+
+  // Keep both axes in the given order (populated first, then appended empties) —
+  // callers rely on `.map(name)` matching laneOrder/bandOrder.
+  lanes.sort((a, b) => laneOrder.indexOf(a.name) - laneOrder.indexOf(b.name));
+  bands.sort((a, b) => bandOrder.indexOf(a.name) - bandOrder.indexOf(b.name));
+  return { lanes, bands };
+}
