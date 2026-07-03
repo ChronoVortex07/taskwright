@@ -57,13 +57,18 @@
     mode: 'full' | 'quick';
     bugMode: boolean;
     prefill?: { category?: string; milestone?: string; causedBy?: string };
+    linkTo?: { taskId: string; direction: 'needs' | 'unlocks' };
   } | null>(null);
 
   function openCreateForm(
     mode: 'full' | 'quick',
-    opts?: { bugMode?: boolean; prefill?: { category?: string; milestone?: string; causedBy?: string } }
+    opts?: {
+      bugMode?: boolean;
+      prefill?: { category?: string; milestone?: string; causedBy?: string };
+      linkTo?: { taskId: string; direction: 'needs' | 'unlocks' };
+    }
   ) {
-    createForm = { mode, bugMode: opts?.bugMode ?? false, prefill: opts?.prefill };
+    createForm = { mode, bugMode: opts?.bugMode ?? false, prefill: opts?.prefill, linkTo: opts?.linkTo };
   }
 
   function handleCreateSubmit(payload: CreateTaskPayload) {
@@ -79,6 +84,8 @@
       taskType: payload.taskType,
       causedBy: payload.causedBy,
       openAfter: payload.openAfter,
+      // P3b drop-on-empty pre-link (undefined for every non-connect create).
+      linkTo: createForm?.linkTo,
     });
     createForm = null;
   }
@@ -608,6 +615,7 @@
         openCreateForm(opts.mode ?? 'full', {
           bugMode: opts.bugMode,
           prefill: { causedBy: opts.causedBy, category: opts.category, milestone: opts.milestone },
+          linkTo: opts.linkTo,
         })}
     />
   </div>

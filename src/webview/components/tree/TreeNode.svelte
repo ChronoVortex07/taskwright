@@ -118,6 +118,25 @@
 >
   <span class="tree-node-bar" aria-hidden="true"></span>
 
+  {#if hovered && !isDone}
+    <span
+      class="tree-connect-handle tree-connect-left"
+      data-testid="tree-connect-needs-{task.id}"
+      data-connect-id={task.id}
+      data-connect-dir="needs"
+      title="Drag to make this task depend on another"
+      aria-hidden="true"
+    ></span>
+    <span
+      class="tree-connect-handle tree-connect-right"
+      data-testid="tree-connect-unlocks-{task.id}"
+      data-connect-id={task.id}
+      data-connect-dir="unlocks"
+      title="Drag to make another task depend on this"
+      aria-hidden="true"
+    ></span>
+  {/if}
+
   {#if lod === 'far'}
     <span class="tree-node-pill" data-testid="tree-node-pill-{task.id}" title={task.title}>
       {@render statusGlyph()}
@@ -231,6 +250,31 @@
     bottom: 0;
     width: 4px;
     background: var(--tw-status-color, var(--vscode-foreground));
+  }
+  .tree-connect-handle {
+    position: absolute;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    margin-top: -7px;
+    border-radius: 50%;
+    background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+    border: 2px solid var(--vscode-focusBorder);
+    cursor: crosshair;
+    z-index: 5;
+  }
+  .tree-connect-handle:hover {
+    background: var(--vscode-focusBorder);
+  }
+  .tree-connect-left {
+    left: -7px;
+  }
+  .tree-connect-right {
+    right: -7px;
+  }
+  /* Handles are meaningless at far LOD (nodes are pills). */
+  .tree-node.lod-far .tree-connect-handle {
+    display: none;
   }
   /* Known-status colors + faint tints (theme tokens). */
   .tree-node.status-to-do,

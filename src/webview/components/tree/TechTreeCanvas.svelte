@@ -54,6 +54,8 @@
       causedBy?: string;
       category?: string;
       milestone?: string;
+      /** P3b drop-on-empty pre-link (origin node + its handle direction). */
+      linkTo?: { taskId: string; direction: 'needs' | 'unlocks' };
     }) => void;
   }
   let {
@@ -451,12 +453,18 @@
   }
 
   // Filled by Task 4 (connect) / Task 5 (reslot). Stubs keep the bundle green now.
+  /** Map a connect gesture (origin handle) + hovered target to an addDependency edge. */
   function connectEdge(
-    _fromId: string,
-    _dir: 'needs' | 'unlocks',
-    _overId: string | null
+    fromId: string,
+    dir: 'needs' | 'unlocks',
+    overId: string | null
   ): { taskId: string; dependsOn: string } | null {
-    return null;
+    if (!overId || overId === fromId) return null;
+    // right/unlocks: origin unlocks target ⇒ target depends on origin.
+    // left/needs:    origin needs target   ⇒ origin depends on target.
+    return dir === 'unlocks'
+      ? { taskId: overId, dependsOn: fromId }
+      : { taskId: fromId, dependsOn: overId };
   }
   function reslotValid(
     _t: Task | undefined,
@@ -470,7 +478,23 @@
     /* Task 5 */
   }
   function onConnectDrop() {
-    /* Task 4 */
+    if (!drag || drag.mode !== 'connect') return;
+    const overId = drag.targetId;
+    if (overId) {
+      const edge = connectEdge(drag.fromId, drag.dir, overId);
+      if (edge && connectValid(edge.taskId, edge.dependsOn)) {
+        vscode.postMessage({ type: 'addDependency', taskId: edge.taskId, dependsOn: edge.dependsOn });
+      }
+      return; // invalid target: no-op (DragLayer already showed red)
+    }
+    // Drop on empty canvas → create a new pre-linked node (reuses P3a createTask.linkTo).
+    const cell = cellAt(geometry, drag.cursor.x, drag.cursor.y);
+    onCreateInPlace?.({
+      mode: 'full',
+      category: cell.lane,
+      milestone: cell.band,
+      linkTo: { taskId: drag.fromId, direction: drag.dir },
+    });
   }
 
   function onWheel(e: WheelEvent) {
@@ -630,6 +654,7 @@
       onpointermove={onPointerMove}
       onpointerup={onPointerUp}
       onpointerleave={onPointerLeave}
+      onpointercancel={onPointerLeave}
       onwheel={onWheel}
       onkeydown={onCanvasKeydown}
       role="application"
