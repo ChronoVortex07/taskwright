@@ -77,6 +77,8 @@ The existing `dispatchActions`/`dispatchPrompt` flow is kept and refined:
 - `/execute-task` is also **runnable directly** in the user's own session to work a task in isolation
   (it self-creates the worktree), giving humans the same one-command execution path.
 
+> **P5 implementation deviation (2026-07-03):** the "runnable directly / self-creates the worktree" path (§5, last bullet) is descoped. The taskwright MCP server roots itself once at launch (`src/mcp/server.ts`) and `request_merge` aborts on the primary tree (`isPrimaryTree`), so a repo-root session cannot self-create a worktree and continue. `/execute-task` instead **verifies** it was launched inside `.worktrees/<branch>` (dispatch is the normal trigger) and stops with guidance otherwise. Also: the §6 "later prune succeeds / worktree reclaimed" note is corrected — `git worktree prune` only deregisters worktrees whose directory is already missing, and `cancelDispatch` fires once, so a Windows live-agent cancel **leaks** the worktree until a re-dispatch reuses it (with the stale marker cleared). See `.superpowers/tech-tree-run/p5-architecture-directives.md` (CENTRAL INVARIANT + GAP-2 + DEVIATIONS).
+
 ## 6. Cancel-dispatch plumbing (task-scoped)
 
 Triggered by the P2 popover's **Cancel dispatch** on an agent-held task. The extension (which knows

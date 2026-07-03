@@ -165,6 +165,34 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   `src/test/cdp/tree-promote.test.ts`. Design:
   `docs/superpowers/specs/2026-07-02-tech-tree-p4-create-task-skill-design.md`; plan:
   `docs/superpowers/plans/2026-07-03-tech-tree-p4-create-task-skill.md`.
+- **Tech-tree execute skill + cancellation protocol (P5)** ✅: an `/execute-task` **skill**
+  (`.claude/skills/execute-task/SKILL.md`) executes one task end-to-end in its worktree — load once
+  (`get_active_task`, hold the ID) → **verify** worktree-rooted + `bun install` → `claim_task` →
+  adaptive strategy (attached plan → `superpowers:executing-plans`; independent subtasks →
+  `subagent-driven-development`; else `test-driven-development`; precedence plan > independent-subtasks
+  > TDD, independence judged via `get_board` rows) → record via `edit_task` → **mandatory cancellation
+  checkpoint** → `request_merge` (parity with the P2 board actions; subscription-safe — in-session,
+  never `claude -p`). The **cancellation protocol** P2's Cancel-dispatch popover triggers lands here: a
+  new pure core `src/core/cancellationMarker.ts` (mirrors `activeTask.ts`; **presence-only**
+  `isCancelled`, never parses the marker) is written **first** in `cancelDispatch`
+  (`marker → releaseClaim → setStatus → removeWorktree → disposeTerminal`) so a `git worktree remove
+  --force` that sweeps `.taskwright/` can't resurrect the dir and silently defeat isolation on the next
+  dispatch; dispatch clears any stale marker on seed (`clearCancellationMarker`, `dispatchActions.ts`).
+  Detection is **presence-only OR worktree-vanished** (co-equal — POSIX deletes the marker with the
+  worktree, Windows may keep it and leak the worktree until re-dispatch reuses it). `get_active_task`'s
+  summary now surfaces `subtasks`/`parentTaskId` (so the SDD branch can fire), and the **Cancel-dispatch
+  affordance** is gated on worktree-dir existence (`TasksController` `dispatchedWorktree` =
+  `fs.existsSync(worktreePathFor(repoRoot, dispatchBranchName(task)))`; popover shows it when
+  `dispatchedWorktree || hasWorktree`) so a dispatched-but-unclaimed task is teardownable — no new
+  frontmatter (`dispatched_at` deliberately **not** added). `DEFAULT_DISPATCH_TEMPLATE` now says **launch
+  inside `.worktrees/<branch>` and run `/execute-task`** (guardrails kept; the inline workflow prose moved
+  into the skill) — users with a custom `taskwright.dispatchTemplate` keep their own and won't pick up the
+  repoint. The MCP root is fixed at launch (`server.ts`), so `/execute-task` **verifies** it is
+  worktree-rooted rather than self-creating a worktree (spec §5 direct-run descoped to launch-in-worktree).
+  Coverage: `src/test/unit/{cancellationMarker,cancelDispatch,dispatchActions,dispatchPrompt,toSummary,TasksController}.test.ts`,
+  `e2e/tree-popover.spec.ts`. Design:
+  `docs/superpowers/specs/2026-07-02-tech-tree-p5-execute-task-skill-design.md`; plan:
+  `docs/superpowers/plans/2026-07-03-tech-tree-p5-execute-task-skill.md`.
 
 ## Conventions
 
