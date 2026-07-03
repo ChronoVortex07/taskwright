@@ -135,6 +135,10 @@ export interface TaskSummary {
   causedBy?: string;
   milestone?: string;
   dependencies: string[];
+  /** IDs of subtask children (drives the skill's independent-subtasks execution branch). */
+  subtasks?: string[];
+  /** Parent task ID when this is a subtask. */
+  parentTaskId?: string;
   locked?: boolean;
   blockedBy?: string[];
   bugs?: string[];
@@ -376,6 +380,8 @@ export function toSummary(task: Task, root: string, derived?: TreeDerivedState):
     causedBy: task.causedBy,
     milestone: task.milestone,
     dependencies: task.dependencies,
+    subtasks: task.subtasks,
+    parentTaskId: task.parentTaskId,
     locked: derived?.locked,
     blockedBy: derived?.blockedBy,
     bugs: derived?.bugs,
