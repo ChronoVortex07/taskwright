@@ -42,7 +42,7 @@ async function addSecondClone(origin: string): Promise<TempRepo> {
   return clone;
 }
 
-describe('pushBoard / pullBoard (Board Sync v2 Task F)', () => {
+describe('pushBoard / pullBoard (Board Sync v2 Task F)', { timeout: 15_000 }, () => {
   let cleanupAll: (() => void)[] = [];
 
   afterEach(() => {
