@@ -818,7 +818,7 @@ _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <
   across fresh clones afterward, both directions). `syncBoardHooks()` wired into `extension.ts`
   (activation + `sync.installHooks` config-change), plus `taskwright.installBoardHooks`/
   `uninstallBoardHooks` commands. Full suite (1505 tests)/lint/typecheck/build green.
-- 2026-07-04 · Task J · `<pending>` · Rewrote `CLAUDE.md`/`AGENTS.md` "Synced board" prose to
+- 2026-07-04 · Task J · `8c6c827` · Rewrote `CLAUDE.md`/`AGENTS.md` "Synced board" prose to
   the v2 model (one physical board, `off | git` config, `push_board`/`pull_board` + union-merge,
   status-bar/palette UX, opt-in hooks); fixed two dangling `CrossBranchTaskLoader` references
   (deleted by Task C) found along the way. Added superseded-by banners to the v1 spec and its four
