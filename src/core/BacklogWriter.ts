@@ -701,57 +701,64 @@ export class BacklogWriter {
     const config = parser ? await parser.getConfig() : {};
     const taskPrefix = config.task_prefix || 'TASK';
     const zeroPadding = config.zero_padded_ids || 0;
-
-    // Generate next task ID (considering cross-branch IDs to avoid collisions)
-    const nextId = this.getNextTaskId(tasksDir, taskPrefix, crossBranchIds);
-    const paddedId = zeroPadding > 0 ? String(nextId).padStart(zeroPadding, '0') : String(nextId);
-    const taskId = `${taskPrefix}-${paddedId}`.toUpperCase();
     const lowerPrefix = taskPrefix.toLowerCase();
 
-    // Sanitize title for filename
-    const sanitizedTitle = options.title
-      .replace(/[^a-zA-Z0-9\s-]/g, '')
-      .replace(/\s+/g, '-')
-      .substring(0, 50);
-    const fileName = `${lowerPrefix}-${paddedId} - ${sanitizedTitle}.md`;
-    const filePath = path.join(tasksDir, fileName);
+    // Scan for the next likely id (considering cross-branch IDs to avoid collisions), then
+    // claim it atomically: two concurrent creates can both scan before either has written
+    // (DRAFT-25) — allocateAndWrite retries the next candidate instead of colliding.
+    const scannedId = this.getNextTaskId(tasksDir, taskPrefix, crossBranchIds);
 
-    // Build frontmatter with config defaults
-    const frontmatter: FrontmatterData = {
-      id: taskId,
-      title: options.title,
-      status: options.status || config.default_status || 'To Do',
-      priority: options.priority,
-      labels: options.labels || [],
-      milestone: options.milestone,
-      assignee: options.assignee || (config.default_assignee ? [config.default_assignee] : []),
-      reporter: config.default_reporter,
-      dependencies: [],
-      created_date: nowTimestamp(),
-      updated_date: nowTimestamp(),
-    };
+    return this.allocateAndWrite(
+      tasksDir,
+      scannedId,
+      (id) => `.${lowerPrefix}-${id}.lock`,
+      (id) => {
+        const paddedId = zeroPadding > 0 ? String(id).padStart(zeroPadding, '0') : String(id);
+        const taskId = `${taskPrefix}-${paddedId}`.toUpperCase();
 
-    // Remove undefined values
-    Object.keys(frontmatter).forEach((key) => {
-      if (frontmatter[key] === undefined) {
-        delete frontmatter[key];
+        // Sanitize title for filename
+        const sanitizedTitle = options.title
+          .replace(/[^a-zA-Z0-9\s-]/g, '')
+          .replace(/\s+/g, '-')
+          .substring(0, 50);
+        const fileName = `${lowerPrefix}-${paddedId} - ${sanitizedTitle}.md`;
+        const filePath = path.join(tasksDir, fileName);
+
+        // Build frontmatter with config defaults
+        const frontmatter: FrontmatterData = {
+          id: taskId,
+          title: options.title,
+          status: options.status || config.default_status || 'To Do',
+          priority: options.priority,
+          labels: options.labels || [],
+          milestone: options.milestone,
+          assignee: options.assignee || (config.default_assignee ? [config.default_assignee] : []),
+          reporter: config.default_reporter,
+          dependencies: [],
+          created_date: nowTimestamp(),
+          updated_date: nowTimestamp(),
+        };
+
+        // Remove undefined values
+        Object.keys(frontmatter).forEach((key) => {
+          if (frontmatter[key] === undefined) {
+            delete frontmatter[key];
+          }
+        });
+
+        // Build body
+        let body = '\n## Description\n\n';
+        if (options.description) {
+          body += `<!-- SECTION:DESCRIPTION:BEGIN -->\n${options.description}\n<!-- SECTION:DESCRIPTION:END -->\n`;
+        } else {
+          body += '<!-- SECTION:DESCRIPTION:BEGIN -->\n<!-- SECTION:DESCRIPTION:END -->\n';
+        }
+        body += '\n## Acceptance Criteria\n<!-- AC:BEGIN -->\n<!-- AC:END -->\n';
+
+        const content = this.reconstructFile(frontmatter, body);
+        return { filePath, content, result: { id: taskId, filePath } };
       }
-    });
-
-    // Build body
-    let body = '\n## Description\n\n';
-    if (options.description) {
-      body += `<!-- SECTION:DESCRIPTION:BEGIN -->\n${options.description}\n<!-- SECTION:DESCRIPTION:END -->\n`;
-    } else {
-      body += '<!-- SECTION:DESCRIPTION:BEGIN -->\n<!-- SECTION:DESCRIPTION:END -->\n';
-    }
-    body += '\n## Acceptance Criteria\n<!-- AC:BEGIN -->\n<!-- AC:END -->\n';
-
-    // Build content
-    const content = this.reconstructFile(frontmatter, body);
-    fs.writeFileSync(filePath, content, 'utf-8');
-
-    return { id: taskId, filePath };
+    );
   }
 
   /**
@@ -771,42 +778,107 @@ export class BacklogWriter {
       fs.mkdirSync(draftsDir, { recursive: true });
     }
 
-    const nextId = this.getNextDraftId(draftsDir);
-    const draftId = `DRAFT-${nextId}`;
     const title = opts?.title?.trim() || 'Untitled';
     const sanitizedTitle = title
       .replace(/[^a-zA-Z0-9\s-]/g, '')
       .replace(/\s+/g, '-')
       .substring(0, 50);
-    const fileName = `draft-${nextId} - ${sanitizedTitle}.md`;
-    const filePath = path.join(draftsDir, fileName);
 
     // P6/D2b: a draft carries a real status (the drafts/ folder is the provisional marker,
     // not a synthetic 'Draft'). Default to the board default when unspecified so authoring a
     // draft without a status, then promoting, is byte-identical to the pre-P6 flow.
     const config = parser ? await parser.getConfig() : undefined;
     const status = opts?.status?.trim() || config?.default_status || 'To Do';
-    const today = nowTimestamp();
-    const frontmatter: FrontmatterData = {
-      id: draftId,
-      title,
-      status,
-      labels: [],
-      assignee: [],
-      dependencies: [],
-      created_date: today,
-      updated_date: today,
-    };
 
-    const descBlock = opts?.description
-      ? `<!-- SECTION:DESCRIPTION:BEGIN -->\n${opts.description}\n<!-- SECTION:DESCRIPTION:END -->`
-      : '<!-- SECTION:DESCRIPTION:BEGIN -->\n<!-- SECTION:DESCRIPTION:END -->';
-    const body = `\n## Description\n\n${descBlock}\n\n## Acceptance Criteria\n<!-- AC:BEGIN -->\n<!-- AC:END -->\n`;
+    // Scan for the next likely id, then claim it atomically: two concurrent creates can
+    // both scan before either has written (DRAFT-25) — allocateAndWrite retries the next
+    // candidate instead of both landing on DRAFT-<N> under different filenames.
+    const scannedId = this.getNextDraftId(draftsDir);
 
-    const content = this.reconstructFile(frontmatter, body);
-    fs.writeFileSync(filePath, content, 'utf-8');
+    return this.allocateAndWrite(
+      draftsDir,
+      scannedId,
+      (id) => `.draft-${id}.lock`,
+      (id) => {
+        const draftId = `DRAFT-${id}`;
+        const fileName = `draft-${id} - ${sanitizedTitle}.md`;
+        const filePath = path.join(draftsDir, fileName);
 
-    return { id: draftId, filePath };
+        const today = nowTimestamp();
+        const frontmatter: FrontmatterData = {
+          id: draftId,
+          title,
+          status,
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          created_date: today,
+          updated_date: today,
+        };
+
+        const descBlock = opts?.description
+          ? `<!-- SECTION:DESCRIPTION:BEGIN -->\n${opts.description}\n<!-- SECTION:DESCRIPTION:END -->`
+          : '<!-- SECTION:DESCRIPTION:BEGIN -->\n<!-- SECTION:DESCRIPTION:END -->';
+        const body = `\n## Description\n\n${descBlock}\n\n## Acceptance Criteria\n<!-- AC:BEGIN -->\n<!-- AC:END -->\n`;
+
+        const content = this.reconstructFile(frontmatter, body);
+        return { filePath, content, result: { id: draftId, filePath } };
+      }
+    );
+  }
+
+  /**
+   * Atomically claim the next free numeric id under `dir` (starting from `startId`,
+   * already scanned/adjusted by the caller) and write the real file for it — closing the
+   * DRAFT-25 race where two concurrent creates both scan a stale max before either has
+   * written and land on the same id under different (title-derived) filenames.
+   *
+   * Two guards, both keyed only by the numeric id (never the title-derived filename), make
+   * the claim atomic at the filesystem level rather than relying on statement ordering:
+   * `fs.mkdirSync` (no `recursive`) throws `EEXIST` if the lock dir already exists — this is
+   * what actually prevents two different titles from landing on the same id — and the real
+   * file is written with `wx`, guarding the (unlikely) case where that exact filename is
+   * already taken. Either EEXIST bumps the candidate and retries; `buildFile` is re-invoked
+   * per candidate so the id is baked into its frontmatter/filename.
+   */
+  private allocateAndWrite<T>(
+    dir: string,
+    startId: number,
+    lockDirName: (id: number) => string,
+    buildFile: (id: number) => { filePath: string; content: string; result: T }
+  ): T {
+    let candidate = startId;
+    for (let attempts = 0; attempts < 10_000; attempts++) {
+      const lockDir = path.join(dir, lockDirName(candidate));
+      try {
+        fs.mkdirSync(lockDir);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+          candidate++;
+          continue;
+        }
+        throw err;
+      }
+
+      const { filePath, content, result } = buildFile(candidate);
+      try {
+        fs.writeFileSync(filePath, content, { encoding: 'utf-8', flag: 'wx' });
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+          candidate++;
+          continue;
+        }
+        throw err;
+      }
+
+      try {
+        fs.rmdirSync(lockDir);
+      } catch {
+        // best-effort cleanup; a leftover lock dir only retires that one id number
+      }
+      return result;
+    }
+    throw new Error(`Could not allocate a unique id under ${dir} after 10000 attempts`);
   }
 
   /**

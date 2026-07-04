@@ -123,6 +123,77 @@ describe('createTaskHandler', () => {
   });
 });
 
+describe('BacklogWriter createDraft/createTask — concurrent id allocation (DRAFT-25 regression)', () => {
+  // Exercises writer.createDraft/createTask directly (rather than through createTaskHandler):
+  // the handler wraps every call in withSyncedBoardWrite, whose real `git rev-parse` subprocess
+  // per call introduces enough incidental timing jitter to mask the race most of the time. Calling
+  // the writer directly — with a real BacklogParser, matching production (the MCP handler always
+  // passes one) — reproduces the DRAFT-25 collision deterministically.
+  it('assigns N distinct draft ids and creates N files under concurrent createDraft calls', async () => {
+    const d = deps();
+    const N = 8;
+    const results = await Promise.all(
+      Array.from({ length: N }, (_, i) =>
+        d.writer.createDraft(d.backlogPath, d.parser, { title: `Concurrent Draft ${i}` })
+      )
+    );
+
+    const ids = results.map((r) => r.id);
+    expect(new Set(ids).size).toBe(N); // no two racers were assigned the same id
+
+    const files = fs.readdirSync(path.join(backlogPath, 'drafts'));
+    expect(files).toHaveLength(N); // no clobber: every racer's file survives
+
+    for (const id of ids) {
+      const num = id.replace(/^DRAFT-/, '');
+      const matching = files.filter((f) => new RegExp(`^draft-${num}\\b`, 'i').test(f));
+      expect(matching).toHaveLength(1);
+    }
+
+    // no leftover lock directories from the allocator
+    expect(files.some((f) => f.endsWith('.lock'))).toBe(false);
+  });
+
+  it('assigns N distinct task ids and creates N files under concurrent createTask calls', async () => {
+    const d = deps();
+    const N = 8;
+    const results = await Promise.all(
+      Array.from({ length: N }, (_, i) =>
+        d.writer.createTask(d.backlogPath, { title: `Concurrent Task ${i}` }, d.parser)
+      )
+    );
+
+    const ids = results.map((r) => r.id);
+    expect(new Set(ids).size).toBe(N);
+
+    const files = fs.readdirSync(path.join(backlogPath, 'tasks'));
+    expect(files).toHaveLength(N);
+  });
+
+  it('does not clobber a pre-existing draft when later concurrent creates race the id allocator', async () => {
+    const d = deps();
+    const first = await d.writer.createDraft(d.backlogPath, d.parser, { title: 'Pre-existing' });
+    expect(first.id).toBe('DRAFT-1');
+
+    const N = 6;
+    const racers = await Promise.all(
+      Array.from({ length: N }, (_, i) =>
+        d.writer.createDraft(d.backlogPath, d.parser, { title: `Racer ${i}` })
+      )
+    );
+    expect(new Set(racers.map((r) => r.id)).size).toBe(N); // racers themselves don't collide either
+
+    const files = fs.readdirSync(path.join(backlogPath, 'drafts'));
+    expect(files).toHaveLength(N + 1); // the pre-existing draft survives alongside all N racers
+
+    const firstFile = files.find((f) => /^draft-1\b/i.test(f));
+    expect(firstFile).toBeTruthy();
+    expect(fs.readFileSync(path.join(backlogPath, 'drafts', firstFile!), 'utf-8')).toContain(
+      'Pre-existing'
+    );
+  });
+});
+
 describe('editTaskHandler', () => {
   it('updates fields and acceptance criteria', async () => {
     await createTaskHandler(deps(), { title: 'Edit me' });

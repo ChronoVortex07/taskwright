@@ -7,7 +7,7 @@
 > over from the next unchecked task. Do not batch multiple tasks in one session.
 >
 > **Design spec (authoritative):** [`docs/superpowers/specs/2026-07-04-board-sync-v2-single-shared-board-design.md`](../specs/2026-07-04-board-sync-v2-single-shared-board-design.md)
-> This runbook is the execution order; the spec is the *why* and the detailed design. Read both.
+> This runbook is the execution order; the spec is the _why_ and the detailed design. Read both.
 
 ---
 
@@ -22,11 +22,11 @@ work mid-task. The following are non-negotiable for the duration:
    ~25 tasks live. Turning it back on before v2 ships re-arms that. If the status bar shows any
    board-sync activity, stop and re-disable + reload the window.
 2. **VS Code setting scope gotcha:** the **workspace** `.vscode/settings.json` value overrides the
-   User-scope setting. Changing sync mode in the Settings *UI* (User tab) will be silently
+   User-scope setting. Changing sync mode in the Settings _UI_ (User tab) will be silently
    overridden by the workspace file. Edit the workspace file to be sure.
 3. **Work in the PRIMARY checkout, on branch `board-sync-v2`.** No dispatch, no `.worktrees/<branch>`.
    The worktree/dispatch flow invokes the buggy materialize-into-worktree path. `git rev-parse
-   --git-common-dir` must print `.git` (you're in the primary).
+--git-common-dir` must print `.git` (you're in the primary).
 4. **The board is git-ignored → back it up.** `backlog/{tasks,drafts,completed,archive}` are
    git-ignored; your normal commits do **not** protect them. Before you start a task:
    `cp -r backlog "$TMP/board-backup-<stamp>"`. The committed `taskwright-board` ref is also a safety
@@ -48,6 +48,7 @@ work mid-task. The following are non-negotiable for the duration:
 ## 1. Goal
 
 Replace the board-sync feature with a design that **cannot** silently roll back, desync, or go stale.
+
 - **Live layer:** exactly one physical board (the primary checkout's `backlog/`), read/written
   directly by every worktree — no per-worktree copy, no CAS, no poll. Desync becomes structurally
   impossible.
@@ -78,7 +79,8 @@ Legend: `X ──▶ Y` = Y depends on X (do X first).
 > current board draft; it may be promoted to a `TASK-NN` later — the **label + title** is the stable
 > identity, not the id.
 
-### [ ] Task 0 — Concurrent `create_task` ID clobber (DRAFT-25) · *bug, independent, do first*
+### [x] Task 0 — Concurrent `create_task` ID clobber (DRAFT-25) · _bug, independent, do first_
+
 - **Deps:** none. **Why first:** it causes silent data loss on concurrent task creation; fixing it
   protects all later authoring.
 - **Do:** make task/draft ID allocation atomic under concurrency. Root: `getNextTaskId` /
@@ -90,9 +92,38 @@ Legend: `X ──▶ Y` = Y depends on X (do X first).
   write; never overwrite a task/draft file whose id differs from the one being written.
 - **Accept:** a regression test fires N concurrent `create_task` calls and asserts N distinct ids and
   N files (no clobber); no create silently deletes a pre-existing task/draft.
-- **Handoff Notes:** _(fill in: what you changed, gotchas, anything the next task should know)_
+- **Handoff Notes:** Added `BacklogWriter.allocateAndWrite()` (private helper) and routed
+  `createTask`/`createDraft` through it. It's the "allocate-then-write with retry" direction: an
+  exclusive lock **directory** keyed only by the numeric id (`fs.mkdirSync(lockDir)`, no
+  `recursive`, throws `EEXIST` if taken — atomic at the OS level, cross-platform incl. Windows) is
+  what actually prevents two different titles from landing on the same id; the real file is then
+  written with `{flag: 'wx'}` as a second guard against an exact-filename collision. Either `EEXIST`
+  bumps the candidate id and retries. The lock dir is removed (best-effort) after a successful real
+  write; a crash mid-claim just permanently retires that one id number, which is harmless.
+  **Gotcha #1 (root-cause asymmetry):** only `createDraft` actually raced — its scan
+  (`getNextDraftId`) ran _before_ its one `await parser.getConfig()`, so two concurrent calls could
+  both scan a stale (pre-write) directory state before either wrote. `createTask`'s await already
+  happened _before_ its scan with no further await before the write, which — by JS's run-microtask-
+  to-completion semantics — already made it accidentally race-free. Fixed both anyway (uniform,
+  don't rely on statement-order fragility) but only `createDraft`'s regression test fails on the
+  pre-fix code; the `createTask` test is defense-in-depth and passes either way. Verified this with a
+  throwaway `Promise.all` script directly against `BacklogWriter` before and after.
+  **Gotcha #2 (test placement):** a regression test that calls the MCP `createTaskHandler` (i.e.
+  goes through `withSyncedBoardWrite` → `resolveSyncConfig` → a real `git rev-parse` subprocess per
+  call) does **not** reliably reproduce the race — the subprocess latency jitter staggers the 8
+  concurrent calls just enough to avoid the collision window most of the time, even on unfixed code.
+  The regression tests in `src/test/unit/mcpWriteHandlers.test.ts` (new `describe` block, "DRAFT-25
+  regression") call `writer.createDraft`/`writer.createTask` **directly** (with a real
+  `BacklogParser`, matching what the MCP handler always passes) instead, which reproduces
+  deterministically. If a future task adds a handler-level concurrency test, don't trust it alone.
+  **Not touched (scope note):** `promoteDraft`/`demoteTask` (lines ~358–466) share the same
+  `getNextTaskId`/`getNextDraftId` scan pattern, but their await happens before their scan with no
+  further await before the (rename-based) write — same structurally-safe shape as `createTask` was.
+  Left them alone to keep this PR scoped to the stated Accept criteria (`create_task` concurrency);
+  flag for a follow-up bug/audit if someone wants full consistency across all four call sites.
 
 ### [ ] Task A — Board-root resolution core `resolveBoardRoot()` (DRAFT-15)
+
 - **Deps:** none. **Foundation.**
 - **Do:** new pure core (`src/core/boardRoot.ts`) `resolveBoardRoot(...)` → the **primary** worktree's
   `backlog/`, parsed from `git worktree list --porcelain` (first `worktree ` entry). Handle: run from
@@ -104,6 +135,7 @@ Legend: `X ──▶ Y` = Y depends on X (do X first).
 - **Handoff Notes:** _(…)_
 
 ### [ ] Task B — Route all board I/O through the single board root (DRAFT-16)
+
 - **Deps:** A. **The heart of the live layer.**
 - **Do:** make every board read/write — MCP (`src/mcp/handlers.ts`, `BacklogParser`/`BacklogWriter`)
   and extension host (`src/providers/TasksController.ts` create/edit/drag/reorder) — target
@@ -116,6 +148,7 @@ Legend: `X ──▶ Y` = Y depends on X (do X first).
 - **Handoff Notes:** _(…)_
 
 ### [ ] Task D — Board-ref snapshot/materialize against the single board root (DRAFT-19)
+
 - **Deps:** A. (Can run in parallel-in-time with B, but this is a **sequential relay** — just do
   whichever is the first unchecked.)
 - **Do:** repurpose `src/core/boardRef.ts` isolated-index primitives to snapshot FROM / materialize
@@ -129,6 +162,7 @@ Legend: `X ──▶ Y` = Y depends on X (do X first).
 - **Handoff Notes:** _(…)_
 
 ### [ ] Task C — Retire live CAS/poll/materialize machinery + local-only cross-branch (DRAFT-17)
+
 - **Deps:** B. **Removal PR — only after B routes all writes to the one board.**
 - **Do:** delete `boardSyncEngine.ts` CAS loop (`applyBoardWriteSynced`, `claim/release/setStatusSynced`,
   `refreshBoard`); `BoardSyncController` poll/compaction timers (keep only what Task G's status bar
@@ -142,6 +176,7 @@ Legend: `X ──▶ Y` = Y depends on X (do X first).
 - **Handoff Notes:** _(…)_
 
 ### [ ] Task E — Union-merge core (DRAFT-18)
+
 - **Deps:** D.
 - **Do:** pure `mergeBoards(base?, ours, theirs) → { merged, conflicts }` operating on in-memory
   file maps (unit-tested, no git). Rules: file on one side → keep; edited one side → keep; edited
@@ -152,6 +187,7 @@ Legend: `X ──▶ Y` = Y depends on X (do X first).
 - **Handoff Notes:** _(…)_
 
 ### [ ] Task I — Config remap (`off | git`) + repurposed `enableSync` migration (DRAFT-21)
+
 - **Deps:** B, D.
 - **Do:** replace `taskwright.sync.mode` trichotomy with `off` (local git-ignored files, no
   versioning) | `git` (versioning on). Migrate on read: `local → off`, `github → git`. Add
@@ -164,6 +200,7 @@ Legend: `X ──▶ Y` = Y depends on X (do X first).
 - **Handoff Notes:** _(…)_
 
 ### [ ] Task F — Board push & pull: `push_board`/`pull_board` MCP tools + commands (DRAFT-20)
+
 - **Deps:** D, E. **Versioning backbone.**
 - **Do:** `push_board` = `snapshotBoardRoot` → fetch remote ref → `mergeBoards` (union) → commit →
   `git push --no-verify origin taskwright-board`, return conflicts. `pull_board` = fetch → union-merge
@@ -176,6 +213,7 @@ Legend: `X ──▶ Y` = Y depends on X (do X first).
 - **Handoff Notes:** _(…)_
 
 ### [ ] Task G — Push/Pull board UX: status bar + command palette (DRAFT-22)
+
 - **Deps:** F.
 - **Do:** status-bar item (mode, last push/pull, conflict count; click → push/pull quick-pick);
   command-palette `taskwright.pushBoard`/`pullBoard` gated to a backlog workspace; on conflict, a
@@ -186,6 +224,7 @@ Legend: `X ──▶ Y` = Y depends on X (do X first).
 - **Handoff Notes:** _(…)_
 
 ### [ ] Task H — Opt-in Windows-safe git hooks (pre-push / post-merge) (DRAFT-23)
+
 - **Deps:** F.
 - **Do:** committed, dependency-free hook script (pattern of `scripts/taskwright-mcp.cjs`) that
   resolves the primary checkout and calls the **same** push/pull core as F. `pre-push → push_board`,
@@ -198,6 +237,7 @@ Legend: `X ──▶ Y` = Y depends on X (do X first).
 - **Handoff Notes:** _(…)_
 
 ### [ ] Task J — Docs: rewrite CLAUDE.md/AGENTS.md sync sections + retire old specs (DRAFT-24)
+
 - **Deps:** C, F, I. **Do last** so docs match shipped behavior.
 - **Do:** rewrite the "Synced board" sections of `CLAUDE.md`/`AGENTS.md` to the v2 model (one physical
   board; no CAS/poll; discrete push/pull + union-merge; `off|git` config; opt-in hooks). Remove v1
@@ -215,7 +255,10 @@ Legend: `X ──▶ Y` = Y depends on X (do X first).
 
 _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <one-line outcome>`.)_
 
-- _(nothing completed yet)_
+- 2026-07-04 · Task 0 · (pending commit) · Atomic id allocation for `createTask`/`createDraft`
+  (lock-dir + `wx` write, retry on `EEXIST`); regression tests added directly against `BacklogWriter`
+  in `mcpWriteHandlers.test.ts` (handler-level concurrency tests don't reliably reproduce the race —
+  see Handoff Notes). Full suite/lint/typecheck green.
 
 ---
 
@@ -224,6 +267,7 @@ _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <
 These older tasks are replaced by this rework. They currently live on the board and should be
 **archived** (not completed — the work is superseded, not done) once the noted v2 task is merged.
 **Their ids shifted during the sync incident — verify by title before archiving, not by number:**
+
 - "Route extension-UI board writes (create/edit/drag) through sync snapshot+push" → subsumed by **Task B**
 - "Rapid concurrent synced-board writes silently lose some edits" → subsumed by **Task B**
 - "Tree tab silently renders empty when check_active_branches is true" → subsumed by **Task C**
