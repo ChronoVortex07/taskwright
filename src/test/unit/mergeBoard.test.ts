@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mergeStateForTask } from '../../core/mergeBoard';
+import { mergeStateForTask } from '../../core/mergeQueueState';
 import type { MergeQueue } from '../../core/mergeQueue';
 
 function q(entries: Partial<MergeQueue['entries'][number]>[]): MergeQueue {

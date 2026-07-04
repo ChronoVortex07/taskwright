@@ -1,4 +1,4 @@
-import type { MergeTaskState } from './mergeBoard';
+import type { MergeTaskState } from './mergeQueueState';
 import type { MergeMode } from './mergeQueue';
 import type { TreeLayout } from './treeLayout';
 
@@ -472,7 +472,7 @@ export type ExtensionMessage =
     };
 
 /** Re-exported so webview/provider code has one import site for the merge-board state shape. */
-export type { MergeTaskState } from './mergeBoard';
+export type { MergeTaskState } from './mergeQueueState';
 
 /**
  * Compact task summary sent to the tree navigator sidebar for the task list.

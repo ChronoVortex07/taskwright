@@ -26,7 +26,7 @@ import { readActiveTask, writeActiveTask, clearActiveTask } from '../core/active
 import { isClaimStale } from '../core/claims';
 import { getClaimStalenessMs, getClaimIdentity } from './claimActions';
 import { getTaskwrightConfig } from '../config';
-import { mergeStateForTask, type MergeTaskState } from '../core/mergeBoard';
+import { mergeStateForTask, type MergeTaskState } from '../core/mergeQueueState';
 import type { MergeQueue, MergeMode } from '../core/mergeQueue';
 import { loadTreeBoardFromParser } from '../core/treeDerived';
 import { loadPlanProgress } from '../core/loadPlanProgress';

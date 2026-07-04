@@ -20,7 +20,7 @@ import { dispatchTask } from './dispatchActions';
 import { attachPlanForTask, detachPlanForTask, openPlanForTask } from './planActions';
 import { readActiveTask, writeActiveTask, clearActiveTask } from '../core/activeTask';
 import { loadPlanProgress } from '../core/loadPlanProgress';
-import { mergeStateForTask } from '../core/mergeBoard';
+import { mergeStateForTask } from '../core/mergeQueueState';
 import { MergeQueueStore, mergeQueuePath, nodeQueueFs, type MergeMode } from '../core/mergeQueue';
 import { resolvePriorities } from '../core/priorityOrder';
 import { getTaskwrightConfig } from '../config';
