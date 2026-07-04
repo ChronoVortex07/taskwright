@@ -27,3 +27,11 @@ yarn.lock
 pnpm-lock.yaml
 
 .superpowers
+
+# >>> taskwright synced board >>>
+# Board tasks live on the taskwright-board ref, not on code branches.
+backlog/tasks/
+backlog/drafts/
+backlog/completed/
+backlog/archive/
+# <<< taskwright synced board <<<
