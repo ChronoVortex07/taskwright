@@ -380,7 +380,7 @@ _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <
   `atomicWriteFileSync()` write-temp-then-rename and applied it across `BacklogWriter`/`ClaimService`/
   `PlanService`/`TreeFieldService`/`milestoneReleaseChecklist`; added a real two-worktree
   write-visibility integration test. Full suite (1527 tests)/lint/typecheck/build green.
-- 2026-07-04 · Task D · `<sha>` · Added `snapshotBoardRoot()`/`materializeToBoardRoot()` to
+- 2026-07-04 · Task D · `7a778d7` · Added `snapshotBoardRoot()`/`materializeToBoardRoot()` to
   `src/core/boardRef.ts` (root-resolving wrappers around the existing `snapshotBoardToRef`/
   `materializeRefToWorktree`, via `resolvePrimaryWorktreeRoot()`); added `milestones` to
   `BOARD_SUBDIRS` (fixes TASK-36 round-trip). Full suite (1530 tests)/lint/typecheck/build green.
