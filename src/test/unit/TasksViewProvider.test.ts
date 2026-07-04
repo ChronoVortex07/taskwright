@@ -43,6 +43,9 @@ describe('TasksViewProvider', () => {
       getDrafts: vi.fn().mockResolvedValue([]),
       getCompletedTasks: vi.fn().mockResolvedValue([]),
       getArchivedTasks: vi.fn().mockResolvedValue([]),
+      getCategories: vi.fn().mockResolvedValue([]),
+      getBacklogPath: vi.fn().mockReturnValue('/fake/backlog'),
+      resolveMilestone: vi.fn(),
     } as unknown as BacklogParser;
   });
 
@@ -432,6 +435,47 @@ describe('TasksViewProvider', () => {
 
       // Should load regular tasks again
       expect(mockParser.getTasks).toHaveBeenCalled();
+    });
+  });
+
+  describe('setViewMode with tree', () => {
+    it('should trigger refresh when switching from kanban to tree', async () => {
+      const provider = new TasksViewProvider(extensionUri, mockParser, mockContext);
+      resolveView(provider);
+
+      // resolveView calls loadPersistedState, which defaults to 'tree'.
+      // Switch away first so the tree switch is a real mode change.
+      provider.setViewMode('kanban');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      (mockWebview.postMessage as ReturnType<typeof vi.fn>).mockClear();
+
+      // Switch to tree — should trigger refresh (TASK-23)
+      provider.setViewMode('tree');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // Refresh must have posted tasks — the tree tab unions drafts into the
+      // task payload, so a missing refresh means pre-existing drafts stay hidden.
+      expect(mockWebview.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'tasksUpdated' })
+      );
+    });
+
+    it('should trigger refresh when switching from tree back to kanban', async () => {
+      const provider = new TasksViewProvider(extensionUri, mockParser, mockContext);
+      resolveView(provider);
+
+      // resolveView defaults to 'tree' (from persisted state default) —
+      // switching away should also trigger refresh
+      (mockWebview.postMessage as ReturnType<typeof vi.fn>).mockClear();
+
+      provider.setViewMode('kanban');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // Refresh must have posted tasks for the kanban view
+      expect(mockWebview.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'tasksUpdated' })
+      );
     });
   });
 

@@ -1274,7 +1274,7 @@ export class TasksController {
     }
 
     // Refresh to load correct task set when switching to/from special modes
-    const specialModes = ['drafts', 'archived', 'dashboard', 'docs', 'decisions'];
+    const specialModes = ['drafts', 'archived', 'dashboard', 'docs', 'decisions', 'tree'];
     const needsRefresh = specialModes.includes(mode) || specialModes.includes(previousMode);
     if (needsRefresh) {
       this.refresh();

@@ -638,6 +638,28 @@ describe('TasksController — tree tab', () => {
     expect(posted.some((m) => m.type === 'viewModeChanged')).toBe(false);
   });
 
+  it('setViewMode(tree) triggers refresh so drafts appear without a file event (TASK-23)', async () => {
+    const controller = new TasksController(host, mockParser, mockContext);
+    // Default is kanban — switch to tree should trigger refresh
+    controller.setViewMode('tree');
+    // Wait for the async refresh to complete
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Refresh must have called getTasks (part of the normal refresh flow)
+    expect(mockParser.getTasks).toHaveBeenCalled();
+  });
+
+  it('setViewMode(kanban) from tree triggers refresh (TASK-23)', async () => {
+    const controller = new TasksController(host, mockParser, mockContext);
+    // Switch to tree first
+    controller.setViewMode('tree');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    (mockParser.getTasks as ReturnType<typeof vi.fn>).mockClear();
+    // Switch back to kanban
+    controller.setViewMode('kanban');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockParser.getTasks).toHaveBeenCalled();
+  });
+
   describe('TasksController — P3b drag writes', () => {
     it('reslotTask: category via TreeFieldService.setCategory, milestone via updateTask (resolved)', async () => {
       const setCat = vi
