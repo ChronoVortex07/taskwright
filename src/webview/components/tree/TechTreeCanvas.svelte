@@ -25,6 +25,7 @@
   import DetailPopover, { type PopoverActionKind } from './DetailPopover.svelte';
   import MilestonePopover from './MilestonePopover.svelte';
   import InFlightPanel from './InFlightPanel.svelte';
+import ContextMenu from './ContextMenu.svelte';
 
   interface Props {
     tasks: Task[];
@@ -105,6 +106,8 @@
   let popoverTaskId = $state<string | null>(null);
   let popoverX = $state(0);
   let popoverY = $state(0);
+
+  let contextMenu = $state<{ x: number; y: number; lane?: string; band?: string } | null>(null);
   const popoverTask = $derived(
     popoverTaskId ? layoutNodes.find((t) => t.id === popoverTaskId) : undefined
   );
@@ -624,6 +627,27 @@
     });
   }
 
+  function onContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    const target = e.target as HTMLElement;
+    // Only show context menu on empty canvas — not on nodes, toolbars, or headers.
+    if (target.closest('.tree-node') || target.closest('.tree-toolbar') || target.closest('.tree-band-header')) {
+      return;
+    }
+    closePopover();
+    closeMilestone();
+    if (!viewportEl) return;
+    const rect = viewportEl.getBoundingClientRect();
+    const world = screenToWorld(vp, e.clientX - rect.left, e.clientY - rect.top);
+    const cell = cellAt(geometry, world.x, world.y);
+    contextMenu = {
+      x: e.clientX,
+      y: e.clientY,
+      lane: cell.lane,
+      band: cell.band,
+    };
+  }
+
   function onWheel(e: WheelEvent) {
     e.preventDefault();
     if (!viewportEl) return;
@@ -680,6 +704,10 @@
     if (popoverTaskId === null) return;
     popoverTaskId = null;
     vscode.postMessage({ type: 'popoverActiveChanged', taskId: null });
+  }
+
+  function closeContextMenu() {
+    contextMenu = null;
   }
 
   function onPopoverAction(kind: PopoverActionKind, id: string) {
@@ -786,6 +814,7 @@
       onpointercancel={onPointerLeave}
       onwheel={onWheel}
       onkeydown={onCanvasKeydown}
+      oncontextmenu={onContextMenu}
       role="application"
       aria-label="Tech tree canvas"
     >
@@ -894,6 +923,19 @@
         onClose={closeMilestone}
         onToggle={(itemId) =>
           vscode.postMessage({ type: 'toggleReleaseChecklistItem', milestone: openMilestoneData.milestone, itemId })}
+      />
+    {/if}
+
+    {#if contextMenu}
+      <ContextMenu
+        x={contextMenu.x}
+        y={contextMenu.y}
+        lane={contextMenu.lane}
+        band={contextMenu.band}
+        onClose={closeContextMenu}
+        onCreateHere={(opts) => {
+          onCreateInPlace?.({ mode: 'full', category: opts.category, milestone: opts.milestone });
+        }}
       />
     {/if}
 

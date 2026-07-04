@@ -222,4 +222,67 @@ test.describe('Tree authoring — create form', () => {
     await page.mouse.click(box.x + box.width / 2, box.y + box.height - 60);
     await expect(page.locator('[data-testid="create-form"]')).toBeVisible();
   });
+
+  async function rightClickEmptyCanvas(page: import('@playwright/test').Page) {
+    const viewport = page.locator('[data-testid="tree-viewport"]');
+    const box = (await viewport.boundingBox())!;
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height - 60;
+    // Dispatch contextmenu event directly — Playwright's page.mouse.click({button:'right'})
+    // may not always fire contextmenu in a webview context.
+    await viewport.evaluate(
+      (el, { cx: x, cy: y }) => {
+        el.dispatchEvent(
+          new MouseEvent('contextmenu', {
+            bubbles: true,
+            cancelable: true,
+            clientX: x,
+            clientY: y,
+            button: 2,
+          })
+        );
+      },
+      { cx, cy }
+    );
+    await page.waitForTimeout(50);
+  }
+
+  test('right-click on empty canvas opens context menu', async ({ page }) => {
+    await rightClickEmptyCanvas(page);
+    await expect(page.locator('[data-testid="context-menu"]')).toBeVisible();
+  });
+
+  test('context menu "Create task here" opens the create form', async ({ page }) => {
+    await rightClickEmptyCanvas(page);
+    await expect(page.locator('[data-testid="context-menu"]')).toBeVisible();
+    await page.locator('[data-testid="ctx-create-here"]').click();
+    await expect(page.locator('[data-testid="create-form"]')).toBeVisible();
+    await expect(page.locator('[data-testid="context-menu"]')).toHaveCount(0);
+  });
+
+  test('Escape dismisses the context menu', async ({ page }) => {
+    await rightClickEmptyCanvas(page);
+    await expect(page.locator('[data-testid="context-menu"]')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-testid="context-menu"]')).toHaveCount(0);
+  });
+
+  test('click outside dismisses the context menu', async ({ page }) => {
+    await rightClickEmptyCanvas(page);
+    await expect(page.locator('[data-testid="context-menu"]')).toBeVisible();
+    // Click on empty area elsewhere on the page
+    await page.mouse.click(10, 10);
+    await expect(page.locator('[data-testid="context-menu"]')).toHaveCount(0);
+  });
+
+  test('left-click on empty canvas still opens the create form after adding right-click menu', async ({
+    page,
+  }) => {
+    // Supplements, does not replace: existing left-click-in-place must still work.
+    const viewport = page.locator('[data-testid="tree-viewport"]');
+    const box = (await viewport.boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height - 60);
+    await expect(page.locator('[data-testid="create-form"]')).toBeVisible();
+    await expect(page.locator('[data-testid="context-menu"]')).toHaveCount(0);
+  });
 });
