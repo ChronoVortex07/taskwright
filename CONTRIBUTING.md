@@ -10,7 +10,7 @@ backbone. It is derived from [vscode-backlog-md](https://github.com/ysamlan/vsco
 - Node.js **≥ 22** and [Bun](https://bun.sh). The repo includes `mise.toml` / `.node-version` pinning
   the versions — `mise install` sets them up automatically if you use [mise](https://mise.jdx.dev/).
 - VS Code `^1.110.0`.
-- The [Backlog.md](https://github.com/MrLesk/Backlog.md) CLI on PATH (for writes + cross-branch features).
+- The [Backlog.md](https://github.com/MrLesk/Backlog.md) CLI is **optional**. Taskwright's own `BacklogWriter` handles all task reads and writes natively; the CLI is only needed if you use the cross-branch board view.
 - On Windows: `git config --global core.longpaths true` (Backlog.md task filenames can exceed `MAX_PATH`).
 
 ### Getting started
@@ -33,7 +33,7 @@ code --install-extension "taskwright-$(node -p "require('./package.json').versio
 ```
 src/
 ├── extension.ts   # Extension entry point
-├── core/          # BacklogParser/Writer, BacklogCli, CrossBranchTaskLoader, GitBranchService, FileWatcher
+├── core/          # BacklogParser/Writer, BacklogCli, GitBranchService, FileWatcher, AgentIntegrationDetector, and services for claims, plans, worktrees, board sync, and tree layout
 ├── providers/     # Webview views (Kanban, task list/detail/preview)
 ├── language/      # Completion, hover, document links
 └── test/          # Vitest unit + integration tests
