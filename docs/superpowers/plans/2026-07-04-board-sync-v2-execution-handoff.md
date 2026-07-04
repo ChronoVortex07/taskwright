@@ -369,7 +369,7 @@ integration)` describe blocks from `mcpWriteHandlers.test.ts` (plus a stale comm
   describe the real reason without referencing the deleted symbol). Full suite (1454 tests — down from
   1530 as expected, this is a removal PR), lint, typecheck, and `bun run build` all green.
 
-### [ ] Task E — Union-merge core (DRAFT-18)
+### [x] Task E — Union-merge core (DRAFT-18)
 
 - **Deps:** D.
 - **Do:** pure `mergeBoards(base?, ours, theirs) → { merged, conflicts }` operating on in-memory
@@ -378,7 +378,41 @@ integration)` describe blocks from `mcpWriteHandlers.test.ts` (plus a stale comm
   "theirs" + conflict; delete-vs-edit → keep the edit + conflict. Deterministic (no `Date.now()`).
 - **Accept:** add/add, edit-one-side, edit-both (newer wins), tie, delete-vs-edit each unit-tested;
   conflict ids returned, not swallowed.
-- **Handoff Notes:** _(…)_
+- **Handoff Notes:** Added `src/core/boardMerge.ts` — a fully pure module (no git, no fs, no
+  `Date.now()`) operating on `BoardFileMap = Record<string, string>` (board-relative path → file
+  content), the same shape `boardRef.ts`'s snapshot/materialize produce, so Task F can pass its
+  file maps straight through with no adapter. Implemented as a per-path three-way classification
+  rather than a literal transcription of the five bullet rules, because the rules as written don't
+  fully specify every base/ours/theirs combination (e.g. "edited both" when `base` is `undefined`
+  entirely — no prior version to diff against) — the classification below is a strict superset that
+  reduces to the stated rules wherever they're unambiguous:
+  for each path in `base ∪ ours ∪ theirs`: absent on both live sides → drop (covers delete-vs-delete,
+  not explicitly required by Accept but included for completeness); identical content on both live
+  sides → keep it, no conflict (covers the "add/add of different tasks... unions cleanly" case
+  trivially, since two _different_ tasks never collide on the same path in the first place — same-path
+  identical content only arises from a no-op double-materialize); present on exactly one live side →
+  if no base or the missing side's last-known content differs from base, that's an edit surviving a
+  deletion (**delete-vs-edit**, conflict, keep the edit) — if it equals base, the deletion is clean
+  (no conflict); present on both live sides with different content → if one side still matches `base`
+  exactly, take the other side's edit (**edit-one-side**, no conflict) — otherwise both sides diverged
+  from base (or there was no base at all, i.e. two independent adds of the _same_ path with different
+  content) and `resolveByUpdatedDate()` decides: parses each side's frontmatter `updated_date` via a
+  targeted regex (not a full YAML parse — an unrelated unquoted `@`-prefixed `assignee` can make
+  `yaml.load` throw on an otherwise-fine document, and this core only ever needs one field), later
+  timestamp wins (**edited-both**), equal timestamps or either side unparseable both fall back to
+  "theirs" (**tie** / **unparseable** respectively) — both are always conflict-recorded, never silently
+  resolved. `MergeConflict.id` reuses the exact filename-id convention `BacklogParser` already uses
+  (`/^([a-zA-Z]+-\d+(?:\.\d+)*)/i` against the basename, uppercased, falling back to the full
+  filename) so conflict ids read as real task/draft ids (`TASK-1`, `DRAFT-7`) — duplicated inline
+  rather than imported, since `BacklogParser.ts` doesn't export it standalone and this module is
+  meant to stay dependency-free.
+  **13 unit tests** in `src/test/unit/boardMerge.test.ts` cover: disjoint add/add (union, no
+  conflict), edit-one-side in both directions, edited-both with newer-wins in both directions, tie,
+  unparseable/missing `updated_date`, delete-vs-edit in both directions, a clean delete (other side
+  unchanged from base, no conflict), delete-both (dropped, no conflict), identical content with no
+  base at all (no conflict), and conflict-id derivation for a non-`TASK-` prefix (`DRAFT-7`). Full
+  suite (1467 tests, up from 1454 — this task only adds, nothing removed), lint, typecheck, and
+  `bun run build` all green.
 
 ### [ ] Task I — Config remap (`off | git`) + repurposed `enableSync` migration (DRAFT-21)
 
@@ -471,6 +505,12 @@ _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <
   cause (`TasksController`'s config-driven `dataSourceMode` activation skipped tree derivation entirely)
   and retired the matching `extension.ts` trigger + its now-false "Cross-Branch" status bar. Full suite
   (1454 tests)/lint/typecheck/build green.
+- 2026-07-04 · Task E · `(pending)` · Added pure `mergeBoards(base?, ours, theirs)` union-merge
+  core (`src/core/boardMerge.ts`) over in-memory `BoardFileMap`s: disjoint adds union, single-side
+  edits keep the edit, both-side edits resolve by newer frontmatter `updated_date` (tie/unparseable
+  → "theirs"), delete-vs-edit keeps the edit — every conflicting case records a `MergeConflict` with
+  a filename-derived task/draft id. 13 new unit tests. Full suite (1467 tests)/lint/typecheck/build
+  green.
 
 ---
 
