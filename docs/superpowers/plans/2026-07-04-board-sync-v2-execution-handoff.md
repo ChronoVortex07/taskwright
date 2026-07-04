@@ -464,7 +464,7 @@ _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <
   `src/core/boardRef.ts` (root-resolving wrappers around the existing `snapshotBoardToRef`/
   `materializeRefToWorktree`, via `resolvePrimaryWorktreeRoot()`); added `milestones` to
   `BOARD_SUBDIRS` (fixes TASK-36 round-trip). Full suite (1530 tests)/lint/typecheck/build green.
-- 2026-07-04 · Task C · `<sha>` · Deleted `boardSyncEngine.ts`/`BoardSyncController.ts`/
+- 2026-07-04 · Task C · `9455b34` · Deleted `boardSyncEngine.ts`/`BoardSyncController.ts`/
   `CrossBranchTaskLoader.ts`/the cross-branch demo script (+ their 4 test files); simplified
   `mcp/handlers.ts` claim/release/board-write to direct surgical writes (no CAS);
   `BacklogParser.getTasksWithCrossBranch` now unconditionally `getTasks()`; fixed TASK-35's actual root
