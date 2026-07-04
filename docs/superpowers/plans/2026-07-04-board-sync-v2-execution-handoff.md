@@ -122,7 +122,7 @@ Legend: `X ──▶ Y` = Y depends on X (do X first).
   Left them alone to keep this PR scoped to the stated Accept criteria (`create_task` concurrency);
   flag for a follow-up bug/audit if someone wants full consistency across all four call sites.
 
-### [ ] Task A — Board-root resolution core `resolveBoardRoot()` (DRAFT-15)
+### [x] Task A — Board-root resolution core `resolveBoardRoot()` (DRAFT-15)
 
 - **Deps:** none. **Foundation.**
 - **Do:** new pure core (`src/core/boardRoot.ts`) `resolveBoardRoot(...)` → the **primary** worktree's
@@ -132,7 +132,23 @@ Legend: `X ──▶ Y` = Y depends on X (do X first).
   unit test). Ship helper + tests only; wiring is Task B.
 - **Accept:** from a worktree returns the primary's backlog path (not the worktree's); single-repo
   returns its own; cross-platform (`path.*`), tests pass on Linux/CI.
-- **Handoff Notes:** _(…)_
+- **Handoff Notes:** Added `src/core/boardRoot.ts`, split pure-from-I/O the same way
+  `scripts/taskwright-mcp.cjs`'s `resolveMainServerPath` is: `parseWorktreeListPorcelain()` extracts
+  every `worktree <path>` line in order (ignores `HEAD`/`branch`/`detached`/`bare`/`prunable ...`/blank
+  lines), `boardRootFromPorcelain()` is the pure `porcelain → primary backlog path` core (throws if no
+  `worktree ` entry at all — should be unreachable since `git worktree list` always emits at least the
+  main one), and `resolveBoardRoot(cwd, { exec })` is the thin wiring that runs `git worktree list
+--porcelain` (injectable `exec`, defaulting to the same promisified-`execFile` pattern as
+  `WorktreeService`/`GitBranchService`) and feeds it through. Primary is always porcelain's _first_
+  `worktree` entry regardless of which worktree ran the command — verified against a real captured
+  multi-worktree porcelain dump from this repo (including a stale `prunable gitdir file points to
+non-existent location` trailing line) — so no cwd-based branching was needed for the three required
+  cases (primary / linked `.worktrees/<branch>` / plain non-worktree repo, which all emit the same
+  shape, just with one vs. more entries). Tests in `src/test/unit/boardRoot.test.ts` (10, all against
+  captured porcelain text, no live git) normalize `\`→`/` before asserting (matching the existing
+  `taskwrightMcpLauncher.test.ts` convention) so they pass identically on Windows and Linux/CI.
+  **Scope note:** this task is helper + tests only, per the runbook — nothing calls `resolveBoardRoot()`
+  yet; wiring every MCP/extension board read-write through it is Task B.
 
 ### [ ] Task B — Route all board I/O through the single board root (DRAFT-16)
 
@@ -255,10 +271,12 @@ Legend: `X ──▶ Y` = Y depends on X (do X first).
 
 _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <one-line outcome>`.)_
 
-- 2026-07-04 · Task 0 · (pending commit) · Atomic id allocation for `createTask`/`createDraft`
+- 2026-07-04 · Task 0 · `0dbbd65` · Atomic id allocation for `createTask`/`createDraft`
   (lock-dir + `wx` write, retry on `EEXIST`); regression tests added directly against `BacklogWriter`
   in `mcpWriteHandlers.test.ts` (handler-level concurrency tests don't reliably reproduce the race —
   see Handoff Notes). Full suite/lint/typecheck green.
+- 2026-07-04 · Task A · (pending commit) · `resolveBoardRoot()` pure core added
+  (`src/core/boardRoot.ts` + 10 unit tests, no wiring yet). Full suite/lint/typecheck green.
 
 ---
 
