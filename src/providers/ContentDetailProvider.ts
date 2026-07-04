@@ -137,6 +137,7 @@ export class ContentDetailProvider {
    */
   private getHtmlContent(webview: vscode.Webview): string {
     const styleUri = this.getResourceUri(webview, 'styles.css');
+    const componentStyleUri = this.getResourceUri(webview, 'content-detail.css');
     const scriptUri = this.getResourceUri(webview, 'content-detail.js');
 
     return `<!DOCTYPE html>
@@ -146,6 +147,7 @@ export class ContentDetailProvider {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource};">
     <link href="${styleUri}" rel="stylesheet">
+    <link href="${componentStyleUri}" rel="stylesheet">
     <title>Content Detail</title>
 </head>
 <body class="content-detail-page">

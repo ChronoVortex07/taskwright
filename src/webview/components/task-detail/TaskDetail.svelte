@@ -399,43 +399,45 @@
     {isReadOnly}
   />
 
-  <AttachmentChips
-    taskId={task.id}
-    sections={[
-      {
-        key: 'plan',
-        label: 'Implementation Plan',
-        fieldName: 'implementationPlan',
-        content: task.implementationPlan || '',
-        contentHtml: planHtml,
-        emptyLabel: 'No plan',
-        onUpdate: handleUpdatePlan,
-      },
-      {
-        key: 'notes',
-        label: 'Implementation Notes',
-        fieldName: 'implementationNotes',
-        content: task.implementationNotes || '',
-        contentHtml: notesHtml,
-        emptyLabel: 'No notes',
-        onUpdate: handleUpdateImplementationNotes,
-      },
-      {
-        key: 'finalSummary',
-        label: 'Final Summary',
-        fieldName: 'finalSummary',
-        content: task.finalSummary || '',
-        contentHtml: finalSummaryHtml,
-        emptyLabel: 'No summary',
-        onUpdate: handleUpdateFinalSummary,
-      },
-    ]}
-    references={task.references ?? []}
-    documentation={task.documentation ?? []}
-    onOpenFile={handleOpenFile}
-    onOpenWorkspaceFile={handleOpenWorkspaceFile}
-    {isReadOnly}
-  />
+  {#key task.id}
+    <AttachmentChips
+      taskId={task.id}
+      sections={[
+        {
+          key: 'plan',
+          label: 'Implementation Plan',
+          fieldName: 'implementationPlan',
+          content: task.implementationPlan || '',
+          contentHtml: planHtml,
+          emptyLabel: 'No plan',
+          onUpdate: handleUpdatePlan,
+        },
+        {
+          key: 'notes',
+          label: 'Implementation Notes',
+          fieldName: 'implementationNotes',
+          content: task.implementationNotes || '',
+          contentHtml: notesHtml,
+          emptyLabel: 'No notes',
+          onUpdate: handleUpdateImplementationNotes,
+        },
+        {
+          key: 'finalSummary',
+          label: 'Final Summary',
+          fieldName: 'finalSummary',
+          content: task.finalSummary || '',
+          contentHtml: finalSummaryHtml,
+          emptyLabel: 'No summary',
+          onUpdate: handleUpdateFinalSummary,
+        },
+      ]}
+      references={task.references ?? []}
+      documentation={task.documentation ?? []}
+      onOpenFile={handleOpenFile}
+      onOpenWorkspaceFile={handleOpenWorkspaceFile}
+      {isReadOnly}
+    />
+  {/key}
 
   <ActionButtons
     onOpenFile={handleOpenFile}
