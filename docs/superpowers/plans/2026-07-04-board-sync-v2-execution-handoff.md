@@ -781,7 +781,7 @@ _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <
   quick-pick) mirroring the existing dispatch "Open handoff" pattern; added `taskwright.hasBacklog`
   context key + a new `commandPalette` menu block gating `pushBoard`/`pullBoard`. Full suite (1488
   tests)/lint/typecheck/build green.
-- 2026-07-04 · Task H · `(pending)` · Added opt-in `pre-push`(push)/`post-merge`(pull)
+- 2026-07-04 · Task H · `97129f2` · Added opt-in `pre-push`(push)/`post-merge`(pull)
   board-sync hooks: generalized `hookInstaller.ts` with a labeled-fence installer (worktree guard's
   fixed pre-commit fence untouched) + `installBoardSyncHooks`/`uninstallBoardSyncHooks`; new
   `src/hooks/board-sync-hook.ts` (`runBoardSyncHook`, bundled to `dist/hooks/board-sync-hook.js`) calls
