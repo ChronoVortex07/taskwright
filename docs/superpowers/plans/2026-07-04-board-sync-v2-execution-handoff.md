@@ -505,7 +505,7 @@ _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <
   cause (`TasksController`'s config-driven `dataSourceMode` activation skipped tree derivation entirely)
   and retired the matching `extension.ts` trigger + its now-false "Cross-Branch" status bar. Full suite
   (1454 tests)/lint/typecheck/build green.
-- 2026-07-04 · Task E · `(pending)` · Added pure `mergeBoards(base?, ours, theirs)` union-merge
+- 2026-07-04 · Task E · `f532930` · Added pure `mergeBoards(base?, ours, theirs)` union-merge
   core (`src/core/boardMerge.ts`) over in-memory `BoardFileMap`s: disjoint adds union, single-side
   edits keep the edit, both-side edits resolve by newer frontmatter `updated_date` (tie/unparseable
   → "theirs"), delete-vs-edit keeps the edit — every conflicting case records a `MergeConflict` with
