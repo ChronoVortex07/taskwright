@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Task, Milestone, TaskIdDisplayMode } from '../../lib/types';
+  import type { Task, Milestone, TaskIdDisplayMode, SortMode } from '../../lib/types';
   import KanbanColumn from './KanbanColumn.svelte';
 
   type TaskWithBlocks = Task & { blocksTaskIds?: string[] };
@@ -17,6 +17,7 @@
     collapsed: boolean;
     taskIdDisplay: TaskIdDisplayMode;
     activeEditedTaskId?: string | null;
+    sortMode?: SortMode;
     onToggleCollapse: (milestone: string) => void;
     onSelectTask: (taskId: string, taskMeta?: Pick<Task, 'filePath' | 'source' | 'branch'>) => void;
     onOpenTask: (taskId: string, taskMeta?: Pick<Task, 'filePath' | 'source' | 'branch'>) => void;
@@ -32,6 +33,7 @@
     collapsed,
     taskIdDisplay,
     activeEditedTaskId = null,
+    sortMode = 'default',
     onToggleCollapse,
     onSelectTask,
     onOpenTask,
@@ -102,6 +104,7 @@
           {activeEditedTaskId}
           milestone={milestoneKey}
           mini={true}
+          {sortMode}
           onToggleCollapse={noOpToggle}
           {onSelectTask}
           {onOpenTask}

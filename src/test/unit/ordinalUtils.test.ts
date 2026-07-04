@@ -4,6 +4,9 @@ import {
   compareByOrdinal,
   calculateOrdinalsForDrop,
   sortCardsByOrdinal,
+  sortCardsByPriority,
+  sortCardsByTaskNumber,
+  extractTaskNumber,
   CardData,
 } from '../../core/ordinalUtils';
 
@@ -177,6 +180,161 @@ describe('ordinalUtils', () => {
 
       expect(sorted[0].taskId).toBe('B'); // lower ordinal wins
       expect(sorted[1].taskId).toBe('A');
+    });
+  });
+
+  describe('extractTaskNumber', () => {
+    it('should extract numeric part from task ID', () => {
+      expect(extractTaskNumber('TASK-1')).toBe(1);
+      expect(extractTaskNumber('TASK-42')).toBe(42);
+      expect(extractTaskNumber('TASK-100')).toBe(100);
+    });
+
+    it('should handle multi-digit task numbers', () => {
+      expect(extractTaskNumber('TASK-999')).toBe(999);
+      expect(extractTaskNumber('TASK-1000')).toBe(1000);
+    });
+
+    it('should handle custom task prefixes', () => {
+      expect(extractTaskNumber('BUG-5')).toBe(5);
+      expect(extractTaskNumber('FEAT-23')).toBe(23);
+    });
+
+    it('should return 0 for invalid ids', () => {
+      expect(extractTaskNumber('INVALID')).toBe(0);
+      expect(extractTaskNumber('')).toBe(0);
+    });
+
+    it('should handle subtask IDs (dot notation)', () => {
+      expect(extractTaskNumber('TASK-5.1')).toBe(5);
+      expect(extractTaskNumber('TASK-7.3')).toBe(7);
+    });
+  });
+
+  describe('sortCardsByPriority', () => {
+    it('should sort by priority: high > medium > low', () => {
+      const cards: CardData[] = [
+        { taskId: 'TASK-3', ordinal: undefined, priority: 'low' },
+        { taskId: 'TASK-1', ordinal: undefined, priority: 'high' },
+        { taskId: 'TASK-2', ordinal: undefined, priority: 'medium' },
+      ];
+
+      const sorted = sortCardsByPriority(cards);
+
+      expect(sorted[0].taskId).toBe('TASK-1'); // high
+      expect(sorted[1].taskId).toBe('TASK-2'); // medium
+      expect(sorted[2].taskId).toBe('TASK-3'); // low
+    });
+
+    it('should sort by task number within same priority', () => {
+      const cards: CardData[] = [
+        { taskId: 'TASK-12', ordinal: undefined, priority: 'high' },
+        { taskId: 'TASK-3', ordinal: undefined, priority: 'high' },
+        { taskId: 'TASK-7', ordinal: undefined, priority: 'high' },
+      ];
+
+      const sorted = sortCardsByPriority(cards);
+
+      expect(sorted[0].taskId).toBe('TASK-3');
+      expect(sorted[1].taskId).toBe('TASK-7');
+      expect(sorted[2].taskId).toBe('TASK-12');
+    });
+
+    it('should place tasks without priority after low priority', () => {
+      const cards: CardData[] = [
+        { taskId: 'TASK-4', ordinal: undefined },
+        { taskId: 'TASK-1', ordinal: undefined, priority: 'high' },
+        { taskId: 'TASK-2', ordinal: undefined, priority: 'low' },
+      ];
+
+      const sorted = sortCardsByPriority(cards);
+
+      expect(sorted[0].taskId).toBe('TASK-1'); // high
+      expect(sorted[1].taskId).toBe('TASK-2'); // low
+      expect(sorted[2].taskId).toBe('TASK-4'); // no priority
+    });
+
+    it('should ignore ordinal field entirely', () => {
+      const cards: CardData[] = [
+        { taskId: 'TASK-2', ordinal: 100, priority: 'low' },
+        { taskId: 'TASK-1', ordinal: 5000, priority: 'high' },
+      ];
+
+      const sorted = sortCardsByPriority(cards);
+
+      // Priority wins over ordinal
+      expect(sorted[0].taskId).toBe('TASK-1'); // high, even with larger ordinal
+      expect(sorted[1].taskId).toBe('TASK-2'); // low
+    });
+
+    it('should handle empty array', () => {
+      const sorted = sortCardsByPriority([]);
+      expect(sorted).toEqual([]);
+    });
+  });
+
+  describe('sortCardsByTaskNumber', () => {
+    it('should sort by task number ascending', () => {
+      const cards: CardData[] = [
+        { taskId: 'TASK-10', ordinal: undefined },
+        { taskId: 'TASK-2', ordinal: undefined },
+        { taskId: 'TASK-1', ordinal: undefined },
+      ];
+
+      const sorted = sortCardsByTaskNumber(cards);
+
+      expect(sorted[0].taskId).toBe('TASK-1');
+      expect(sorted[1].taskId).toBe('TASK-2');
+      expect(sorted[2].taskId).toBe('TASK-10');
+    });
+
+    it('should ignore ordinal and priority', () => {
+      const cards: CardData[] = [
+        { taskId: 'TASK-3', ordinal: 100, priority: 'high' },
+        { taskId: 'TASK-1', ordinal: 5000, priority: 'low' },
+        { taskId: 'TASK-2', ordinal: undefined },
+      ];
+
+      const sorted = sortCardsByTaskNumber(cards);
+
+      expect(sorted[0].taskId).toBe('TASK-1');
+      expect(sorted[1].taskId).toBe('TASK-2');
+      expect(sorted[2].taskId).toBe('TASK-3');
+    });
+
+    it('should handle mixed prefixes', () => {
+      const cards: CardData[] = [
+        { taskId: 'BUG-5', ordinal: undefined },
+        { taskId: 'TASK-1', ordinal: undefined },
+        { taskId: 'FEAT-2', ordinal: undefined },
+      ];
+
+      const sorted = sortCardsByTaskNumber(cards);
+
+      // Sorted by numeric part: 1, 2, 5
+      expect(sorted[0].taskId).toBe('TASK-1');
+      expect(sorted[1].taskId).toBe('FEAT-2');
+      expect(sorted[2].taskId).toBe('BUG-5');
+    });
+
+    it('should place invalid IDs (no number) at the end, sorted alphabetically', () => {
+      const cards: CardData[] = [
+        { taskId: 'NONUM', ordinal: undefined },
+        { taskId: 'TASK-1', ordinal: undefined },
+        { taskId: 'ANOTHER', ordinal: undefined },
+      ];
+
+      const sorted = sortCardsByTaskNumber(cards);
+
+      expect(sorted[0].taskId).toBe('TASK-1');
+      // Invalid IDs at end, sorted alphabetically
+      expect(sorted[1].taskId).toBe('ANOTHER');
+      expect(sorted[2].taskId).toBe('NONUM');
+    });
+
+    it('should handle empty array', () => {
+      const sorted = sortCardsByTaskNumber([]);
+      expect(sorted).toEqual([]);
     });
   });
 

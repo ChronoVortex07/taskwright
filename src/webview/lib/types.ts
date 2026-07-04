@@ -12,6 +12,12 @@ export type TabMode =
   | 'decisions';
 
 /**
+ * Sort mode for the kanban board within each status column.
+ * Session-scoped UI preference; does not persist to disk.
+ */
+export type SortMode = 'default' | 'priority' | 'task-number';
+
+/**
  * Re-export core types for use in webview components
  *
  * This provides a clean import path for webview code to access

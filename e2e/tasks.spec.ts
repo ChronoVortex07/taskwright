@@ -1544,6 +1544,177 @@ test.describe('Tasks View', () => {
     });
   });
 
+  test.describe('Kanban Sort Controls', () => {
+    // Tasks with different priorities and IDs for sort testing
+    const sortTestTasks: (Task & { blocksTaskIds?: string[] })[] = [
+      {
+        id: 'TASK-10',
+        title: 'Task 10 - Low priority',
+        status: 'To Do',
+        priority: 'low',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/test/tasks/task-10.md',
+      },
+      {
+        id: 'TASK-2',
+        title: 'Task 2 - High priority',
+        status: 'To Do',
+        priority: 'high',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/test/tasks/task-2.md',
+      },
+      {
+        id: 'TASK-5',
+        title: 'Task 5 - Medium priority',
+        status: 'To Do',
+        priority: 'medium',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/test/tasks/task-5.md',
+      },
+      {
+        id: 'TASK-1',
+        title: 'Task 1 - No priority',
+        status: 'To Do',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/test/tasks/task-1.md',
+      },
+    ];
+
+    async function setupSortView(page: ReturnType<typeof test.info>['page']) {
+      await installVsCodeMock(page);
+      await page.goto('/tasks.html');
+      await page.waitForTimeout(100);
+
+      await postMessageToWebview(page, { type: 'viewModeChanged', viewMode: 'kanban' });
+      await postMessageToWebview(page, {
+        type: 'statusesUpdated',
+        statuses: ['To Do', 'In Progress', 'Done'],
+      });
+      await postMessageToWebview(page, { type: 'milestonesUpdated', milestones: [] });
+      await postMessageToWebview(page, { type: 'tasksUpdated', tasks: sortTestTasks });
+      await page.waitForTimeout(100);
+    }
+
+    test('sort buttons are rendered in the kanban toolbar', async ({ page }) => {
+      await setupSortView(page);
+
+      const sortToggle = page.locator('.sort-toggle');
+      await expect(sortToggle).toBeVisible();
+
+      const defaultBtn = sortToggle.locator('[data-sort="default"]');
+      const priorityBtn = sortToggle.locator('[data-sort="priority"]');
+      const taskNumBtn = sortToggle.locator('[data-sort="task-number"]');
+
+      await expect(defaultBtn).toBeVisible();
+      await expect(priorityBtn).toBeVisible();
+      await expect(taskNumBtn).toBeVisible();
+
+      await expect(defaultBtn).toHaveText('Default');
+      await expect(priorityBtn).toHaveText('Priority');
+      await expect(taskNumBtn).toHaveText('Task #');
+    });
+
+    test('default sort is active initially', async ({ page }) => {
+      await setupSortView(page);
+
+      const defaultBtn = page.locator('[data-sort="default"]');
+      await expect(defaultBtn).toHaveClass(/active/);
+
+      const priorityBtn = page.locator('[data-sort="priority"]');
+      await expect(priorityBtn).not.toHaveClass(/active/);
+
+      const taskNumBtn = page.locator('[data-sort="task-number"]');
+      await expect(taskNumBtn).not.toHaveClass(/active/);
+    });
+
+    test('clicking a sort button activates it and deactivates others', async ({ page }) => {
+      await setupSortView(page);
+
+      // Click Priority
+      await page.locator('[data-sort="priority"]').click();
+      await page.waitForTimeout(50);
+
+      await expect(page.locator('[data-sort="priority"]')).toHaveClass(/active/);
+      await expect(page.locator('[data-sort="default"]')).not.toHaveClass(/active/);
+      await expect(page.locator('[data-sort="task-number"]')).not.toHaveClass(/active/);
+
+      // Click Task #
+      await page.locator('[data-sort="task-number"]').click();
+      await page.waitForTimeout(50);
+
+      await expect(page.locator('[data-sort="task-number"]')).toHaveClass(/active/);
+      await expect(page.locator('[data-sort="default"]')).not.toHaveClass(/active/);
+      await expect(page.locator('[data-sort="priority"]')).not.toHaveClass(/active/);
+
+      // Click back to Default
+      await page.locator('[data-sort="default"]').click();
+      await page.waitForTimeout(50);
+
+      await expect(page.locator('[data-sort="default"]')).toHaveClass(/active/);
+      await expect(page.locator('[data-sort="priority"]')).not.toHaveClass(/active/);
+      await expect(page.locator('[data-sort="task-number"]')).not.toHaveClass(/active/);
+    });
+
+    test('priority sort orders tasks high→medium→low then by task number', async ({ page }) => {
+      await setupSortView(page);
+
+      // Click Priority sort
+      await page.locator('[data-sort="priority"]').click();
+      await page.waitForTimeout(50);
+
+      // Get the task cards in the To Do column in visual order
+      const todoColumn = page.locator('[data-testid="task-list-To Do"]');
+      const cards = todoColumn.locator('[data-task-id]');
+      const cardIds = await cards.evaluateAll((els) =>
+        els.map((el) => (el as HTMLElement).dataset.taskId)
+      );
+
+      // Expected order: high (TASK-2) → medium (TASK-5) → low (TASK-10) → no priority (TASK-1)
+      expect(cardIds).toEqual(['TASK-2', 'TASK-5', 'TASK-10', 'TASK-1']);
+    });
+
+    test('task number sort orders tasks by numeric ID ascending', async ({ page }) => {
+      await setupSortView(page);
+
+      // Click Task # sort
+      await page.locator('[data-sort="task-number"]').click();
+      await page.waitForTimeout(50);
+
+      const todoColumn = page.locator('[data-testid="task-list-To Do"]');
+      const cards = todoColumn.locator('[data-task-id]');
+      const cardIds = await cards.evaluateAll((els) =>
+        els.map((el) => (el as HTMLElement).dataset.taskId)
+      );
+
+      // Expected order: TASK-1, TASK-2, TASK-5, TASK-10 (ascending by number)
+      expect(cardIds).toEqual(['TASK-1', 'TASK-2', 'TASK-5', 'TASK-10']);
+    });
+
+    test('sort label is visible in toolbar', async ({ page }) => {
+      await setupSortView(page);
+
+      const sortLabel = page.locator('.sort-label');
+      await expect(sortLabel).toBeVisible();
+      await expect(sortLabel).toHaveText('Sort:');
+    });
+  });
+
   test.describe('No Backlog State', () => {
     test('shows no backlog message', async ({ page }) => {
       await installVsCodeMock(page);

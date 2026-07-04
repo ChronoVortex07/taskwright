@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { isReadOnlyTask, type Task, type TaskIdDisplayMode } from '../../lib/types';
+  import { isReadOnlyTask, type Task, type TaskIdDisplayMode, type SortMode } from '../../lib/types';
   import TaskCard from '../shared/TaskCard.svelte';
-  import { sortCardsByOrdinal, type CardData } from '../../../core/ordinalUtils';
+  import { sortCardsByOrdinal, sortCardsByPriority, sortCardsByTaskNumber, type CardData } from '../../../core/ordinalUtils';
 
   type TaskWithBlocks = Task & { blocksTaskIds?: string[] };
 
@@ -14,6 +14,7 @@
     collapsed: boolean;
     milestone?: string;
     mini?: boolean;
+    sortMode?: SortMode;
     onToggleCollapse: (status: string) => void;
     onSelectTask: (taskId: string, taskMeta?: Pick<Task, 'filePath' | 'source' | 'branch'>) => void;
     onOpenTask: (taskId: string, taskMeta?: Pick<Task, 'filePath' | 'source' | 'branch'>) => void;
@@ -30,6 +31,7 @@
     collapsed,
     milestone,
     mini = false,
+    sortMode = 'default',
     onToggleCollapse,
     onSelectTask,
     onOpenTask,
@@ -42,7 +44,7 @@
   // Detect "done"/"complete" columns for special sorting
   let isDoneColumn = $derived(/done|complete/i.test(status));
 
-  // Sort tasks: done/complete columns by updatedAt DESC, others by ordinal
+  // Sort tasks: done/complete columns by updatedAt DESC, others by selected sort mode
   let sortedTasks = $derived.by(() => {
     if (isDoneColumn) {
       return [...tasks].sort((a, b) => {
@@ -62,7 +64,14 @@
       ordinal: t.ordinal,
       priority: t.priority,
     }));
-    const sortedData = sortCardsByOrdinal(cardData);
+    let sortedData: CardData[];
+    if (sortMode === 'priority') {
+      sortedData = sortCardsByPriority(cardData);
+    } else if (sortMode === 'task-number') {
+      sortedData = sortCardsByTaskNumber(cardData);
+    } else {
+      sortedData = sortCardsByOrdinal(cardData);
+    }
     return sortedData.map((cd) => tasks.find((t) => t.id === cd.taskId)!);
   });
 

@@ -265,6 +265,42 @@ body.tasks-page .view-content {
   color: var(--vscode-button-foreground, #ffffff);
 }
 
+/* Sort controls - same visual pattern as grouping toggle */
+.sort-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.sort-label {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #999);
+  margin-right: 2px;
+}
+
+.sort-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  border: 1px solid var(--vscode-button-secondaryBackground, var(--vscode-widget-border, #303031));
+  background: var(--vscode-button-secondaryBackground, transparent);
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground, #cccccc));
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.sort-btn:hover {
+  background: var(
+    --vscode-button-secondaryHoverBackground,
+    var(--vscode-list-hoverBackground, #2a2d2e)
+  );
+}
+
+.sort-btn.active {
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #ffffff);
+}
+
 /* Kanban Board */
 .kanban-board {
   display: flex;

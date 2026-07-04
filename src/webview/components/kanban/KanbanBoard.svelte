@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Task, Milestone, TaskIdDisplayMode } from '../../lib/types';
+  import type { Task, Milestone, TaskIdDisplayMode, SortMode } from '../../lib/types';
   import KanbanColumn from './KanbanColumn.svelte';
   import MilestoneSection from './MilestoneSection.svelte';
   import { calculateOrdinalsForDrop, type CardData } from '../../../core/ordinalUtils';
@@ -26,6 +26,7 @@
     collapsedMilestones: Set<string>;
     taskIdDisplay: TaskIdDisplayMode;
     activeEditedTaskId?: string | null;
+    sortMode?: SortMode;
     onSelectTask: (taskId: string, taskMeta?: Pick<Task, 'filePath' | 'source' | 'branch'>) => void;
     onOpenTask: (taskId: string, taskMeta?: Pick<Task, 'filePath' | 'source' | 'branch'>) => void;
     onToggleColumnCollapse: (status: string) => void;
@@ -50,6 +51,7 @@
     collapsedMilestones,
     taskIdDisplay,
     activeEditedTaskId = null,
+    sortMode = 'default',
     onSelectTask,
     onOpenTask,
     onToggleColumnCollapse,
@@ -253,6 +255,7 @@
           collapsed={collapsedMilestones.has(group.id ?? '__uncategorized__')}
           {taskIdDisplay}
           {activeEditedTaskId}
+          {sortMode}
           onToggleCollapse={onToggleMilestoneCollapse}
         {onSelectTask}
         {onOpenTask}
@@ -282,6 +285,7 @@
         collapsed={collapsedColumns.has(col.status)}
         {taskIdDisplay}
         {activeEditedTaskId}
+        {sortMode}
         onToggleCollapse={onToggleColumnCollapse}
         {onSelectTask}
         {onOpenTask}

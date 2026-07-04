@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getReadOnlyTaskContext, type Task, type Milestone, type TaskStatus, type DashboardStats, type TabMode, type BacklogDocument, type BacklogDecision, type TaskIdDisplayMode, type ExtensionMessage } from '../../lib/types';
+  import { getReadOnlyTaskContext, type Task, type Milestone, type TaskStatus, type DashboardStats, type TabMode, type BacklogDocument, type BacklogDecision, type TaskIdDisplayMode, type SortMode, type ExtensionMessage } from '../../lib/types';
   import { vscode, onMessage } from '../../stores/vscode.svelte';
   import KanbanBoard from '../kanban/KanbanBoard.svelte';
   import ListView from '../list/ListView.svelte';
@@ -31,6 +31,7 @@
   let configMilestones = $state<Milestone[]>([]);
   let statuses = $derived(columns.map((c) => c.status));
   let groupingMode = $state<'status' | 'milestone' | 'label'>('status');
+  let sortMode = $state<SortMode>('default');
   let collapsedColumns = $state(new Set<string>());
   let collapsedMilestones = $state(new Set<string>());
   let noBacklog = $state(false);
@@ -678,6 +679,36 @@
           By Label
         </button>
       </div>
+      <div class="sort-toggle">
+        <span class="sort-label">Sort:</span>
+        <button
+          class="sort-btn"
+          class:active={sortMode === 'default'}
+          data-sort="default"
+          onclick={() => sortMode = 'default'}
+          title="Default order (ordinal / creation order)"
+        >
+          Default
+        </button>
+        <button
+          class="sort-btn"
+          class:active={sortMode === 'priority'}
+          data-sort="priority"
+          onclick={() => sortMode = 'priority'}
+          title="Sort by priority (high → medium → low)"
+        >
+          Priority
+        </button>
+        <button
+          class="sort-btn"
+          class:active={sortMode === 'task-number'}
+          data-sort="task-number"
+          onclick={() => sortMode = 'task-number'}
+          title="Sort by task number ascending"
+        >
+          Task #
+        </button>
+      </div>
     </div>
     <div id="kanban-app">
       <KanbanBoard
@@ -689,6 +720,7 @@
         {collapsedMilestones}
         {taskIdDisplay}
         {activeEditedTaskId}
+        {sortMode}
         onSelectTask={handleSelectTask}
         onOpenTask={handleOpenTask}
         onToggleColumnCollapse={handleToggleColumnCollapse}

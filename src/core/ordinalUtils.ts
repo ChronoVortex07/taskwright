@@ -151,6 +151,77 @@ export function sortCardsByOrdinal(cards: CardData[]): CardData[] {
   return [...cards].sort(compareByOrdinal);
 }
 
+/**
+ * Extract the numeric part of a task ID (e.g., "TASK-42" → 42, "TASK-5.1" → 5).
+ * Returns 0 if no numeric part is found.
+ */
+export function extractTaskNumber(taskId: string): number {
+  // Match: optional prefix (letters) followed by dash and digits; stop before dot (subtasks)
+  const match = taskId.match(/^[A-Za-z]+-(\d+)/);
+  if (!match) return 0;
+  const num = parseInt(match[1], 10);
+  return isNaN(num) ? 0 : num;
+}
+
+/**
+ * Compare two cards by priority only (ignores ordinal):
+ * - high > medium > low > no priority
+ * - Within same priority, sort by task number (extractTaskNumber)
+ * - Final tiebreaker: ID string comparison
+ */
+export function compareByPriority(a: CardData, b: CardData): number {
+  const aPri = a.priority ? (PRIORITY_ORDER[a.priority] ?? NO_PRIORITY) : NO_PRIORITY;
+  const bPri = b.priority ? (PRIORITY_ORDER[b.priority] ?? NO_PRIORITY) : NO_PRIORITY;
+  if (aPri !== bPri) return aPri - bPri;
+
+  // Same priority: sort by task number
+  const aNum = extractTaskNumber(a.taskId);
+  const bNum = extractTaskNumber(b.taskId);
+  if (aNum !== bNum) return aNum - bNum;
+
+  // Same task number (e.g. both ID-less): fall back to string compare
+  return a.taskId.localeCompare(b.taskId);
+}
+
+/**
+ * Sort cards by priority (high → medium → low → none), then by task number within
+ * each priority tier. Ordinals are ignored — this is a pure priority sort.
+ */
+export function sortCardsByPriority(cards: CardData[]): CardData[] {
+  return [...cards].sort(compareByPriority);
+}
+
+/**
+ * Compare two cards by task number only (extracted from the ID).
+ * Cards without a numeric ID are pushed to the end and sorted alphabetically.
+ */
+export function compareByTaskNumber(a: CardData, b: CardData): number {
+  const aNum = extractTaskNumber(a.taskId);
+  const bNum = extractTaskNumber(b.taskId);
+
+  // Cards with valid numbers come first
+  const aHasNum = aNum > 0;
+  const bHasNum = bNum > 0;
+  if (aHasNum && !bHasNum) return -1;
+  if (!aHasNum && bHasNum) return 1;
+
+  // Both have numbers: compare numerically
+  if (aHasNum && bHasNum) {
+    if (aNum !== bNum) return aNum - bNum;
+    return a.taskId.localeCompare(b.taskId);
+  }
+
+  // Neither has a valid number: sort alphabetically by ID
+  return a.taskId.localeCompare(b.taskId);
+}
+
+/**
+ * Sort cards by task number ascending. Ordinals and priorities are ignored.
+ */
+export function sortCardsByTaskNumber(cards: CardData[]): CardData[] {
+  return [...cards].sort(compareByTaskNumber);
+}
+
 export interface ResolveOrdinalConflictsOptions {
   defaultStep?: number;
   startOrdinal?: number;
