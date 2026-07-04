@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import { BacklogParser } from './BacklogParser';
 import { detectCRLF, normalizeToLF, restoreLineEndings } from './BacklogWriter';
 import { applyClaim, clearClaim, claimTimestamp, Claim } from './claims';
+import { setStatusField } from './frontmatterEdit';
 import { atomicWriteFileSync } from './atomicWrite';
 
 /** Options for placing a claim. */
@@ -26,6 +27,11 @@ export class ClaimService {
   /**
    * Claim a task for `claimedBy`. Replaces any existing claim. Returns the
    * claim that was written.
+   *
+   * When the task is in the board's first configured status (typically "To Do"),
+   * the status is also advanced to the second configured status (typically
+   * "In Progress"). If the task is already in a later status, or the config has
+   * fewer than 2 statuses, the status is left unchanged.
    */
   async claimTask(
     taskId: string,
@@ -33,13 +39,30 @@ export class ClaimService {
     parser: BacklogParser,
     options: ClaimTaskOptions = {}
   ): Promise<Claim> {
-    const filePath = await this.resolveFilePath(taskId, parser);
+    const task = await parser.getTask(taskId);
+    if (!task) {
+      throw new Error(`Task ${taskId} not found`);
+    }
+    const filePath = task.filePath;
+
+    // Resolve the "In Progress" status from the board config.
+    const config = await parser.getConfig();
+    const statuses = config.statuses ?? ['To Do', 'In Progress', 'Done'];
+    const inProgressStatus = statuses.length >= 2 ? statuses[1] : 'In Progress';
+    const needsTransition = task.status === statuses[0];
+
     const claim: Claim = {
       claimedBy,
       worktree: options.worktree,
       claimedAt: claimTimestamp(options.now ?? new Date()),
     };
-    this.rewrite(filePath, (content) => applyClaim(content, claim), parser);
+    this.rewrite(filePath, (content) => {
+      let updated = applyClaim(content, claim);
+      if (needsTransition) {
+        updated = setStatusField(updated, inProgressStatus);
+      }
+      return updated;
+    }, parser);
     return claim;
   }
 

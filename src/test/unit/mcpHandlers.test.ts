@@ -122,6 +122,15 @@ describe('mcp handlers', () => {
       expect(written).toContain('claimed_by:');
     });
 
+    it('advances status from "To Do" to "In Progress" when claiming', async () => {
+      routeReads(null);
+      await claimTaskHandler(makeDeps(), { taskId: 'TASK-7', claimedBy: '@agent' });
+      const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+      // Status should be advanced from the first to the second configured status.
+      expect(written).toContain('status: In Progress');
+      expect(written).toContain('claimed_by:');
+    });
+
     it('throws when the task is missing', async () => {
       routeReads(null);
       vi.mocked(fs.readdirSync).mockReturnValue([] as unknown as ReturnType<typeof fs.readdirSync>);

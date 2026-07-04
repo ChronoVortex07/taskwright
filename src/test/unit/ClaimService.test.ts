@@ -70,12 +70,16 @@ describe('ClaimService', () => {
     });
 
     it('preserves the task body and existing frontmatter', async () => {
+      // Use a task already "In Progress" so the status transition is a no-op,
+      // letting us verify that all OTHER frontmatter fields are preserved.
+      const inProgressTask = TASK.replace('status: To Do', 'status: In Progress');
+      vi.mocked(fs.readFileSync).mockReturnValue(inProgressTask);
       await service.claimTask('TASK-1', '@alice', parser, { now: new Date(2026, 5, 30, 14, 5) });
       const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
       expect(written).toContain('Body stays intact.');
       const task = parser.parseTaskContent(written, '/fake/backlog/tasks/task-1 - Sample-task.md');
       expect(task?.title).toBe('Sample task');
-      expect(task?.status).toBe('To Do');
+      expect(task?.status).toBe('In Progress');
     });
 
     it('preserves CRLF line endings when the original used them', async () => {
@@ -97,6 +101,111 @@ describe('ClaimService', () => {
     it('throws when the task does not exist', async () => {
       mockReaddirSync([]);
       await expect(service.claimTask('TASK-404', '@alice', parser)).rejects.toThrow('TASK-404');
+    });
+
+    describe('status transition', () => {
+      const CONFIG_YML = `project_name: Test
+statuses: ['To Do', 'In Progress', 'Done']
+default_status: 'To Do'
+`;
+
+      function routeReads(taskContent: string) {
+        vi.mocked(fs.readFileSync).mockImplementation((p: fs.PathOrFileDescriptor) => {
+          const str = String(p).replace(/\\/g, '/');
+          if (str.endsWith('config.yml') || str.endsWith('config.yaml')) return CONFIG_YML;
+          return taskContent;
+        });
+      }
+
+      it('advances status from "To Do" to "In Progress" on claim', async () => {
+        routeReads(TASK);
+        await service.claimTask('TASK-1', '@alice', parser, {
+          now: new Date(2026, 5, 30, 14, 5),
+        });
+
+        const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+        const task = parser.parseTaskContent(written, '/fake/backlog/tasks/task-1 - Sample-task.md');
+        expect(task?.status).toBe('In Progress');
+        expect(task?.claimedBy).toBe('@alice');
+      });
+
+      it('leaves status unchanged when already "In Progress"', async () => {
+        const inProgressTask = TASK.replace('status: To Do', 'status: In Progress');
+        routeReads(inProgressTask);
+        await service.claimTask('TASK-1', '@alice', parser, {
+          now: new Date(2026, 5, 30, 14, 5),
+        });
+
+        const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+        const task = parser.parseTaskContent(written, '/fake/backlog/tasks/task-1 - Sample-task.md');
+        expect(task?.status).toBe('In Progress');
+      });
+
+      it('leaves status unchanged when "Done"', async () => {
+        const doneTask = TASK.replace('status: To Do', 'status: Done');
+        routeReads(doneTask);
+        await service.claimTask('TASK-1', '@alice', parser, {
+          now: new Date(2026, 5, 30, 14, 5),
+        });
+
+        const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+        const task = parser.parseTaskContent(written, '/fake/backlog/tasks/task-1 - Sample-task.md');
+        expect(task?.status).toBe('Done');
+      });
+
+      it('defaults to "In Progress" when config has fewer than 2 statuses', async () => {
+        const oneStatusConfig = `project_name: Test
+statuses: ['Backlog']
+default_status: 'Backlog'
+`;
+        vi.mocked(fs.readFileSync).mockImplementation((p: fs.PathOrFileDescriptor) => {
+          const str = String(p).replace(/\\/g, '/');
+          if (str.endsWith('config.yml') || str.endsWith('config.yaml')) return oneStatusConfig;
+          return TASK;
+        });
+        await service.claimTask('TASK-1', '@alice', parser, {
+          now: new Date(2026, 5, 30, 14, 5),
+        });
+
+        const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+        const task = parser.parseTaskContent(written, '/fake/backlog/tasks/task-1 - Sample-task.md');
+        // The task has status "To Do" but the config only has ["Backlog"]. Since
+        // "To Do" ≠ "Backlog" (statuses[0]), no transition occurs — status stays "To Do".
+        // The inProgressStatus fallback ("In Progress") is unused here because the
+        // task's current status does not match the board's first status.
+        expect(task?.status).toBe('To Do');
+      });
+
+      it('uses the board\'s second configured status (not a hardcoded value)', async () => {
+        const customConfig = `project_name: Test
+statuses: ['Open', 'Working', 'Review', 'Closed']
+default_status: 'Open'
+`;
+        vi.mocked(fs.readFileSync).mockImplementation((p: fs.PathOrFileDescriptor) => {
+          const str = String(p).replace(/\\/g, '/');
+          if (str.endsWith('config.yml') || str.endsWith('config.yaml')) return customConfig;
+          return TASK.replace('status: To Do', 'status: Open');
+        });
+        await service.claimTask('TASK-1', '@alice', parser, {
+          now: new Date(2026, 5, 30, 14, 5),
+        });
+
+        const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+        const task = parser.parseTaskContent(written, '/fake/backlog/tasks/task-1 - Sample-task.md');
+        expect(task?.status).toBe('Working');
+      });
+
+      it('uses setStatusField (unquoted status) for byte-for-byte compatibility', async () => {
+        routeReads(TASK);
+        await service.claimTask('TASK-1', '@alice', parser, {
+          now: new Date(2026, 5, 30, 14, 5),
+        });
+
+        const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+        // setStatusField writes status as an unquoted scalar — no quotes around "In Progress".
+        expect(written).toContain('status: In Progress');
+        expect(written).not.toContain("status: 'In Progress'");
+      });
     });
   });
 

@@ -51,9 +51,12 @@ agent. The sub-skills it invokes (`superpowers:executing-plans`, `superpowers:su
    - Never `git checkout`, `commit`, or `merge` in the repository root — it is shared with other
      agents and a managed pre-commit hook blocks it. All git/file/test commands run in the worktree.
 
-3. **Claim.** Call `claim_task` with your task ID to mark it in progress (advisory — prevents
-   cross-worktree collisions). On a synced board a claim may **surrender** if another session already
-   holds it; if so, stop and pick a different task with the user.
+3. **Claim.** Call `claim_task` with your task ID. This places the advisory claim AND
+   automatically advances the task status from the board's first configured status (typically
+   "To Do") to its second (typically "In Progress"), so the board immediately shows someone is
+   working on it. If the task is already past the first status the status is left unchanged.
+   On a synced board a claim may **surrender** if another session already holds it; if so, stop
+   and pick a different task with the user.
 
 4. **Execute (adaptive — ordered gate).** Choose the strategy by this precedence, first match wins:
    1. **Attached plan** — the task has a `plan` and its `planProgress.exists` is true ⇒ invoke
