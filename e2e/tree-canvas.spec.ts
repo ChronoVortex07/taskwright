@@ -178,6 +178,11 @@ test.describe('Tech tree canvas', () => {
   });
 
   test('plain wheel pans (updates the surface transform)', async ({ page }) => {
+    // Zoom in so the surface overflows the viewport; when content fits entirely
+    // within the viewport, clampViewport centres it and small pans are a no-op.
+    await page.locator('[data-testid="tree-zoom-in"]').click();
+    await page.locator('[data-testid="tree-zoom-in"]').click();
+    await page.waitForTimeout(50);
     const surface = page.locator('[data-testid="tree-surface"]');
     const before = await surface.getAttribute('style');
     await page.locator('[data-testid="tree-viewport"]').evaluate((el) => {
@@ -306,14 +311,27 @@ test.describe('Tech tree canvas', () => {
       tasks: [
         ...treeTasks(),
         {
-          id: 'TASK-9', title: 'Backburner node', status: 'To Do', labels: [], assignee: [],
-          dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
-          filePath: '/b/tasks/task-9.md', category: 'Features', milestone: 'Backburner',
+          id: 'TASK-9',
+          title: 'Backburner node',
+          status: 'To Do',
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          acceptanceCriteria: [],
+          definitionOfDone: [],
+          filePath: '/b/tasks/task-9.md',
+          category: 'Features',
+          milestone: 'Backburner',
           layout: { lane: 'Features', band: 'Backburner', depth: 0, subRow: 0 },
         } as Task,
       ],
     });
-    await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder, bandOrder, warnings: [] });
+    await postMessageToWebview(page, {
+      type: 'treeLayoutUpdated',
+      laneOrder,
+      bandOrder,
+      warnings: [],
+    });
     await page.waitForTimeout(80);
     // Zoom in so the surface overflows the viewport; otherwise clampViewport pins the
     // translate and the jump delta is nulled.
@@ -338,7 +356,12 @@ test.describe('Tech tree canvas', () => {
   test('cross-branch mode shows the cross-branch empty-state copy (11c)', async ({ page }) => {
     await postMessageToWebview(page, { type: 'dataSourceChanged', mode: 'cross-branch' });
     await postMessageToWebview(page, { type: 'tasksUpdated', tasks: [] });
-    await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder: [], bandOrder: [], warnings: [] });
+    await postMessageToWebview(page, {
+      type: 'treeLayoutUpdated',
+      laneOrder: [],
+      bandOrder: [],
+      warnings: [],
+    });
     await page.waitForTimeout(80);
     await expect(page.locator('[data-testid="tree-empty-state"]')).toContainText(
       "isn't available in cross-branch mode"
@@ -352,21 +375,46 @@ test.describe('Tech tree canvas', () => {
       type: 'tasksUpdated',
       tasks: [
         {
-          id: 'TASK-D1', title: 'Alpha draft', status: 'Draft', labels: [], assignee: [],
-          dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
-          filePath: '/b/tasks/task-d1.md', category: 'Features', milestone: 'v1',
+          id: 'TASK-D1',
+          title: 'Alpha draft',
+          status: 'Draft',
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          acceptanceCriteria: [],
+          definitionOfDone: [],
+          filePath: '/b/tasks/task-d1.md',
+          category: 'Features',
+          milestone: 'v1',
           layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 0 },
         } as Task,
         {
-          id: 'TASK-D2', title: 'Beta draft', status: 'Draft', labels: [], assignee: [],
-          dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
-          filePath: '/b/tasks/task-d2.md', category: 'Features', milestone: 'v1',
+          id: 'TASK-D2',
+          title: 'Beta draft',
+          status: 'Draft',
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          acceptanceCriteria: [],
+          definitionOfDone: [],
+          filePath: '/b/tasks/task-d2.md',
+          category: 'Features',
+          milestone: 'v1',
           layout: { lane: 'Features', band: 'v1', depth: 1, subRow: 0 },
         } as Task,
       ],
     });
-    await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder: ['Features'], bandOrder: ['v1'], warnings: [] });
-    await postMessageToWebview(page, { type: 'navigatorFilterChanged', search: 'Alpha', priority: '' });
+    await postMessageToWebview(page, {
+      type: 'treeLayoutUpdated',
+      laneOrder: ['Features'],
+      bandOrder: ['v1'],
+      warnings: [],
+    });
+    await postMessageToWebview(page, {
+      type: 'navigatorFilterChanged',
+      search: 'Alpha',
+      priority: '',
+    });
     await page.waitForTimeout(80);
     await expect(page.locator('[data-testid="tree-promote-all"]')).toContainText('(1)');
 
@@ -386,6 +434,38 @@ test.describe('Tech tree canvas', () => {
     await expect(page.locator('[data-testid="tree-node-TASK-4"]')).toHaveClass(/draft|proposed/);
   });
 
+  test('tree canvas fills available panel height, not collapsed to min-height', async ({
+    page,
+  }) => {
+    // The canvas must fill the webview height, not collapse to its 400px min-height.
+    const canvas = page.locator('[data-testid="tree-canvas"]');
+    const box = await canvas.boundingBox();
+    expect(box).not.toBeNull();
+    // With a 1280×800 viewport, the canvas height should comfortably exceed the
+    // 400px min-height guard once the ancestor height chain is fixed.
+    expect(box!.height).toBeGreaterThan(500);
+    // Width should fill the viewport (full width).
+    expect(box!.width).toBeGreaterThan(1000);
+  });
+
+  test('tree canvas reflows on viewport resize (responsive height)', async ({ page }) => {
+    const canvas = page.locator('[data-testid="tree-canvas"]');
+    const before = await canvas.boundingBox();
+    expect(before).not.toBeNull();
+
+    // Shrink the viewport.
+    await page.setViewportSize({ width: 800, height: 500 });
+    await page.waitForTimeout(150); // let layout settle
+
+    const after = await canvas.boundingBox();
+    expect(after).not.toBeNull();
+    // Canvas should shrink with the viewport, not stay at a fixed size.
+    expect(after!.height).toBeLessThan(before!.height);
+    expect(after!.width).toBeLessThan(before!.width);
+    // Still above the min-height guard.
+    expect(after!.height).toBeGreaterThan(300);
+  });
+
   test('a drafts-folder node carrying a REAL status still renders provisional via the folder clause (P6/D2)', async ({
     page,
   }) => {
@@ -398,15 +478,33 @@ test.describe('Tech tree canvas', () => {
       type: 'tasksUpdated',
       tasks: [
         {
-          id: 'TASK-DFD', title: 'Done draft', status: 'Done', folder: 'drafts',
-          labels: [], assignee: [], dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
-          filePath: '/b/drafts/task-dfd.md', category: 'Features', milestone: 'v1',
+          id: 'TASK-DFD',
+          title: 'Done draft',
+          status: 'Done',
+          folder: 'drafts',
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          acceptanceCriteria: [],
+          definitionOfDone: [],
+          filePath: '/b/drafts/task-dfd.md',
+          category: 'Features',
+          milestone: 'v1',
           layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 0 },
         } as Task,
         {
-          id: 'TASK-DFT', title: 'To-Do draft', status: 'To Do', folder: 'drafts',
-          labels: [], assignee: [], dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
-          filePath: '/b/drafts/task-dft.md', category: 'Features', milestone: 'v1',
+          id: 'TASK-DFT',
+          title: 'To-Do draft',
+          status: 'To Do',
+          folder: 'drafts',
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          acceptanceCriteria: [],
+          definitionOfDone: [],
+          filePath: '/b/drafts/task-dft.md',
+          category: 'Features',
+          milestone: 'v1',
           layout: { lane: 'Features', band: 'v1', depth: 1, subRow: 0 },
         } as Task,
       ],

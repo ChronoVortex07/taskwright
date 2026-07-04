@@ -26,8 +26,11 @@ function tasks(): Task[] {
     }) as Task;
   return [
     base({
-      id: 'TASK-1', title: 'Root feature', status: 'To Do',
-      category: 'Features', milestone: 'v1',
+      id: 'TASK-1',
+      title: 'Root feature',
+      status: 'To Do',
+      category: 'Features',
+      milestone: 'v1',
       layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 0 },
     }),
   ];
@@ -38,14 +41,25 @@ async function setup(page: Parameters<typeof installVsCodeMock>[0]) {
   await installVsCodeMock(page);
   await page.goto('/tasks.html');
   await page.waitForTimeout(100);
-  await postMessageToWebview(page, { type: 'statusesUpdated', statuses: ['To Do', 'In Progress', 'Done'] });
-  await postMessageToWebview(page, { type: 'prioritiesUpdated', priorities: ['high', 'medium', 'low'] });
+  await postMessageToWebview(page, {
+    type: 'statusesUpdated',
+    statuses: ['To Do', 'In Progress', 'Done'],
+  });
+  await postMessageToWebview(page, {
+    type: 'prioritiesUpdated',
+    priorities: ['high', 'medium', 'low'],
+  });
   await postMessageToWebview(page, {
     type: 'milestonesUpdated',
     milestones: [{ id: 'v1', name: 'v1' }],
   });
   await postMessageToWebview(page, { type: 'tasksUpdated', tasks: tasks() });
-  await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder, bandOrder, warnings: [] });
+  await postMessageToWebview(page, {
+    type: 'treeLayoutUpdated',
+    laneOrder,
+    bandOrder,
+    warnings: [],
+  });
   await postMessageToWebview(page, { type: 'activeTabChanged', tab: 'tree' });
   await page.waitForTimeout(150);
   await expect(page.locator('[data-testid="tree-canvas"]')).toBeVisible();
@@ -61,7 +75,11 @@ test.describe('Tree authoring — create form', () => {
     const title = page.locator('[data-testid="cf-title"]');
     await title.fill('Write the docs');
     await title.press('Enter');
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'createTask', title: 'Write the docs', openAfter: false });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'createTask',
+      title: 'Write the docs',
+      openAfter: false,
+    });
     await expect(page.locator('[data-testid="create-form"]')).toHaveCount(0);
   });
 
@@ -71,7 +89,11 @@ test.describe('Tree authoring — create form', () => {
     const title = page.locator('[data-testid="cf-title"]');
     await title.fill('Open me after');
     await title.press('Shift+Enter');
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'createTask', title: 'Open me after', openAfter: true });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'createTask',
+      title: 'Open me after',
+      openAfter: true,
+    });
   });
 
   test('full form sends category (non-Misc) and milestone (non-Backburner)', async ({ page }) => {
@@ -83,7 +105,11 @@ test.describe('Tree authoring — create form', () => {
     await clearPostedMessages(page);
     await page.locator('[data-testid="cf-submit"]').click();
     expect(await getLastPostedMessage(page)).toMatchObject({
-      type: 'createTask', title: 'Feature X', category: 'Features', priority: 'high', milestone: 'v1',
+      type: 'createTask',
+      title: 'Feature X',
+      category: 'Features',
+      priority: 'high',
+      milestone: 'v1',
     });
   });
 
@@ -114,8 +140,15 @@ test.describe('Tree authoring — create form', () => {
     expect((msg as Record<string, unknown>).category).toBeUndefined();
   });
 
-  test('bug mode relabels priority to Severity and sends taskType:bug + causedBy', async ({ page }) => {
-    await postMessageToWebview(page, { type: 'openCreateForm', mode: 'full', bugMode: true, causedBy: 'TASK-1' });
+  test('bug mode relabels priority to Severity and sends taskType:bug + causedBy', async ({
+    page,
+  }) => {
+    await postMessageToWebview(page, {
+      type: 'openCreateForm',
+      mode: 'full',
+      bugMode: true,
+      causedBy: 'TASK-1',
+    });
     await page.waitForTimeout(60);
     await expect(page.locator('[data-testid="create-form"]')).toBeVisible();
     // caused_by pre-filled; category/milestone hidden; priority relabeled in bug mode.
@@ -130,11 +163,17 @@ test.describe('Tree authoring — create form', () => {
     await clearPostedMessages(page);
     await page.locator('[data-testid="cf-submit"]').click();
     expect(await getLastPostedMessage(page)).toMatchObject({
-      type: 'createTask', title: 'It crashes', taskType: 'bug', causedBy: 'TASK-1', priority: 'high',
+      type: 'createTask',
+      title: 'It crashes',
+      taskType: 'bug',
+      causedBy: 'TASK-1',
+      priority: 'high',
     });
   });
 
-  test('Report bug from a node opens the form in bug mode with caused_by prefilled', async ({ page }) => {
+  test('Report bug from a node opens the form in bug mode with caused_by prefilled', async ({
+    page,
+  }) => {
     await page.locator('[data-testid="tree-node-TASK-1"]').click();
     await expect(page.locator('[data-testid="tree-popover"]')).toBeVisible();
     await page.locator('[data-testid="tp-action-reportBug"]').click();
@@ -144,7 +183,10 @@ test.describe('Tree authoring — create form', () => {
     await clearPostedMessages(page);
     await page.locator('[data-testid="cf-submit"]').click();
     expect(await getLastPostedMessage(page)).toMatchObject({
-      type: 'createTask', title: 'Regression from TASK-1', taskType: 'bug', causedBy: 'TASK-1',
+      type: 'createTask',
+      title: 'Regression from TASK-1',
+      taskType: 'bug',
+      causedBy: 'TASK-1',
     });
   });
 
@@ -176,8 +218,8 @@ test.describe('Tree authoring — create form', () => {
     // A single click on empty viewport space (no node) opens the full form.
     const viewport = page.locator('[data-testid="tree-viewport"]');
     const box = (await viewport.boundingBox())!;
-    // Bottom-right corner is empty in the single-node fixture.
-    await page.mouse.click(box.x + box.width - 20, box.y + box.height - 20);
+    // Click the centre-right area, well away from the single node (top-centre of surface).
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height - 60);
     await expect(page.locator('[data-testid="create-form"]')).toBeVisible();
   });
 });

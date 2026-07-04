@@ -11,14 +11,43 @@
   --accent-color: var(--vscode-button-background, #0e639c);
 }
 
+/* Full-height layout: ensure the html/body chain fills the webview so
+   child elements can use percentage-based heights (tree canvas, etc.). */
+html {
+  height: 100%;
+}
+
 /* Base styles */
 body {
   margin: 0;
   padding: 0;
+  height: 100%;
   font-family: var(--vscode-font-family, system-ui, sans-serif);
   font-size: var(--vscode-font-size, 13px);
   background: var(--bg-primary);
   color: var(--text-primary);
+}
+
+/* Tasks-page (Kanban / List / Tree host): flex column so the active view
+   fills all remaining space after the tab bar.  This establishes the height
+   chain html → body → #app → .view-content, allowing .tree-canvas's
+   height:100% to resolve against a real computed height instead of auto. */
+body.tasks-page {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+body.tasks-page #app {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+body.tasks-page .view-content {
+  flex: 1;
+  min-height: 0;
 }
 
 /* Custom utility classes for VS Code theming */
