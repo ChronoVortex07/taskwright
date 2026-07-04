@@ -384,7 +384,7 @@ title: Beta
       ]);
     });
 
-    it('should canonicalize task milestone titles to known milestone IDs when unambiguous', async () => {
+    it('should resolve milestone title to canonical milestone name (not ID)', async () => {
       vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
         const pathStr = toPosix(String(p));
         return pathStr.includes('/tasks') || pathStr.includes('/milestones');
@@ -423,7 +423,56 @@ milestone: Launch
       const tasks = await parser.getTasks();
 
       expect(tasks).toHaveLength(1);
-      expect(tasks[0]?.milestone).toBe('m-1');
+      // TASK-33: milestone should resolve to the canonical NAME, not the ID.
+      // Downstream consumers (deriveTreeLayout, list_milestones, get_board)
+      // compare task.milestone against milestone NAMES from getMilestones().
+      // Returning the ID (m-1) causes every task to land in a spurious
+      // "discovered" band named after its own ID instead of joining the real band.
+      expect(tasks[0]?.milestone).toBe('Launch');
+    });
+
+    it('should resolve a raw milestone ID to the canonical milestone name', async () => {
+      vi.mocked(fs.existsSync).mockImplementation((p: fs.PathLike) => {
+        const pathStr = toPosix(String(p));
+        return pathStr.includes('/tasks') || pathStr.includes('/milestones');
+      });
+      (fs.readdirSync as ReturnType<typeof vi.fn>).mockImplementation((p: fs.PathLike) => {
+        const pathStr = toPosix(String(p));
+        if (pathStr.endsWith('/tasks')) {
+          return ['task-1 - Example.md'] as unknown as string[];
+        }
+        if (pathStr.endsWith('/milestones')) {
+          return ['m-1 - Launch.md'] as unknown as string[];
+        }
+        return [] as unknown as string[];
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const pathStr = toPosix(String(p));
+        if (pathStr.includes('/milestones/m-1')) {
+          return `---
+id: m-1
+title: Launch
+---`;
+        }
+        if (pathStr.includes('/tasks/task-1')) {
+          return `---
+id: TASK-1
+title: Example
+status: To Do
+milestone: m-1
+---
+`;
+        }
+        return '';
+      });
+
+      const parser = new BacklogParser('/fake/backlog');
+      const tasks = await parser.getTasks();
+
+      expect(tasks).toHaveLength(1);
+      // Even when the task stores the milestone ID (m-1), it should be resolved
+      // to the name (Launch) so downstream consumers can match against band names.
+      expect(tasks[0]?.milestone).toBe('Launch');
     });
 
     it('should keep raw milestone value when title matches multiple milestone IDs', async () => {

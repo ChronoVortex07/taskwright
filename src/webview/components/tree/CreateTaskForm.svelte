@@ -160,8 +160,10 @@
     {#if !isBug}
       <label class="cf-field">
         <span>Milestone</span>
-        <!-- Submitting m.id (not m.name) is canonical: BacklogParser.resolveMilestoneValue
-             normalizes stored milestones to their id, so the board round-trips ids (N3). -->
+        <!-- Submitting m.id (not m.name): BacklogParser.resolveMilestoneValue resolves
+             both IDs and names to the canonical milestone name on read. Submitting the
+             ID keeps the create payload unambiguous; the read path normalizes it to
+             the display name for band grouping (TASK-33). -->
         <select class="cf-select" data-testid="cf-milestone" bind:value={milestone}>
           <option value={BACKBURNER}>{BACKBURNER}</option>
           {#each milestones as m (m.id)}<option value={m.id}>{m.name}</option>{/each}

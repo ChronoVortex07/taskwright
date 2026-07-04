@@ -116,6 +116,51 @@ describe('listMilestonesHandler', () => {
     // order is 0-based, ascending, matching bandOrder:
     expect(ms.map((m) => m.order)).toEqual(ms.map((_m, i) => i));
   });
+
+  // TASK-33: when milestone files have IDs that differ from their names (the
+  // real-world case — e.g. id=m-0, title="Foundation"), tasks assigned by name
+  // must land in the real named band, not in a spurious ID-named discovered band.
+  it('groups tasks into named bands when milestone IDs differ from names', async () => {
+    // Create milestone files (id≠name) and tasks assigned by milestone NAME.
+    const msDir = path.join(backlogPath, 'milestones');
+    fs.mkdirSync(msDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(msDir, 'm-0 - Foundation.md'),
+      '---\nid: m-0\ntitle: Foundation\n---\n\n## Description\n\nCore infra\n',
+      'utf-8'
+    );
+    fs.writeFileSync(
+      path.join(msDir, 'm-1 - Launch.md'),
+      '---\nid: m-1\ntitle: Launch\n---\n\n## Description\n\nFirst release\n',
+      'utf-8'
+    );
+    const d = deps();
+    await createTaskHandler(d, { title: 'Core lib', milestone: 'Foundation' });
+    await createTaskHandler(d, { title: 'CI pipeline', milestone: 'Foundation' });
+    await createTaskHandler(d, { title: 'Landing page', milestone: 'Launch' });
+
+    const ms = await listMilestonesHandler(d);
+    const byName = new Map(ms.map((m) => [m.name, m]));
+
+    // Foundation band should have 2 tasks (not 0)
+    expect(byName.get('Foundation')!.taskCount).toBe(2);
+    expect(byName.get('Foundation')!.id).toBe('m-0');
+    // Launch band should have 1 task (not 0)
+    expect(byName.get('Launch')!.taskCount).toBe(1);
+    expect(byName.get('Launch')!.id).toBe('m-1');
+
+    // Critical: there must be NO spurious bands named "m-0" or "m-1"
+    // (these IDs should never appear as band names)
+    expect(byName.has('m-0')).toBe(false);
+    expect(byName.has('m-1')).toBe(false);
+
+    // get_board filtered by milestone name must return the correct tasks
+    const foundationTasks = await getBoardHandler(d, { milestone: 'Foundation' });
+    expect(foundationTasks.map((t) => t.title).sort()).toEqual(['CI pipeline', 'Core lib']);
+
+    const launchTasks = await getBoardHandler(d, { milestone: 'Launch' });
+    expect(launchTasks.map((t) => t.title)).toEqual(['Landing page']);
+  });
 });
 
 describe('getBoardHandler', () => {

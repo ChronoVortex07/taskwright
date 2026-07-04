@@ -884,8 +884,13 @@ export class BacklogParser {
   }
 
   /**
-   * Resolve a raw milestone input (ID, title, or partial match) to a canonical milestone ID.
-   * Convenience async wrapper around resolveMilestoneValue that fetches milestones internally.
+   * Resolve a raw milestone input (ID, title, or partial match) to the canonical
+   * milestone NAME. Downstream consumers (deriveTreeLayout, list_milestones,
+   * get_board) compare task.milestone against milestone NAMES, so resolving to
+   * an ID causes every task to land in a spurious discovered band.
+   *
+   * Convenience async wrapper around resolveMilestoneValue that fetches
+   * milestones internally.
    */
   async resolveMilestone(raw: string | null | undefined): Promise<string | undefined> {
     const normalized = String(raw || '').trim();
@@ -902,13 +907,13 @@ export class BacklogParser {
     if (!normalized) return undefined;
     const inputKey = normalized.toLowerCase();
     const idMatch = milestones.find((milestone) => milestone.id.trim().toLowerCase() === inputKey);
-    if (idMatch) return idMatch.id;
+    if (idMatch) return idMatch.name;
 
     const titleMatches = milestones.filter(
       (milestone) => milestone.name.trim().toLowerCase() === inputKey
     );
     if (titleMatches.length === 1) {
-      return titleMatches[0].id;
+      return titleMatches[0].name;
     }
     return normalized;
   }
