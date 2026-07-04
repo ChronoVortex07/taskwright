@@ -12,6 +12,8 @@ import {
   defaultBoardExec,
   snapshotBoardToRef,
   materializeRefToWorktree,
+  snapshotBoardRoot,
+  materializeToBoardRoot,
   pruneStaleBoardFiles,
   setLocalRef,
   fetchRef,
@@ -48,9 +50,9 @@ async function makeOriginAndClone(): Promise<{
 }
 
 describe('boardRef constants + qualifyRef', () => {
-  it('exposes the default ref name and board subdirs', () => {
+  it('exposes the default ref name and board subdirs (incl. milestones, DRAFT-19/TASK-36)', () => {
     expect(DEFAULT_BOARD_REF).toBe('taskwright-board');
-    expect([...BOARD_SUBDIRS]).toEqual(['tasks', 'drafts', 'completed', 'archive']);
+    expect([...BOARD_SUBDIRS]).toEqual(['tasks', 'drafts', 'completed', 'archive', 'milestones']);
   });
 
   it('qualifies a short ref name to refs/heads/*', () => {
@@ -93,14 +95,16 @@ describe('snapshotBoardToRef', () => {
       'backlog/drafts/',
       'backlog/completed/',
       'backlog/archive/',
+      'backlog/milestones/',
     ]);
     repo.writeFile('backlog/config.yml', 'project_name: "temp"\n');
     repo.writeFile('backlog/tasks/task-1 - A.md', '---\nid: TASK-1\n---\nA\n');
     repo.writeFile('backlog/tasks/task-2 - B.md', '---\nid: TASK-2\n---\nB\n');
+    repo.writeFile('backlog/milestones/m-1 - Launch.md', '---\nid: m-1\n---\nLaunch\n');
   });
   afterEach(() => repo.cleanup());
 
-  it('snapshots only the board subdirs onto the ref (root commit)', async () => {
+  it('snapshots only the board subdirs onto the ref (root commit), including milestones (DRAFT-19/TASK-36)', async () => {
     const headBefore = await repo.headSha();
     const statusBefore = (await repo.git(['status', '--porcelain'])).trim();
 
@@ -115,12 +119,16 @@ describe('snapshotBoardToRef', () => {
     // ref points at the new commit
     expect(await refTip(repo.root, 'taskwright-board', defaultBoardExec)).toBe(result.commit);
 
-    // the ref tree contains board tasks but NOT config.yml
+    // the ref tree contains board tasks + milestones but NOT config.yml
     const files = (await repo.git(['ls-tree', '-r', '--name-only', 'refs/heads/taskwright-board']))
       .trim()
       .split('\n')
       .sort();
-    expect(files).toEqual(['backlog/tasks/task-1 - A.md', 'backlog/tasks/task-2 - B.md']);
+    expect(files).toEqual([
+      'backlog/milestones/m-1 - Launch.md',
+      'backlog/tasks/task-1 - A.md',
+      'backlog/tasks/task-2 - B.md',
+    ]);
 
     // root commit has no parent
     const parents = (await repo.git(['rev-list', '--parents', '-n', '1', result.commit]))
@@ -167,11 +175,12 @@ describe('materializeRefToWorktree', () => {
 
   beforeEach(async () => {
     repo = await makeTempGitRepo();
-    repo.addGitignore(['backlog/tasks/']);
+    repo.addGitignore(['backlog/tasks/', 'backlog/milestones/']);
     repo.writeFile('backlog/config.yml', 'project_name: "temp"\n');
-    // Build a ref that contains tasks A and B.
+    // Build a ref that contains tasks A and B, and one milestone.
     repo.writeFile('backlog/tasks/task-1 - A.md', 'A-on-ref\n');
     repo.writeFile('backlog/tasks/task-2 - B.md', 'B-on-ref\n');
+    repo.writeFile('backlog/milestones/m-1 - Launch.md', 'm1-on-ref\n');
     await snapshotBoardToRef({
       repoRoot: repo.root,
       ref: 'taskwright-board',
@@ -204,11 +213,14 @@ describe('materializeRefToWorktree', () => {
     expect(exists('backlog/tasks/task-2 - B.md')).toBe(true);
   });
 
-  it('overwrites, adds, and prunes local board files to match the ref', async () => {
-    // Diverge the working copy: A modified locally, B removed, C added locally.
+  it('overwrites, adds, and prunes local board files to match the ref, including milestones', async () => {
+    // Diverge the working copy: A modified locally, B removed, C added locally,
+    // the milestone edited locally, plus a bogus local-only milestone.
     repo.writeFile('backlog/tasks/task-1 - A.md', 'A-local-edit\n');
     fs.rmSync(path.join(repo.root, 'backlog/tasks/task-2 - B.md'));
     repo.writeFile('backlog/tasks/task-3 - C.md', 'C-local-only\n');
+    repo.writeFile('backlog/milestones/m-1 - Launch.md', 'm1-local-edit\n');
+    repo.writeFile('backlog/milestones/m-2 - Local-only.md', 'm2-local-only\n');
     const headBefore = await repo.headSha();
 
     const result = await materializeRefToWorktree({
@@ -221,8 +233,14 @@ describe('materializeRefToWorktree', () => {
     expect(read('backlog/tasks/task-1 - A.md')).toBe('A-on-ref\n'); // overwritten from ref
     expect(read('backlog/tasks/task-2 - B.md')).toBe('B-on-ref\n'); // restored from ref
     expect(exists('backlog/tasks/task-3 - C.md')).toBe(false); // pruned (absent from ref)
+    expect(read('backlog/milestones/m-1 - Launch.md')).toBe('m1-on-ref\n'); // overwritten from ref
+    expect(exists('backlog/milestones/m-2 - Local-only.md')).toBe(false); // pruned
     expect(read('backlog/config.yml')).toBe('project_name: "temp"\n'); // untouched
-    expect(result.files).toEqual(['backlog/tasks/task-1 - A.md', 'backlog/tasks/task-2 - B.md']);
+    expect(result.files).toEqual([
+      'backlog/milestones/m-1 - Launch.md',
+      'backlog/tasks/task-1 - A.md',
+      'backlog/tasks/task-2 - B.md',
+    ]);
     expect(await repo.headSha()).toBe(headBefore); // user git state untouched
   });
 });
@@ -273,13 +291,14 @@ describe('boardRef round-trip', () => {
 
   beforeEach(async () => {
     repo = await makeTempGitRepo();
-    repo.addGitignore(['backlog/tasks/']);
+    repo.addGitignore(['backlog/tasks/', 'backlog/milestones/']);
     repo.writeFile('backlog/tasks/task-1 - A.md', 'A\n');
     repo.writeFile('backlog/tasks/task-2 - B.md', 'B\n');
+    repo.writeFile('backlog/milestones/m-1 - Launch.md', 'M\n');
   });
   afterEach(() => repo.cleanup());
 
-  it('materialize restores the exact snapshotted state and is idempotent', async () => {
+  it('materialize restores the exact snapshotted state (incl. milestones) and is idempotent', async () => {
     await snapshotBoardToRef({
       repoRoot: repo.root,
       ref: 'taskwright-board',
@@ -291,6 +310,7 @@ describe('boardRef round-trip', () => {
     // Wreck the working copy.
     fs.rmSync(path.join(repo.root, 'backlog/tasks/task-1 - A.md'));
     repo.writeFile('backlog/tasks/task-2 - B.md', 'B-wrecked\n');
+    repo.writeFile('backlog/milestones/m-1 - Launch.md', 'M-wrecked\n');
 
     const first = await materializeRefToWorktree({
       repoRoot: repo.root,
@@ -300,6 +320,7 @@ describe('boardRef round-trip', () => {
     });
     expect(read('backlog/tasks/task-1 - A.md')).toBe('A\n');
     expect(read('backlog/tasks/task-2 - B.md')).toBe('B\n');
+    expect(read('backlog/milestones/m-1 - Launch.md')).toBe('M\n');
 
     // Running materialize again changes nothing.
     const second = await materializeRefToWorktree({
@@ -311,6 +332,133 @@ describe('boardRef round-trip', () => {
     expect(second.files).toEqual(first.files);
     expect(read('backlog/tasks/task-1 - A.md')).toBe('A\n');
     expect(exists('backlog/tasks/task-2 - B.md')).toBe(true);
+  });
+});
+
+describe('snapshotBoardRoot / materializeToBoardRoot (Board Sync v2 Task D — root-resolving wrappers)', () => {
+  // Real primary checkout + a linked `.worktrees/<branch>` worktree with NO
+  // local `backlog/` at all (mirrors production: it's git-ignored, so `git
+  // worktree add` never populates it) — proves the wrappers resolve the ONE
+  // physical board (the primary's) via `resolvePrimaryWorktreeRoot`, exactly
+  // like `resolveBoardRoot` (Task A/B), rather than looking next to `cwd`.
+  let tmpDir: string;
+  let primary: string;
+  let worktreePath: string;
+  const indexFile = () => path.join(primary, '.taskwright', 'board.index');
+  const read = (rel: string) => fs.readFileSync(path.join(primary, rel), 'utf-8');
+  const exists = (rel: string) => fs.existsSync(path.join(primary, rel));
+
+  beforeEach(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskwright-boardroot-ref-'));
+    primary = path.join(tmpDir, 'primary');
+    fs.mkdirSync(primary, { recursive: true });
+    await execFileAsync('git', ['init', '-q', '-b', 'main'], { cwd: primary });
+    await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: primary });
+    await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: primary });
+    fs.writeFileSync(
+      path.join(primary, '.gitignore'),
+      'backlog/tasks/\nbacklog/drafts/\nbacklog/completed/\nbacklog/archive/\nbacklog/milestones/\n.worktrees/\n.taskwright/\n'
+    );
+    await execFileAsync('git', ['add', '.gitignore'], { cwd: primary });
+    await execFileAsync('git', ['commit', '-q', '-m', 'init'], { cwd: primary });
+
+    fs.mkdirSync(path.join(primary, 'backlog', 'tasks'), { recursive: true });
+    fs.mkdirSync(path.join(primary, 'backlog', 'milestones'), { recursive: true });
+    fs.writeFileSync(path.join(primary, 'backlog', 'tasks', 'task-1 - A.md'), 'A\n');
+    fs.writeFileSync(path.join(primary, 'backlog', 'milestones', 'm-1 - Launch.md'), 'M\n');
+
+    worktreePath = path.join(primary, '.worktrees', 'task-7-x');
+    await execFileAsync('git', ['worktree', 'add', worktreePath, '-b', 'task-7-x'], {
+      cwd: primary,
+    });
+    expect(fs.existsSync(path.join(worktreePath, 'backlog'))).toBe(false);
+  });
+  afterEach(() => fs.rmSync(tmpDir, { recursive: true, force: true }));
+
+  it('snapshots the primary board (incl. milestones) when invoked from a linked worktree with no local backlog/', async () => {
+    const headBefore = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: primary }).then(
+      (r) => r.stdout.trim()
+    );
+
+    const result = await snapshotBoardRoot({
+      cwd: worktreePath,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      message: 'snapshot from worktree',
+      exec: defaultBoardExec,
+    });
+
+    const files = (
+      await execFileAsync('git', ['ls-tree', '-r', '--name-only', 'refs/heads/taskwright-board'], {
+        cwd: primary,
+      })
+    ).stdout
+      .trim()
+      .split('\n')
+      .sort();
+    expect(files).toEqual(['backlog/milestones/m-1 - Launch.md', 'backlog/tasks/task-1 - A.md']);
+    expect(await refTip(primary, 'taskwright-board', defaultBoardExec)).toBe(result.commit);
+
+    // The primary's real HEAD/index/branch are untouched.
+    const headAfter = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: primary }).then(
+      (r) => r.stdout.trim()
+    );
+    expect(headAfter).toBe(headBefore);
+  });
+
+  it('materializes into the primary board when invoked from a linked worktree, restoring wrecked/pruned files', async () => {
+    await snapshotBoardRoot({
+      cwd: worktreePath,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      message: 'seed',
+      exec: defaultBoardExec,
+    });
+
+    // Wreck the primary's board (the one physical board), same as if a sibling
+    // session had corrupted it — never anything worktree-local.
+    fs.writeFileSync(path.join(primary, 'backlog', 'tasks', 'task-1 - A.md'), 'A-wrecked\n');
+    fs.writeFileSync(path.join(primary, 'backlog', 'milestones', 'm-1 - Launch.md'), 'M-wrecked\n');
+    fs.writeFileSync(path.join(primary, 'backlog', 'tasks', 'task-2 - Local-only.md'), 'stray\n');
+
+    const result = await materializeToBoardRoot({
+      cwd: worktreePath,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      exec: defaultBoardExec,
+    });
+
+    expect(read('backlog/tasks/task-1 - A.md')).toBe('A\n');
+    expect(read('backlog/milestones/m-1 - Launch.md')).toBe('M\n');
+    expect(exists('backlog/tasks/task-2 - Local-only.md')).toBe(false); // pruned (not on ref)
+    expect(result.files).toEqual([
+      'backlog/milestones/m-1 - Launch.md',
+      'backlog/tasks/task-1 - A.md',
+    ]);
+
+    // Nothing was ever written under the worktree itself — it has no backlog/.
+    expect(fs.existsSync(path.join(worktreePath, 'backlog'))).toBe(false);
+  });
+
+  it('refuses to materialize into the primary board when the ref is poisoned with a non-board-path tree', async () => {
+    const primaryHead = (
+      await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: primary })
+    ).stdout.trim();
+    await execFileAsync('git', ['update-ref', 'refs/heads/taskwright-board', primaryHead], {
+      cwd: primary,
+    });
+
+    await expect(
+      materializeToBoardRoot({
+        cwd: worktreePath,
+        ref: 'taskwright-board',
+        indexFile: indexFile(),
+        exec: defaultBoardExec,
+      })
+    ).rejects.toThrow(/non-board path/);
+
+    // The primary board is untouched by the refused materialize.
+    expect(read('backlog/tasks/task-1 - A.md')).toBe('A\n');
   });
 });
 

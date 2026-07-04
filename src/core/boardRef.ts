@@ -2,6 +2,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
+import { resolvePrimaryWorktreeRoot } from './boardRoot';
 
 /**
  * Git-plumbing primitive for the synced board (spec §3.3). Snapshots the board
@@ -16,7 +17,13 @@ const execFileAsync = promisify(execFile);
 export const DEFAULT_BOARD_REF = 'taskwright-board';
 
 /** The board subdirectories that live on the sync ref (relative to the backlog dir). */
-export const BOARD_SUBDIRS: readonly string[] = ['tasks', 'drafts', 'completed', 'archive'];
+export const BOARD_SUBDIRS: readonly string[] = [
+  'tasks',
+  'drafts',
+  'completed',
+  'archive',
+  'milestones',
+];
 
 /** A short ref name becomes `refs/heads/<name>`; a fully-qualified `refs/...` is returned as-is. */
 export function qualifyRef(ref: string): string {
@@ -192,8 +199,8 @@ export async function materializeRefToWorktree(
   const refFiles = new Set(listed.length > 0 ? listed.split('\n') : []);
 
   // Refuse to write anything outside the board subdirs. A board commit only
-  // ever contains backlog/{tasks,drafts,completed,archive} paths; anything else
-  // means the ref points at the wrong commit (e.g. a code branch), and
+  // ever contains backlog/{tasks,drafts,completed,archive,milestones} paths;
+  // anything else means the ref points at the wrong commit (e.g. a code branch), and
   // `checkout-index --all --force` below would overwrite the user's repo root
   // with it — which is exactly how a poisoned ref once mass-reverted the root.
   const allowedPrefixes = BOARD_SUBDIRS.map((sub) => `${backlogDir}/${sub}/`);
@@ -219,6 +226,68 @@ export async function materializeRefToWorktree(
   pruneStaleBoardFiles(opts.repoRoot, listLocalBoardFiles(opts.repoRoot, backlogDir), refFiles);
 
   return { files: [...refFiles].sort() };
+}
+
+export interface SnapshotBoardRootOptions {
+  /** Any worktree's cwd — the primary is resolved via `git worktree list --porcelain`. */
+  cwd: string;
+  ref: string;
+  message: string;
+  parent?: string;
+  indexFile?: string;
+  backlogDir?: string;
+  exec?: BoardGitExec;
+}
+
+/**
+ * Board Sync v2 versioning layer (spec §2.2): snapshot the ONE physical
+ * board — the primary worktree's `backlog/` — onto `ref`, resolving the
+ * primary from any worktree via `resolvePrimaryWorktreeRoot` (same mechanism
+ * as `resolveBoardRoot`). Thin root-resolving wrapper around
+ * {@link snapshotBoardToRef}; the isolated-index git plumbing is unchanged.
+ */
+export async function snapshotBoardRoot(opts: SnapshotBoardRootOptions): Promise<SnapshotResult> {
+  const exec = opts.exec ?? defaultBoardExec;
+  const repoRoot = await resolvePrimaryWorktreeRoot(opts.cwd, { exec });
+  return snapshotBoardToRef({
+    repoRoot,
+    ref: opts.ref,
+    indexFile: opts.indexFile ?? path.join(repoRoot, '.taskwright', 'board.index'),
+    message: opts.message,
+    parent: opts.parent,
+    backlogDir: opts.backlogDir,
+    exec,
+  });
+}
+
+export interface MaterializeBoardRootOptions {
+  /** Any worktree's cwd — the primary is resolved via `git worktree list --porcelain`. */
+  cwd: string;
+  ref: string;
+  indexFile?: string;
+  backlogDir?: string;
+  exec?: BoardGitExec;
+}
+
+/**
+ * Board Sync v2 versioning layer (spec §2.2): materialize `ref`'s tree back
+ * into the ONE physical board — the primary worktree's `backlog/` — resolving
+ * the primary from any worktree via `resolvePrimaryWorktreeRoot`. Thin
+ * root-resolving wrapper around {@link materializeRefToWorktree}; keeps its
+ * "refuse non-board-path ref" guard.
+ */
+export async function materializeToBoardRoot(
+  opts: MaterializeBoardRootOptions
+): Promise<{ files: string[] }> {
+  const exec = opts.exec ?? defaultBoardExec;
+  const repoRoot = await resolvePrimaryWorktreeRoot(opts.cwd, { exec });
+  return materializeRefToWorktree({
+    repoRoot,
+    ref: opts.ref,
+    indexFile: opts.indexFile ?? path.join(repoRoot, '.taskwright', 'board.index'),
+    backlogDir: opts.backlogDir,
+    exec,
+  });
 }
 
 /** Point a local ref at `sha` (`git update-ref`). */
@@ -281,8 +350,8 @@ export interface PushResult {
 /**
  * Push `ref` to `remote` fast-forward-only; `rejected` marks a non-ff rejection.
  * Uses `--no-verify`: a board-ref push only ever carries a snapshot of
- * `backlog/{tasks,drafts,completed,archive}` (never code — see the non-board-path
- * guard in `materializeRefToWorktree`), so a local pre-push hook gating code
+ * `backlog/{tasks,drafts,completed,archive,milestones}` (never code — see the
+ * non-board-path guard in `materializeRefToWorktree`), so a local pre-push hook gating code
  * quality (lint, depcheck, license checks) has nothing to check and is pure
  * overhead — in this repo's own hook that overhead is ~90s+, which dwarfs the
  * git-plumbing exec timeout and made every claim/release/write intermittently

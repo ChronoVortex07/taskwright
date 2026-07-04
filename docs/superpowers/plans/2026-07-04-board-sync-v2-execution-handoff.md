@@ -228,7 +228,7 @@ non-existent location` trailing line) — so no cwd-based branching was needed f
   an existing board) and wasn't touched. Full suite (1527 tests), lint, typecheck, and `bun run build`
   (including the standalone `dist/mcp/server.js` worktrees actually run) all green.
 
-### [ ] Task D — Board-ref snapshot/materialize against the single board root (DRAFT-19)
+### [x] Task D — Board-ref snapshot/materialize against the single board root (DRAFT-19)
 
 - **Deps:** A. (Can run in parallel-in-time with B, but this is a **sequential relay** — just do
   whichever is the first unchecked.)
@@ -240,7 +240,40 @@ non-existent location` trailing line) — so no cwd-based branching was needed f
 - **Accept:** snapshot→materialize round-trips tasks/drafts/completed/archive **and** milestones
   byte-for-byte; materialize refuses a non-board-path ref; the user's real HEAD/index/branch are
   untouched (isolated index), asserted in tests.
-- **Handoff Notes:** _(…)_
+- **Handoff Notes:** Added `snapshotBoardRoot()` / `materializeToBoardRoot()` to `src/core/boardRef.ts`
+  (extending the file in place, per the task's "repurpose boardRef.ts" framing — no new module) as thin
+  root-resolving wrappers: each takes a `cwd` (any worktree) instead of a `repoRoot`, resolves the
+  primary via `resolvePrimaryWorktreeRoot()` (Task A/B's `boardRoot.ts`, imported into `boardRef.ts` —
+  no cycle, `boardRoot.ts` has no reverse dependency), then delegates to the existing
+  `snapshotBoardToRef`/`materializeRefToWorktree` unchanged — the git plumbing itself needed **zero**
+  changes, confirming the design's framing that this is a resolution wrapper, not new plumbing.
+  `indexFile` is optional on both wrappers, defaulting to `<resolvedPrimaryRoot>/.taskwright/board.index`
+  when omitted — future callers (Task F's `push_board`/`pull_board`) won't need to resolve the primary
+  themselves just to pick an index-file path, but tests still override it explicitly for isolation,
+  matching the existing `backlogDir` optionality convention already in this file.
+  **Milestones:** `BOARD_SUBDIRS` now includes `'milestones'` (was
+  `['tasks','drafts','completed','archive']`) — `existingBoardPaths`/`listLocalBoardFiles`/the
+  materialize non-board-path guard all derive from this constant already, so no other code in
+  `boardRef.ts` needed to change; only the two doc-comments spelling out the four dirs literally
+  were updated for accuracy. Verified round-trip (add/edit/prune) for a milestones file alongside
+  tasks in the existing `snapshotBoardToRef`/`materializeRefToWorktree`/`boardRef round-trip` describe
+  blocks (extended their shared fixtures rather than duplicating scenarios in new tests), plus a new
+  describe block exercising the two new wrappers end-to-end against a real primary + linked
+  `.worktrees/<branch>` worktree with **no local `backlog/` at all** (same fixture shape as Task B's
+  `boardRootIntegration.test.ts`) — snapshot/materialize invoked with `cwd: worktreePath` correctly
+  resolve and touch only the **primary's** `backlog/`, never attempt a (nonexistent) worktree-local one,
+  and the non-board-path refusal guard still fires through the wrapper.
+  **Scope note (matches Task 0/B's precedent):** `boardMigration.ts` has its own separate
+  `SUBDIRS = ['tasks','drafts','completed','archive']` constant (for the `.gitignore` fenced block +
+  `rm --cached` migration) that does **not** yet include `milestones` — this repo's own
+  `backlog/milestones/*.md` files are in fact still git-tracked today (confirmed via `git ls-files`),
+  so real milestones-as-board-ref round-tripping needs that migration too. Deliberately left untouched:
+  Task D's explicit "Do" bullets only cover `boardRef.ts`'s `BOARD_SUBDIRS` (the snapshot/materialize
+  _primitive's_ path list) and the wrappers; ignoring/untracking `backlog/milestones/` on code branches
+  is Task I's territory ("repurposed `enableSync` migration... idempotently ensure the gitignore
+  block"). Flagging here so Task I doesn't miss it. No fetch/push/merge added (Task F) and no live poll
+  (Task C removes the old one) — matches the task's explicit non-goals.
+  Full suite (1530 tests)/lint/typecheck/`bun run build` all green.
 
 ### [ ] Task C — Retire live CAS/poll/materialize machinery + local-only cross-branch (DRAFT-17)
 
@@ -347,6 +380,10 @@ _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <
   `atomicWriteFileSync()` write-temp-then-rename and applied it across `BacklogWriter`/`ClaimService`/
   `PlanService`/`TreeFieldService`/`milestoneReleaseChecklist`; added a real two-worktree
   write-visibility integration test. Full suite (1527 tests)/lint/typecheck/build green.
+- 2026-07-04 · Task D · `<sha>` · Added `snapshotBoardRoot()`/`materializeToBoardRoot()` to
+  `src/core/boardRef.ts` (root-resolving wrappers around the existing `snapshotBoardToRef`/
+  `materializeRefToWorktree`, via `resolvePrimaryWorktreeRoot()`); added `milestones` to
+  `BOARD_SUBDIRS` (fixes TASK-36 round-trip). Full suite (1530 tests)/lint/typecheck/build green.
 
 ---
 
