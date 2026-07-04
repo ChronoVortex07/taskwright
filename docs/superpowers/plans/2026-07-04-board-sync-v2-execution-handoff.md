@@ -709,7 +709,7 @@ _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <
   separate from `gitExec`) and as `taskwright.pushBoard`/`taskwright.pullBoard` VS Code commands.
   Flagged (not fixed) a pre-existing `gitFacts()` `commonDir` resolution bug — see Handoff Notes. Full
   suite (1479 tests)/lint/typecheck/build green.
-- 2026-07-04 · Task G · `(pending)` · Added pure `src/core/boardSyncUx.ts` (status-bar
+- 2026-07-04 · Task G · `7ee3ca9` · Added pure `src/core/boardSyncUx.ts` (status-bar
   text/tooltip formatting, quick-pick items, shared conflict-message wording; 9 unit tests) and wired a
   lazily-created board-sync status-bar item + `taskwright.boardSyncQuickPick` command into
   `extension.ts`; push/pull/enableSync handlers now record `lastSync` state and refresh the bar;
