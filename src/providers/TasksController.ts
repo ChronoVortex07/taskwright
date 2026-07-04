@@ -82,7 +82,7 @@ export interface TasksHost {
  */
 export class TasksController {
   private viewMode: TasksViewMode = 'kanban';
-  private milestoneGrouping: boolean = false;
+  private groupingMode: 'status' | 'milestone' | 'label' = 'status';
   private dataSourceMode: DataSourceMode = 'local-only';
   private dataSourceReason?: string;
   private collapsedColumns: Set<string> = new Set();
@@ -150,7 +150,17 @@ export class TasksController {
     this.viewMode = legacyDrafts
       ? 'drafts'
       : this.context.globalState.get<TasksViewMode>('backlog.viewMode', 'tree');
-    this.milestoneGrouping = this.context.globalState.get('backlog.milestoneGrouping', false);
+    this.groupingMode = this.context.globalState.get('backlog.groupingMode', 'status');
+    // Migrate legacy milestoneGrouping boolean if present
+    if (this.groupingMode === 'status') {
+      const legacyMilestoneGrouping = this.context.globalState.get<boolean>(
+        'backlog.milestoneGrouping',
+        false
+      );
+      if (legacyMilestoneGrouping) {
+        this.groupingMode = 'milestone';
+      }
+    }
     const savedCollapsed = this.context.globalState.get<string[]>('backlog.collapsedColumns', []);
     this.collapsedColumns = new Set(savedCollapsed);
     const savedCollapsedMilestones = this.context.globalState.get<string[]>(
@@ -423,7 +433,7 @@ export class TasksController {
         type: 'milestoneCollapseChanged',
         collapsedMilestones: Array.from(this.collapsedMilestones),
       });
-      this.host.postMessage({ type: 'milestoneGroupingChanged', enabled: this.milestoneGrouping });
+      this.host.postMessage({ type: 'groupingModeChanged', mode: this.groupingMode });
       this.host.postMessage({ type: 'statusesUpdated', statuses });
       this.host.postMessage({ type: 'prioritiesUpdated', priorities: resolvePriorities(config) });
       this.host.postMessage({ type: 'milestonesUpdated', milestones });
@@ -1121,18 +1131,29 @@ export class TasksController {
       }
 
       case 'toggleMilestoneGrouping': {
-        this.milestoneGrouping = message.enabled;
+        this.groupingMode = message.enabled ? 'milestone' : 'status';
         // Persist to globalState
         if (this.context) {
-          await this.context.globalState.update(
-            'backlog.milestoneGrouping',
-            this.milestoneGrouping
-          );
+          await this.context.globalState.update('backlog.groupingMode', this.groupingMode);
         }
         // Notify webview (for consistency, though UI already updated)
         this.host.postMessage({
-          type: 'milestoneGroupingChanged',
-          enabled: this.milestoneGrouping,
+          type: 'groupingModeChanged',
+          mode: this.groupingMode,
+        });
+        break;
+      }
+
+      case 'toggleGroupingMode': {
+        this.groupingMode = message.mode;
+        // Persist to globalState
+        if (this.context) {
+          await this.context.globalState.update('backlog.groupingMode', this.groupingMode);
+        }
+        // Notify webview (for consistency, though UI already updated)
+        this.host.postMessage({
+          type: 'groupingModeChanged',
+          mode: this.groupingMode,
         });
         break;
       }

@@ -5,16 +5,22 @@
   import { calculateOrdinalsForDrop, type CardData } from '../../../core/ordinalUtils';
 
   type TaskWithBlocks = Task & { blocksTaskIds?: string[] };
+  type GroupingMode = 'status' | 'milestone' | 'label';
 
   interface StatusColumn {
     status: string;
     label: string;
   }
 
+  interface LabelGroup {
+    label: string;
+    tasks: TaskWithBlocks[];
+  }
+
   interface Props {
     tasks: TaskWithBlocks[];
     columns: StatusColumn[];
-    milestoneGrouping: boolean;
+    groupingMode: GroupingMode;
     configMilestones: Milestone[];
     collapsedColumns: Set<string>;
     collapsedMilestones: Set<string>;
@@ -38,7 +44,7 @@
   let {
     tasks,
     columns,
-    milestoneGrouping,
+    groupingMode,
     configMilestones,
     collapsedColumns,
     collapsedMilestones,
@@ -56,6 +62,10 @@
 
   // Filter out subtasks (they are represented by progress on parent cards)
   let topLevelTasks = $derived(tasks.filter((t) => !t.parentTaskId));
+
+  // Derive boolean flags for backward compatibility in templates
+  let milestoneGrouping = $derived(groupingMode === 'milestone');
+  let labelGrouping = $derived(groupingMode === 'label');
 
   // Group tasks by milestone
   let milestoneGroups = $derived.by(() => {
@@ -107,6 +117,45 @@
     return groups;
   });
 
+  // Group tasks by label
+  let labelGroups = $derived.by(() => {
+    const labelMap: Record<string, TaskWithBlocks[]> = {};
+    const unlabeled: TaskWithBlocks[] = [];
+
+    for (const task of topLevelTasks) {
+      if (task.labels && task.labels.length > 0) {
+        for (const label of task.labels) {
+          (labelMap[label] ??= []).push(task);
+        }
+      } else {
+        unlabeled.push(task);
+      }
+    }
+
+    // Sort labels alphabetically (case-insensitive)
+    const sortedLabels = Object.keys(labelMap).sort((a, b) =>
+      a.toLowerCase().localeCompare(b.toLowerCase())
+    );
+
+    const groups: LabelGroup[] = sortedLabels.map((label) => ({
+      label,
+      tasks: labelMap[label],
+    }));
+
+    // Unlabeled group at the end
+    if (unlabeled.length > 0) {
+      groups.push({ label: 'Unlabeled', tasks: unlabeled });
+    }
+
+    return groups;
+  });
+
+  // Compute a safe id for a label (used for data attributes)
+  function labelSectionKey(label: string): string {
+    if (label === 'Unlabeled') return '__unlabeled__';
+    return label;
+  }
+
   function handleDrop(
     taskId: string,
     newStatus: string,
@@ -151,6 +200,48 @@
 
 {#if topLevelTasks.length === 0}
   <div class="empty-state">No tasks found. Create tasks in your backlog/ folder.</div>
+{:else if labelGrouping}
+  <div class="kanban-board label-grouped">
+    {#each labelGroups as group (labelSectionKey(group.label))}
+      {@const key = labelSectionKey(group.label)}
+      <div
+        class="label-section"
+        data-label={key}
+        data-testid="label-section-{key}"
+      >
+        <div
+          class="label-section-header"
+          role="button"
+          tabindex="0"
+        >
+          <span class="label-title">{group.label}</span>
+          <span class="label-count">{group.tasks.length}</span>
+        </div>
+        <div class="label-section-content">
+          <div class="kanban-board nested">
+            {#each columns as col (col.status)}
+              {@const columnTasks = group.tasks.filter((t) => t.status.toLowerCase() === col.status.toLowerCase())}
+              <KanbanColumn
+                status={col.status}
+                label={col.label}
+                tasks={columnTasks}
+                collapsed={false}
+                {taskIdDisplay}
+                {activeEditedTaskId}
+                milestone={key}
+                mini={true}
+                onToggleCollapse={() => {}}
+                {onSelectTask}
+                {onOpenTask}
+                {onReadOnlyDragAttempt}
+                onDrop={handleDrop}
+              />
+            {/each}
+          </div>
+        </div>
+      </div>
+    {/each}
+  </div>
 {:else if milestoneGrouping}
   <div class="kanban-board milestone-grouped">
     {#each milestoneGroups as group (group.id ?? '__uncategorized__')}

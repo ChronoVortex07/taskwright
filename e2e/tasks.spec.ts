@@ -405,20 +405,275 @@ test.describe('Tasks View', () => {
     });
 
     test('shows All Tasks button as active by default', async ({ page }) => {
-      const allTasksBtn = page.locator('button.grouping-btn[data-grouping="none"]');
+      const allTasksBtn = page.locator('button.grouping-btn[data-grouping="status"]');
       await expect(allTasksBtn).toHaveClass(/active/);
     });
 
-    test('sends toggleMilestoneGrouping message when clicking By Milestone', async ({ page }) => {
+    test('sends toggleGroupingMode when clicking By Milestone', async ({ page }) => {
       await clearPostedMessages(page);
 
       await page.locator('button.grouping-btn[data-grouping="milestone"]').click();
 
       const message = await getLastPostedMessage(page);
       expect(message).toEqual({
-        type: 'toggleMilestoneGrouping',
-        enabled: true,
+        type: 'toggleGroupingMode',
+        mode: 'milestone',
       });
+    });
+  });
+
+  test.describe('Label Grouping', () => {
+    const labeledTasks: (Task & { blocksTaskIds?: string[] })[] = [
+      {
+        id: 'TASK-L1',
+        title: 'Setup CI pipeline',
+        status: 'To Do',
+        labels: ['devops', 'infra'],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/test/tasks/task-l1.md',
+        ordinal: 1000,
+      },
+      {
+        id: 'TASK-L2',
+        title: 'Fix login bug',
+        status: 'In Progress',
+        labels: ['bug', 'ui'],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/test/tasks/task-l2.md',
+        ordinal: 2000,
+      },
+      {
+        id: 'TASK-L3',
+        title: 'Add dark mode',
+        status: 'To Do',
+        labels: ['ui', 'feature'],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/test/tasks/task-l3.md',
+        ordinal: 3000,
+      },
+      {
+        id: 'TASK-L4',
+        title: 'Write tests',
+        status: 'Done',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/test/tasks/task-l4.md',
+        ordinal: 4000,
+      },
+      {
+        id: 'TASK-L5',
+        title: 'Update docs',
+        status: 'To Do',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/test/tasks/task-l5.md',
+        ordinal: 5000,
+      },
+    ];
+
+    async function setupLabelGroupingView(page: ReturnType<typeof test.info>['page']) {
+      await installVsCodeMock(page);
+      await page.goto('/tasks.html');
+      await page.waitForTimeout(100);
+
+      await postMessageToWebview(page, { type: 'viewModeChanged', viewMode: 'kanban' });
+      await postMessageToWebview(page, {
+        type: 'statusesUpdated',
+        statuses: ['To Do', 'In Progress', 'Done'],
+      });
+      await postMessageToWebview(page, { type: 'milestonesUpdated', milestones: [] });
+      await postMessageToWebview(page, { type: 'tasksUpdated', tasks: labeledTasks });
+      await page.waitForTimeout(100);
+    }
+
+    test('shows three grouping toggle buttons', async ({ page }) => {
+      await setupLabelGroupingView(page);
+
+      const allTasksBtn = page.locator('button.grouping-btn[data-grouping="status"]');
+      const byMilestoneBtn = page.locator('button.grouping-btn[data-grouping="milestone"]');
+      const byLabelBtn = page.locator('button.grouping-btn[data-grouping="label"]');
+
+      await expect(allTasksBtn).toBeVisible();
+      await expect(byMilestoneBtn).toBeVisible();
+      await expect(byLabelBtn).toBeVisible();
+    });
+
+    test('All Tasks button is active by default', async ({ page }) => {
+      await setupLabelGroupingView(page);
+
+      const allTasksBtn = page.locator('button.grouping-btn[data-grouping="status"]');
+      await expect(allTasksBtn).toHaveClass(/active/);
+
+      const byLabelBtn = page.locator('button.grouping-btn[data-grouping="label"]');
+      await expect(byLabelBtn).not.toHaveClass(/active/);
+    });
+
+    test('sends toggleGroupingMode when clicking By Label', async ({ page }) => {
+      await setupLabelGroupingView(page);
+      await clearPostedMessages(page);
+
+      await page.locator('button.grouping-btn[data-grouping="label"]').click();
+
+      const message = await getLastPostedMessage(page);
+      expect(message).toEqual({
+        type: 'toggleGroupingMode',
+        mode: 'label',
+      });
+    });
+
+    test('sends toggleGroupingMode when clicking back to All Tasks', async ({ page }) => {
+      await setupLabelGroupingView(page);
+
+      // First click By Label
+      await page.locator('button.grouping-btn[data-grouping="label"]').click();
+      await page.waitForTimeout(50);
+      await clearPostedMessages(page);
+
+      // Then click All Tasks
+      await page.locator('button.grouping-btn[data-grouping="status"]').click();
+
+      const message = await getLastPostedMessage(page);
+      expect(message).toEqual({
+        type: 'toggleGroupingMode',
+        mode: 'status',
+      });
+    });
+
+    test('By Label button gets active class when clicked', async ({ page }) => {
+      await setupLabelGroupingView(page);
+
+      await page.locator('button.grouping-btn[data-grouping="label"]').click();
+      await page.waitForTimeout(50);
+
+      const byLabelBtn = page.locator('button.grouping-btn[data-grouping="label"]');
+      await expect(byLabelBtn).toHaveClass(/active/);
+
+      const allTasksBtn = page.locator('button.grouping-btn[data-grouping="status"]');
+      await expect(allTasksBtn).not.toHaveClass(/active/);
+    });
+
+    test('label grouping renders label sections with nested status columns', async ({ page }) => {
+      await setupLabelGroupingView(page);
+
+      // Activate label grouping
+      await page.locator('button.grouping-btn[data-grouping="label"]').click();
+      await page.waitForTimeout(100);
+
+      // Label sections should exist (one per unique label + Unlabeled)
+      await expect(page.locator('[data-testid="label-section-bug"]')).toBeVisible();
+      await expect(page.locator('[data-testid="label-section-devops"]')).toBeVisible();
+      await expect(page.locator('[data-testid="label-section-feature"]')).toBeVisible();
+      await expect(page.locator('[data-testid="label-section-infra"]')).toBeVisible();
+      await expect(page.locator('[data-testid="label-section-ui"]')).toBeVisible();
+      await expect(page.locator('[data-testid="label-section-__unlabeled__"]')).toBeVisible();
+    });
+
+    test('label sections display the label name and task count in header', async ({ page }) => {
+      await setupLabelGroupingView(page);
+
+      await page.locator('button.grouping-btn[data-grouping="label"]').click();
+      await page.waitForTimeout(100);
+
+      // bug: 1 task (TASK-L2)
+      await expect(page.locator('[data-testid="label-section-bug"] .label-title')).toHaveText(
+        'bug'
+      );
+      await expect(page.locator('[data-testid="label-section-bug"] .label-count')).toHaveText('1');
+
+      // ui: 2 tasks (TASK-L2, TASK-L3)
+      await expect(page.locator('[data-testid="label-section-ui"] .label-title')).toHaveText('ui');
+      await expect(page.locator('[data-testid="label-section-ui"] .label-count')).toHaveText('2');
+
+      // Unlabeled: 2 tasks (TASK-L4, TASK-L5)
+      await expect(
+        page.locator('[data-testid="label-section-__unlabeled__"] .label-title')
+      ).toHaveText('Unlabeled');
+      await expect(
+        page.locator('[data-testid="label-section-__unlabeled__"] .label-count')
+      ).toHaveText('2');
+    });
+
+    test('multi-label task appears in each of its label groups', async ({ page }) => {
+      await setupLabelGroupingView(page);
+
+      await page.locator('button.grouping-btn[data-grouping="label"]').click();
+      await page.waitForTimeout(100);
+
+      // TASK-L2 has labels ['bug', 'ui'] — should appear in both groups
+      const bugSection = page.locator('[data-testid="label-section-bug"]');
+      await expect(bugSection.locator('[data-testid="task-TASK-L2"]')).toBeVisible();
+
+      const uiSection = page.locator('[data-testid="label-section-ui"]');
+      await expect(uiSection.locator('[data-testid="task-TASK-L2"]')).toBeVisible();
+    });
+
+    test('unlabeled tasks appear in Unlabeled group', async ({ page }) => {
+      await setupLabelGroupingView(page);
+
+      await page.locator('button.grouping-btn[data-grouping="label"]').click();
+      await page.waitForTimeout(100);
+
+      const unlabeledSection = page.locator('[data-testid="label-section-__unlabeled__"]');
+      await expect(unlabeledSection.locator('[data-testid="task-TASK-L4"]')).toBeVisible();
+      await expect(unlabeledSection.locator('[data-testid="task-TASK-L5"]')).toBeVisible();
+    });
+
+    test('label sections are sorted alphabetically with Unlabeled last', async ({ page }) => {
+      await setupLabelGroupingView(page);
+
+      await page.locator('button.grouping-btn[data-grouping="label"]').click();
+      await page.waitForTimeout(100);
+
+      // Get all label section headers
+      const headers = page.locator('[data-testid^="label-section-"] .label-title');
+      const count = await headers.count();
+      const labels: string[] = [];
+      for (let i = 0; i < count; i++) {
+        labels.push((await headers.nth(i).textContent())!);
+      }
+
+      // Should be sorted alphabetically with Unlabeled at the end
+      expect(labels).toEqual(['bug', 'devops', 'feature', 'infra', 'ui', 'Unlabeled']);
+    });
+
+    test('switching from label grouping back to status restores standard columns', async ({
+      page,
+    }) => {
+      await setupLabelGroupingView(page);
+
+      // Activate label grouping
+      await page.locator('button.grouping-btn[data-grouping="label"]').click();
+      await page.waitForTimeout(50);
+
+      // Label sections should be visible
+      await expect(page.locator('[data-testid="label-section-ui"]')).toBeVisible();
+
+      // Switch back to status grouping
+      await page.locator('button.grouping-btn[data-grouping="status"]').click();
+      await page.waitForTimeout(50);
+
+      // Standard status columns should be back
+      await expect(page.locator('[data-testid="column-To Do"]')).toBeVisible();
+      await expect(page.locator('[data-testid="column-In Progress"]')).toBeVisible();
+      await expect(page.locator('[data-testid="column-Done"]')).toBeVisible();
+
+      // Label sections should be gone
+      await expect(page.locator('[data-testid="label-section-ui"]')).toHaveCount(0);
     });
   });
 

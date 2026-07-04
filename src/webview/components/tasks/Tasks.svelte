@@ -30,7 +30,7 @@
   ]);
   let configMilestones = $state<Milestone[]>([]);
   let statuses = $derived(columns.map((c) => c.status));
-  let milestoneGrouping = $state(false);
+  let groupingMode = $state<'status' | 'milestone' | 'label'>('status');
   let collapsedColumns = $state(new Set<string>());
   let collapsedMilestones = $state(new Set<string>());
   let noBacklog = $state(false);
@@ -257,7 +257,11 @@
         break;
 
       case 'milestoneGroupingChanged':
-        milestoneGrouping = message.enabled;
+        groupingMode = message.enabled ? 'milestone' : 'status';
+        break;
+
+      case 'groupingModeChanged':
+        groupingMode = message.mode as 'status' | 'milestone' | 'label';
         break;
 
       case 'setFilter':
@@ -531,8 +535,13 @@
     });
   }
 
+  function handleToggleGroupingMode(mode: 'status' | 'milestone' | 'label') {
+    groupingMode = mode;
+    vscode.postMessage({ type: 'toggleGroupingMode', mode });
+  }
+
   function handleToggleMilestoneGrouping(enabled: boolean) {
-    milestoneGrouping = enabled;
+    groupingMode = enabled ? 'milestone' : 'status';
     vscode.postMessage({ type: 'toggleMilestoneGrouping', enabled });
   }
 
@@ -646,19 +655,27 @@
       <div class="grouping-toggle">
         <button
           class="grouping-btn"
-          class:active={!milestoneGrouping}
-          data-grouping="none"
-          onclick={() => handleToggleMilestoneGrouping(false)}
+          class:active={groupingMode === 'status'}
+          data-grouping="status"
+          onclick={() => handleToggleGroupingMode('status')}
         >
           All Tasks
         </button>
         <button
           class="grouping-btn"
-          class:active={milestoneGrouping}
+          class:active={groupingMode === 'milestone'}
           data-grouping="milestone"
-          onclick={() => handleToggleMilestoneGrouping(true)}
+          onclick={() => handleToggleGroupingMode('milestone')}
         >
           By Milestone
+        </button>
+        <button
+          class="grouping-btn"
+          class:active={groupingMode === 'label'}
+          data-grouping="label"
+          onclick={() => handleToggleGroupingMode('label')}
+        >
+          By Label
         </button>
       </div>
     </div>
@@ -666,7 +683,7 @@
       <KanbanBoard
         {tasks}
         {columns}
-        {milestoneGrouping}
+        {groupingMode}
         {configMilestones}
         {collapsedColumns}
         {collapsedMilestones}

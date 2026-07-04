@@ -285,6 +285,7 @@ export type WebviewMessage =
       branch?: string;
     }
   | { type: 'toggleColumnCollapse'; status: string }
+  | { type: 'toggleGroupingMode'; mode: 'status' | 'milestone' | 'label' }
   | { type: 'toggleMilestoneGrouping'; enabled: boolean }
   | { type: 'toggleMilestoneCollapse'; milestone: string }
   | { type: 'filterByStatus'; status: string }
@@ -351,6 +352,7 @@ export type ExtensionMessage =
   | { type: 'error'; message: string }
   | { type: 'dataSourceChanged'; mode: DataSourceMode; reason?: string }
   | { type: 'columnCollapseChanged'; collapsedColumns: string[] }
+  | { type: 'groupingModeChanged'; mode: 'status' | 'milestone' | 'label' }
   | { type: 'milestoneGroupingChanged'; enabled: boolean }
   | { type: 'milestoneCollapseChanged'; collapsedMilestones: string[] }
   | { type: 'setFilter'; filter: string }
