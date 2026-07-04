@@ -7,7 +7,8 @@ and (eventually) publish it to the Marketplace.
 
 - **Node ≥ 22** and **[Bun](https://bun.sh)** (the project pins these via `mise.toml`).
 - For the runtime features: the **[Backlog.md](https://github.com/MrLesk/Backlog.md) CLI** on PATH
-  (used for writes / cross-branch). Not needed just to build.
+  is **optional** (Taskwright handles all CRUD natively). Only needed if you want the upstream
+  cross-branch board view.
 - Windows only: `git config --global core.longpaths true` (Backlog.md task filenames can exceed
   `MAX_PATH`).
 
@@ -49,7 +50,7 @@ This makes Taskwright available in **every** VS Code window, surviving restarts,
 
 ```bash
 bun run package          # builds, then emits taskwright-<version>.vsix in the repo root
-code --install-extension taskwright-0.0.1.vsix
+code --install-extension taskwright-1.0.0.vsix
 ```
 
 `bun run package` is self-contained: a `vscode:prepublish` hook runs the full build first, so you
@@ -60,7 +61,7 @@ never have to run `bun run build` separately. (`code` is the VS Code CLI — if 
 
 ```bash
 bun run package
-code --install-extension taskwright-0.0.1.vsix --force   # --force reinstalls the same/again version
+code --install-extension taskwright-1.0.0.vsix --force   # --force reinstalls the same/again version
 ```
 
 Reload the window (`Ctrl+R` / "Developer: Reload Window") to load the new build.
@@ -106,7 +107,7 @@ This automates packaging + upload but requires authenticating the CLI with a tok
 bunx @vscode/vsce login ChronoVortex07   # paste a token when prompted (one-time)
 bunx @vscode/vsce publish                # builds via vscode:prepublish, then uploads
 # or bump + publish in one step:
-bunx @vscode/vsce publish patch          # 0.0.1 -> 0.0.2 (also: minor / major)
+bunx @vscode/vsce publish patch          # 1.0.0 -> 1.0.1 (also: minor / major)
 ```
 
 **About the token (PATs):** CLI publishing has historically used an **Azure DevOps Personal Access
@@ -122,7 +123,7 @@ The VS Code Marketplace is Microsoft-only. Editors like Cursor and VSCodium pull
 **[Open VSX](https://open-vsx.org)** registry. To list there too:
 
 ```bash
-bunx ovsx publish taskwright-0.0.1.vsix -p <open-vsx-token>
+bunx ovsx publish taskwright-1.0.0.vsix -p <open-vsx-token>
 ```
 
 (Create the token from your Open VSX account — independent of the Microsoft Marketplace.)
@@ -132,7 +133,7 @@ bunx ovsx publish taskwright-0.0.1.vsix -p <open-vsx-token>
 ## Version bumping
 
 The Marketplace rejects re-uploading an existing version, so bump `version` in `package.json` before
-each release (`0.0.1 → 0.0.2 …`). `vsce publish <patch|minor|major>` does this for you; for web upload,
+each release (`1.0.0 → 1.0.1 …`). `vsce publish <patch|minor|major>` does this for you; for web upload,
 edit `package.json` (and add a `CHANGELOG.md` entry) yourself.
 
 ## Quick reference
@@ -141,6 +142,6 @@ edit `package.json` (and add a `CHANGELOG.md` entry) yourself.
 bun install                                   # deps
 bun run build                                 # compile to dist/ (for F5 dev host)
 bun run package                               # build + emit .vsix
-code --install-extension taskwright-0.0.1.vsix --force   # install into your VS Code
+code --install-extension taskwright-1.0.0.vsix --force   # install into your VS Code
 # publish: upload the .vsix at marketplace.visualstudio.com/manage, or `bunx @vscode/vsce publish`
 ```

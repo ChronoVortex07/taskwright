@@ -23,31 +23,59 @@ rather than spawning headless `claude -p`, so it never risks switching your usag
 ## Features
 
 Inherited from the fork: editor-tab Kanban with drag-and-drop, task list, detail editor,
-Markdown/Mermaid rendering, frontmatter autocomplete, cross-branch task loading.
+Markdown/Mermaid rendering, frontmatter autocomplete.
 
 Taskwright additions (all implemented):
 
-- Advisory **task claiming** — claimant / worktree / staleness, with conflict prompts and
-  stale-claim expiry, surfaced as badges on the board.
-- **Active task + Taskwright MCP** (`get_active_task` / `claim_task` / `release_task`) plus a
-  `CLAUDE.md` convention, so a fresh session pulls its task context. Auto-registers with Claude Code.
-- **Dispatch** — copies a paste-ready prompt and carves an isolated git worktree (the default) for a task. Never spawns
-  `claude -p`.
+### Tech-tree — spatial task canvas
+
+The **Tree tab** (default view) renders the board as a dependency graph: lanes = categories,
+bands = milestones/ages. Pan, zoom, and level-of-detail scaling make large boards navigable.
+
+- **Drag surface** — drag-to-connect for dependency edges, drag-to-reslot to change category/milestone,
+  drag-to-reorder within a cell; click empty canvas to create a task pre-slotted into that lane/band.
+- **Create surface** — unified form (full / quick / bug modes) via keyboard shortcuts, the TabBar, or
+  right-click; shared core ensures parity between human-authored and agent-authored tasks.
+- **Interaction shell** — state-aware detail popover, milestone popover with release checklist, in-flight
+  panel for active and merge-queue tasks, sidebar navigator with filterable minimap.
+
+### Agentic workflow
+
+- **Taskwright MCP server** — 20+ tools (`create_task`, `edit_task`, `claim_task`, `get_board`,
+  `search_tasks`, `promote_drafts`, `push_board`, …); auto-registers with Claude Code. Agents read and
+  write the board through the same core as the UI — human and agent have parity.
+- **Advisory claiming** — claimant / worktree / staleness, with conflict prompts and stale-claim expiry,
+  surfaced as badges on the board and tree canvas.
+- **Subscription-safe dispatch** — copies a paste-ready prompt and carves an isolated git worktree for a
+  task. Never spawns `claude -p`.
+- **Merge queue** — shared FIFO queue with `request_merge` orchestrator (rebase → verify → enqueue →
+  wait for turn → fast-forward merge or open PR); merge-review board status with Approve/Send back.
 - **"Categorize with Claude"** intake — turn a raw bug dump into labeled, prioritized tasks.
 - **Superpowers bridge** — attach a plan/spec to a task (`attach_plan`) and see its checkbox progress.
-- **Board sync (GitHub-only, optional)** — run **Taskwright: Enable Board Sync** to move board tasks
-  **off your code branches** onto a dedicated `taskwright-board` ref. This eliminates the read-only
-  cross-branch "ghost" cards that transient worktree branches produce, and — in `github` mode — shares
-  the board through your existing git remote (no server, no account) for near-real-time, **collision-proof
-  claims**: two people or agents can't both claim the same task, because a claim is an atomic `git push`.
-  Uses your existing push credentials; the board ref is created, seeded, healed, and compacted
-  automatically. See `docs/superpowers/specs/2026-07-01-github-synced-board-design.md`.
+
+### Claude Code skills
+
+Three bundled skills (`.claude/skills/`) that Claude Code agents use in dispatched worktrees:
+
+| Skill             | Purpose                                                                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/create-task`    | Turn a brief into PR-sized, dependency-linked draft tasks slotted into lanes/milestones.                                                    |
+| `/execute-task`   | Execute one task end-to-end: claim, adaptive strategy (plan → SDD; subtasks → subagent-driven; else TDD), record progress, `request_merge`. |
+| `/index-codebase` | Bootstrap an initial tech-tree over an existing repo from git forensics; mines `TODO`/`FIXME` gaps as draft nodes.                          |
+
+### Board Sync (optional, git-native)
+
+Opt-in sharing via a dedicated `taskwright-board` ref — no server, no CAS loop, no per-worktree copies.
+A single shared board root avoids all desync. `push_board` / `pull_board` snapshot the board and
+union-merge divergence (same-task edits resolve by newer timestamp, always surfaced as a conflict).
+Opt-in `pre-push` / `post-merge` git hooks can automate this. See
+`docs/superpowers/specs/2026-07-04-board-sync-v2-single-shared-board-design.md`.
 
 ## Requirements
 
 - VS Code `^1.110.0`
 - Node `>=22` and [Bun](https://bun.sh) to build from source
-- The [Backlog.md](https://github.com/MrLesk/Backlog.md) CLI is **optional** — Taskwright reads and writes tasks itself (the latter via its MCP server). The CLI is only needed for the cross-branch board view, which otherwise degrades to local-branch tasks.
+- The [Backlog.md](https://github.com/MrLesk/Backlog.md) CLI is **optional** — Taskwright reads and writes tasks natively (via its MCP server and `BacklogParser`/`BacklogWriter`). The CLI is only needed if you want the upstream cross-branch board view.
 - On Windows: `git config --global core.longpaths true` (Backlog.md task filenames can exceed `MAX_PATH`)
 
 ## Setup commands
@@ -86,15 +114,15 @@ To install Taskwright into your own VS Code (no dev host), or to publish it:
 
 ```bash
 bun run package    # builds, then emits taskwright-<version>.vsix
-code --install-extension taskwright-0.0.1.vsix
+code --install-extension taskwright-1.0.0.vsix
 ```
 
 Auto versioning
 
 ```bash
-bunx @vscode/vsce publish patch    # 0.0.1 → 0.0.2
-bunx @vscode/vsce publish minor    # 0.0.1 → 0.1.0
-bunx @vscode/vsce publish major    # 0.0.1 → 1.0.0
+bunx @vscode/vsce publish patch    # 1.0.0 → 1.0.1
+bunx @vscode/vsce publish minor    # 1.0.0 → 1.1.0
+bunx @vscode/vsce publish major    # 1.0.0 → 2.0.0
 ```
 
 See **[`docs/building-and-publishing.md`](docs/building-and-publishing.md)** for the full build,
