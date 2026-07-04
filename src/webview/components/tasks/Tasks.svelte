@@ -47,6 +47,8 @@
   let collapsedLanes = $state<string[]>([]);
   let jumpBand = $state('');
   let jumpNonce = $state(0);
+  let jumpTaskId = $state('');
+  let jumpTaskNonce = $state(0);
   let minimapPanX = $state(0);
   let minimapPanY = $state(0);
   let minimapPanNonce = $state(0);
@@ -191,6 +193,11 @@
         minimapPanX = message.x;
         minimapPanY = message.y;
         minimapPanNonce += 1;
+        break;
+
+      case 'navigatorJumpToTask':
+        jumpTaskId = message.taskId;
+        jumpTaskNonce += 1;
         break;
 
       case 'activeTabChanged':
@@ -619,6 +626,8 @@
       {collapsedLanes}
       {jumpBand}
       {jumpNonce}
+      {jumpTaskId}
+      {jumpTaskNonce}
       {minimapPanX}
       {minimapPanY}
       {minimapPanNonce}

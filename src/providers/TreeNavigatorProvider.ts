@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
 import { BacklogParser } from '../core/BacklogParser';
-import type { WebviewMessage, ExtensionMessage } from '../core/types';
+import type { WebviewMessage, ExtensionMessage, NavigatorTask } from '../core/types';
 import { loadTreeBoardFromParser } from '../core/treeDerived';
 import { resolvePriorities } from '../core/priorityOrder';
+import { laneOf } from '../core/treeLayout';
 
 /**
  * Sidebar navigator for the tech-tree canvas (P2 spec §3). Computes lane counts /
@@ -42,6 +43,7 @@ export class TreeNavigatorProvider implements vscode.WebviewViewProvider {
         message.type === 'navigatorFilterChanged' ||
         message.type === 'navigatorLaneToggle' ||
         message.type === 'navigatorJump' ||
+        message.type === 'navigatorJumpToTask' ||
         message.type === 'navigatorMinimapPan'
       ) {
         this.relayToBoard(message as unknown as ExtensionMessage);
@@ -53,9 +55,11 @@ export class TreeNavigatorProvider implements vscode.WebviewViewProvider {
   async refresh(): Promise<void> {
     if (!this.parser || !this._view) return;
     try {
-      const [board, config] = await Promise.all([
+      const [board, config, tasks, drafts] = await Promise.all([
         loadTreeBoardFromParser(this.parser),
         this.parser.getConfig(),
+        this.parser.getTasks(),
+        this.parser.getDrafts(),
       ]);
       const counts = new Map<string, number>();
       for (const s of board.states.values()) {
@@ -64,11 +68,24 @@ export class TreeNavigatorProvider implements vscode.WebviewViewProvider {
       const lanes = board.laneOrder
         .filter((l) => counts.has(l))
         .map((name) => ({ name, count: counts.get(name) ?? 0 }));
+
+      // Serialize compact task summaries for the navigator task list.
+      const allTasks = [...tasks, ...drafts];
+      const navTasks: NavigatorTask[] = allTasks.map((t) => ({
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        priority: t.priority,
+        lane: t.category || laneOf(t),
+        band: t.milestone || undefined,
+      }));
+
       this.postMessage({
         type: 'navigatorData',
         lanes,
         bands: board.bandOrder,
         priorities: resolvePriorities(config),
+        tasks: navTasks,
       });
     } catch (error) {
       console.error('[Taskwright] navigator refresh failed:', error);

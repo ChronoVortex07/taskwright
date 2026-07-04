@@ -3,13 +3,17 @@
   import { onMount } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { DRAG_THRESHOLD } from '../../lib/treeGeometry';
+  import type { NavigatorTask } from '../../lib/types';
 
   let lanes = $state<Array<{ name: string; count: number }>>([]);
   let bands = $state<string[]>([]);
   let priorities = $state<string[]>([]);
+  let tasks = $state<NavigatorTask[]>([]);
   let search = $state('');
   let activePriority = $state('');
   let collapsedLanes = new SvelteSet<string>();
+  /** Statuses to show in the task list (default: In Progress, To Do). */
+  let activeStatuses = $state(new Set<string>(['In Progress', 'To Do']));
   let viewport = $state<{ x: number; y: number; w: number; h: number } | null>(null);
 
   onMessage((message) => {
@@ -18,6 +22,12 @@
         lanes = message.lanes as Array<{ name: string; count: number }>;
         bands = message.bands as string[];
         priorities = message.priorities as string[];
+        tasks = (message.tasks as NavigatorTask[]) ?? [];
+        // Seed active statuses from currently seen task statuses (once).
+        if (activeStatuses.size === 0 && tasks.length > 0) {
+          const seen = [...new Set(tasks.map((t) => t.status))];
+          activeStatuses = new Set(seen.slice(0, 3)); // first 3 statuses
+        }
         break;
       case 'minimapViewport':
         viewport = {
@@ -51,6 +61,30 @@
   function jump(band: string) {
     vscode.postMessage({ type: 'navigatorJump', band });
   }
+  function jumpToTask(taskId: string) {
+    vscode.postMessage({ type: 'navigatorJumpToTask', taskId });
+  }
+  function toggleStatusFilter(status: string) {
+    const next = new Set(activeStatuses);
+    if (next.has(status)) next.delete(status);
+    else next.add(status);
+    activeStatuses = next;
+  }
+
+  /** Distinct statuses present in the task list for filter chips. */
+  const availableStatuses = $derived([...new Set(tasks.map((t) => t.status))]);
+
+  /** Filtered task list: combine status filter + search text + priority filter + lane visibility. */
+  const filteredTasks = $derived.by(() => {
+    const s = search.trim().toLowerCase();
+    return tasks.filter((t) => {
+      if (!activeStatuses.has(t.status)) return false;
+      if (s && !`${t.id} ${t.title}`.toLowerCase().includes(s)) return false;
+      if (activePriority && (t.priority ?? '') !== activePriority) return false;
+      if (collapsedLanes.has(t.lane)) return false;
+      return true;
+    });
+  });
 
   let minimapEl: HTMLDivElement | undefined = $state();
   let panning = $state(false);
@@ -104,6 +138,45 @@
       oninput={onSearchInput}
     />
   </div>
+
+  {#if availableStatuses.length > 0}
+    <div class="nav-section" data-testid="nav-status-filters">
+      <div class="nav-title">Status</div>
+      <div class="nav-chips">
+        {#each availableStatuses as st (st)}
+          <button
+            class="nav-chip"
+            class:active={activeStatuses.has(st)}
+            data-testid="nav-status-filter-{st}"
+            onclick={() => toggleStatusFilter(st)}
+          >
+            {st}
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
+  {#if filteredTasks.length > 0}
+    <div class="nav-section" data-testid="nav-tasks-section">
+      <div class="nav-title">Tasks ({filteredTasks.length})</div>
+      <div class="nav-task-list" data-testid="nav-task-list">
+        {#each filteredTasks as task (task.id)}
+          <button
+            class="nav-task-item"
+            data-testid="nav-task-{task.id}"
+            title="{task.id}: {task.title}"
+            onclick={() => jumpToTask(task.id)}
+          >
+            <span class="nav-task-id">{task.id}</span>
+            <span class="nav-task-title">{task.title}</span>
+            <span class="nav-task-status" data-status={task.status}>{task.status}</span>
+            <span class="nav-task-lane">{task.lane}</span>
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
 
   {#if priorities.length > 0}
     <div class="nav-section">
@@ -280,5 +353,52 @@
     border: 1px solid var(--vscode-focusBorder);
     background: color-mix(in srgb, var(--vscode-focusBorder) 18%, transparent);
     pointer-events: none;
+  }
+  .nav-task-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .nav-task-item {
+    all: unset;
+    cursor: pointer;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    line-height: 1.3;
+  }
+  .nav-task-item:hover {
+    background: var(--vscode-list-hoverBackground);
+  }
+  .nav-task-id {
+    font-family: var(--vscode-editor-font-family, monospace);
+    font-size: 10px;
+    font-weight: 600;
+    opacity: 0.8;
+    flex-shrink: 0;
+  }
+  .nav-task-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .nav-task-status {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 8px;
+    background: var(--vscode-badge-background, #4d4d4d);
+    color: var(--vscode-badge-foreground, #fff);
+    flex-shrink: 0;
+  }
+  .nav-task-lane {
+    font-size: 9px;
+    opacity: 0.6;
+    flex-shrink: 0;
   }
 </style>

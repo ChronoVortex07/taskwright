@@ -328,7 +328,8 @@ export type WebviewMessage =
   | { type: 'reslotTask'; taskId: string; category?: string; milestone?: string }
   | { type: 'addDependency'; taskId: string; dependsOn: string }
   | { type: 'removeDependency'; taskId: string; dependsOn: string }
-  | { type: 'navigatorMinimapPan'; x: number; y: number };
+  | { type: 'navigatorMinimapPan'; x: number; y: number }
+  | { type: 'navigatorJumpToTask'; taskId: string };
 
 /**
  * Data source mode for task viewing
@@ -383,12 +384,14 @@ export type ExtensionMessage =
       lanes: Array<{ name: string; count: number }>;
       bands: string[];
       priorities: string[];
+      tasks: NavigatorTask[];
     }
   | { type: 'navigatorFilterChanged'; search: string; priority: string }
   | { type: 'navigatorLaneToggle'; lane: string }
   | { type: 'navigatorJump'; band: string }
   | { type: 'minimapViewport'; x: number; y: number; w: number; h: number }
   | { type: 'navigatorMinimapPan'; x: number; y: number }
+  | { type: 'navigatorJumpToTask'; taskId: string }
   | { type: 'draftCountUpdated'; count: number }
   | { type: 'settingsUpdated'; settings: TasksViewSettings }
   | {
@@ -431,3 +434,15 @@ export type ExtensionMessage =
 
 /** Re-exported so webview/provider code has one import site for the merge-board state shape. */
 export type { MergeTaskState } from './mergeBoard';
+
+/**
+ * Compact task summary sent to the tree navigator sidebar for the task list.
+ */
+export interface NavigatorTask {
+  id: string;
+  title: string;
+  status: string;
+  priority?: string;
+  lane: string;
+  band?: string;
+}

@@ -20,6 +20,11 @@ async function setup(page: Parameters<typeof installVsCodeMock>[0]) {
     ],
     bands: ['v1', 'Backburner'],
     priorities: ['high', 'medium', 'low'],
+    tasks: [
+      { id: 'TASK-1', title: 'Add login page', status: 'In Progress', priority: 'high', lane: 'Features', band: 'v1' },
+      { id: 'TASK-2', title: 'Fix sidebar crash', status: 'To Do', priority: 'medium', lane: 'Bugs', band: 'Backburner' },
+      { id: 'TASK-3', title: 'Update docs', status: 'Done', priority: 'low', lane: 'Features', band: 'v1' },
+    ],
   });
   await page.waitForTimeout(80);
   await expect(page.locator('[data-testid="tree-navigator"]')).toBeVisible();
@@ -85,5 +90,46 @@ test.describe('Tree navigator', () => {
     const msgs = await getPostedMessages(page);
     expect(msgs.some((m) => m.type === 'navigatorJump')).toBe(true);
     expect(msgs.some((m) => m.type === 'navigatorMinimapPan')).toBe(false);
+  });
+
+  test('shows task list section with task entries', async ({ page }) => {
+    await expect(page.locator('[data-testid="nav-tasks-section"]')).toBeVisible();
+    // Task entries should be visible (default filter: In Progress and To Do)
+    await expect(page.locator('[data-testid="nav-task-TASK-1"]')).toBeVisible();
+    await expect(page.locator('[data-testid="nav-task-TASK-2"]')).toBeVisible();
+    // Done task should be hidden by default
+    await expect(page.locator('[data-testid="nav-task-TASK-3"]')).not.toBeVisible();
+  });
+
+  test('clicking a task entry posts navigatorJumpToTask', async ({ page }) => {
+    await clearPostedMessages(page);
+    await page.locator('[data-testid="nav-task-TASK-1"]').click();
+    const msg = await getLastPostedMessage(page);
+    expect(msg).toMatchObject({ type: 'navigatorJumpToTask', taskId: 'TASK-1' });
+  });
+
+  test('status filter toggles show/hide tasks', async ({ page }) => {
+    // Toggle "Done" filter on — should now show the Done task
+    await page.locator('[data-testid="nav-status-filter-Done"]').click();
+    await expect(page.locator('[data-testid="nav-task-TASK-3"]')).toBeVisible();
+
+    // Toggle "In Progress" off — should hide In Progress task
+    await page.locator('[data-testid="nav-status-filter-In Progress"]').click();
+    await expect(page.locator('[data-testid="nav-task-TASK-1"]')).not.toBeVisible();
+  });
+
+  test('task entry shows id, title, status, and lane', async ({ page }) => {
+    const entry = page.locator('[data-testid="nav-task-TASK-1"]');
+    await expect(entry).toContainText('TASK-1');
+    await expect(entry).toContainText('Add login page');
+    await expect(entry).toContainText('In Progress');
+    await expect(entry).toContainText('Features');
+  });
+
+  test('task list respects search text filter', async ({ page }) => {
+    // Search for "login" — only TASK-1 should be visible
+    await page.locator('[data-testid="nav-search"]').fill('login');
+    await expect(page.locator('[data-testid="nav-task-TASK-1"]')).toBeVisible();
+    await expect(page.locator('[data-testid="nav-task-TASK-2"]')).not.toBeVisible();
   });
 });

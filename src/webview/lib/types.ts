@@ -36,6 +36,7 @@ export type {
   ExtensionMessage,
   DataSourceMode,
   MergeTaskState,
+  NavigatorTask,
 } from '../../core/types';
 export { isReadOnlyTask, getReadOnlyTaskContext } from '../../core/types';
 export type { MergeMode } from '../../core/mergeQueue';

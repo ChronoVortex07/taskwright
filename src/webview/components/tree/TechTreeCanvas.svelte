@@ -47,6 +47,8 @@
     collapsedLanes?: string[];
     jumpBand?: string;
     jumpNonce?: number;
+    jumpTaskId?: string;
+    jumpTaskNonce?: number;
     minimapPanX?: number;
     minimapPanY?: number;
     minimapPanNonce?: number;
@@ -77,6 +79,8 @@
     collapsedLanes = [],
     jumpBand = '',
     jumpNonce = 0,
+    jumpTaskId = '',
+    jumpTaskNonce = 0,
     minimapPanX = 0,
     minimapPanY = 0,
     minimapPanNonce = 0,
@@ -170,6 +174,21 @@
     const b = geometry.bands.find((bnd) => bnd.name === jumpBand);
     if (b && viewportEl) {
       setViewport({ scale: vp.scale, tx: -b.x * vp.scale + 40, ty: vp.ty });
+    }
+  });
+
+  // Jump to a specific task node when the navigator asks (nonce lets retrigger).
+  let lastJumpTaskNonce = 0;
+  $effect(() => {
+    if (jumpTaskNonce === lastJumpTaskNonce) return;
+    lastJumpTaskNonce = jumpTaskNonce;
+    const box = geometry.nodes.get(jumpTaskId);
+    if (box && viewportEl) {
+      setViewport({
+        scale: vp.scale,
+        tx: viewportEl.clientWidth / 2 - (box.x + box.width / 2) * vp.scale,
+        ty: viewportEl.clientHeight / 2 - (box.y + box.height / 2) * vp.scale,
+      });
     }
   });
 
