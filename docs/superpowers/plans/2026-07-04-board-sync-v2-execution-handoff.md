@@ -640,7 +640,7 @@ _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <
   remote push); deleted the now-dead `boardLifecycle.ts` + `SyncTarget`; added `milestones` to
   `boardMigration.ts`'s tracked-dirs list (Task D's flagged gap). Full suite (1463 tests)/lint/
   typecheck/build green.
-- 2026-07-04 · Task F · `(pending)` · Added `pushBoard`/`pullBoard` core
+- 2026-07-04 · Task F · `1111e00` · Added `pushBoard`/`pullBoard` core
   (`src/core/boardPushPull.ts`) over three new `boardRef.ts` plumbing primitives
   (`readRefFileMap`/`mergeBaseOf`/`commitMergedTree`): snapshot live board → fetch remote → (if
   diverged) `mergeBoards`-merge into a real 2-parent commit → push or materialize. Wired as MCP tools
