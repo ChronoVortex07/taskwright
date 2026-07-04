@@ -45,7 +45,6 @@
   const pendingReview = $derived(
     !!task.mergeState && !task.mergeState.approved && task.mergeState.mode === 'manual-review'
   );
-  const inProgress = $derived(!isDone && !isDraft && !isTodo && !pendingReview);
   const claimedByMe = $derived(task.claimedByMe === true);
   const hasWorktree = $derived(!!task.worktree);
   const hasDispatchedWorktree = $derived(task.dispatchedWorktree === true);
@@ -69,20 +68,21 @@
         { key: 'sendBack', label: 'Send back', kind: 'sendBack' },
       ];
     if (isDone || isDraft) return [];
+    if (hasDispatchedWorktree || hasWorktree)
+      return [{ key: 'cancel', label: 'Cancel dispatch', kind: 'cancelDispatch' }];
     if (isTodo && isLocked) return [{ key: 'force', label: 'Force claim', kind: 'forceClaim' }];
+    if (claimedByMe && !isDone)
+      return [
+        { key: 'done', label: 'Mark done', kind: 'markDone', primary: true },
+        { key: 'release', label: 'Release claim', kind: 'release' },
+      ];
+    if (task.claimedBy && !isDone)
+      return [{ key: 'release', label: 'Release claim', kind: 'release' }];
     if (isTodo)
       return [
         { key: 'claim', label: 'Claim', kind: 'claim', primary: true },
         { key: 'dispatch', label: 'Dispatch', kind: 'dispatch' },
       ];
-    if (inProgress && (hasDispatchedWorktree || hasWorktree))
-      return [{ key: 'cancel', label: 'Cancel dispatch', kind: 'cancelDispatch' }];
-    if (inProgress && claimedByMe)
-      return [
-        { key: 'done', label: 'Mark done', kind: 'markDone', primary: true },
-        { key: 'release', label: 'Release claim', kind: 'release' },
-      ];
-    if (task.claimedBy) return [{ key: 'release', label: 'Release claim', kind: 'release' }];
     return [
       { key: 'claim', label: 'Claim', kind: 'claim', primary: true },
       { key: 'dispatch', label: 'Dispatch', kind: 'dispatch' },

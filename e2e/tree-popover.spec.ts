@@ -62,11 +62,22 @@ async function setup(page: Parameters<typeof installVsCodeMock>[0]) {
   await installVsCodeMock(page);
   await page.goto('/tasks.html');
   await page.waitForTimeout(100);
-  await postMessageToWebview(page, { type: 'statusesUpdated', statuses: ['To Do', 'In Progress', 'Done'] });
-  await postMessageToWebview(page, { type: 'prioritiesUpdated', priorities: ['high', 'medium', 'low'] });
+  await postMessageToWebview(page, {
+    type: 'statusesUpdated',
+    statuses: ['To Do', 'In Progress', 'Done'],
+  });
+  await postMessageToWebview(page, {
+    type: 'prioritiesUpdated',
+    priorities: ['high', 'medium', 'low'],
+  });
   await postMessageToWebview(page, { type: 'milestonesUpdated', milestones: [] });
   await postMessageToWebview(page, { type: 'tasksUpdated', tasks: tasks() });
-  await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder, bandOrder, warnings: [] });
+  await postMessageToWebview(page, {
+    type: 'treeLayoutUpdated',
+    laneOrder,
+    bandOrder,
+    warnings: [],
+  });
   await postMessageToWebview(page, { type: 'activeTabChanged', tab: 'tree' });
   await page.waitForTimeout(150);
   await expect(page.locator('[data-testid="tree-canvas"]')).toBeVisible();
@@ -87,7 +98,10 @@ test.describe('Tree detail popover', () => {
     await clearPostedMessages(page);
     await page.locator('[data-testid="tp-close"]').click();
     await expect(page.locator('[data-testid="tree-popover"]')).toHaveCount(0);
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'popoverActiveChanged', taskId: null });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'popoverActiveChanged',
+      taskId: null,
+    });
   });
 
   test('unlocked To Do offers Claim + Dispatch', async ({ page }) => {
@@ -101,7 +115,10 @@ test.describe('Tree detail popover', () => {
   test('Dispatch posts dispatchTask', async ({ page }) => {
     await page.locator('[data-testid="tree-node-TASK-1"]').click();
     await page.locator('[data-testid="tp-action-dispatch"]').click();
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'dispatchTask', taskId: 'TASK-1' });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'dispatchTask',
+      taskId: 'TASK-1',
+    });
   });
 
   test('locked To Do offers only Force claim', async ({ page }) => {
@@ -109,7 +126,10 @@ test.describe('Tree detail popover', () => {
     await expect(page.locator('[data-testid="tp-action-forceClaim"]')).toBeVisible();
     await expect(page.locator('[data-testid="tp-action-claim"]')).toHaveCount(0);
     await page.locator('[data-testid="tp-action-forceClaim"]').click();
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'forceClaimTask', taskId: 'TASK-2' });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'forceClaimTask',
+      taskId: 'TASK-2',
+    });
   });
 
   test('my in-progress task offers Mark done + Release', async ({ page }) => {
@@ -125,7 +145,10 @@ test.describe('Tree detail popover', () => {
   test('Release claim posts releaseTask', async ({ page }) => {
     await page.locator('[data-testid="tree-node-TASK-3"]').click();
     await page.locator('[data-testid="tp-action-release"]').click();
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'releaseTask', taskId: 'TASK-3' });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'releaseTask',
+      taskId: 'TASK-3',
+    });
   });
 
   test('status quick-edit posts updateTask', async ({ page }) => {
@@ -142,17 +165,29 @@ test.describe('Tree detail popover', () => {
     await page.locator('[data-testid="tree-node-TASK-1"]').click();
     await clearPostedMessages(page);
     await page.locator('[data-testid="tp-expand"]').click();
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'selectTask', taskId: 'TASK-1' });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'selectTask',
+      taskId: 'TASK-1',
+    });
   });
 
-  test('a dispatched-but-unclaimed in-progress task offers Cancel dispatch (GAP-7)', async ({ page }) => {
+  test('a dispatched-but-unclaimed in-progress task offers Cancel dispatch (GAP-7)', async ({
+    page,
+  }) => {
     await postMessageToWebview(page, {
       type: 'tasksUpdated',
       tasks: [
         {
-          id: 'TASK-9', title: 'Dispatched unclaimed', status: 'In Progress',
-          category: 'Misc', milestone: 'v1', labels: [], assignee: [], dependencies: [],
-          acceptanceCriteria: [], definitionOfDone: [],
+          id: 'TASK-9',
+          title: 'Dispatched unclaimed',
+          status: 'In Progress',
+          category: 'Misc',
+          milestone: 'v1',
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          acceptanceCriteria: [],
+          definitionOfDone: [],
           dispatchedWorktree: true, // worktree dir exists; no claim `worktree` field
           layout: { lane: 'Misc', band: 'v1', depth: 0, subRow: 0 },
           filePath: '/b/tasks/task-9.md',
@@ -163,17 +198,29 @@ test.describe('Tree detail popover', () => {
     await page.locator('[data-testid="tree-node-TASK-9"]').click();
     await expect(page.locator('[data-testid="tp-action-cancelDispatch"]')).toBeVisible();
     await page.locator('[data-testid="tp-action-cancelDispatch"]').click();
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'cancelDispatch', taskId: 'TASK-9' });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'cancelDispatch',
+      taskId: 'TASK-9',
+    });
   });
 
-  test('an in-progress task with no worktree dir and no claim does NOT offer Cancel dispatch (GAP-7 negative)', async ({ page }) => {
+  test('an in-progress task with no worktree dir and no claim does NOT offer Cancel dispatch (GAP-7 negative)', async ({
+    page,
+  }) => {
     await postMessageToWebview(page, {
       type: 'tasksUpdated',
       tasks: [
         {
-          id: 'TASK-9', title: 'In progress no wt', status: 'In Progress',
-          category: 'Misc', milestone: 'v1', labels: [], assignee: [], dependencies: [],
-          acceptanceCriteria: [], definitionOfDone: [],
+          id: 'TASK-9',
+          title: 'In progress no wt',
+          status: 'In Progress',
+          category: 'Misc',
+          milestone: 'v1',
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          acceptanceCriteria: [],
+          definitionOfDone: [],
           layout: { lane: 'Misc', band: 'v1', depth: 0, subRow: 0 },
           filePath: '/b/tasks/task-9.md',
         },
@@ -182,5 +229,143 @@ test.describe('Tree detail popover', () => {
     await page.waitForTimeout(150);
     await page.locator('[data-testid="tree-node-TASK-9"]').click();
     await expect(page.locator('[data-testid="tp-action-cancelDispatch"]')).toHaveCount(0);
+  });
+
+  test('TASK-63: dispatched-but-unclaimed To-Do task offers Cancel dispatch (was broken)', async ({
+    page,
+  }) => {
+    await postMessageToWebview(page, {
+      type: 'tasksUpdated',
+      tasks: [
+        {
+          id: 'TASK-10',
+          title: 'Dispatched todo',
+          status: 'To Do',
+          category: 'Misc',
+          milestone: 'v1',
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          acceptanceCriteria: [],
+          definitionOfDone: [],
+          dispatchedWorktree: true, // worktree dir exists on disk
+          layout: { lane: 'Misc', band: 'v1', depth: 0, subRow: 0 },
+          filePath: '/b/tasks/task-10.md',
+        },
+      ],
+    });
+    await page.waitForTimeout(150);
+    await page.locator('[data-testid="tree-node-TASK-10"]').click();
+    await expect(page.locator('[data-testid="tp-action-cancelDispatch"]')).toBeVisible();
+    await expect(page.locator('[data-testid="tp-action-claim"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="tp-action-dispatch"]')).toHaveCount(0);
+    await page.locator('[data-testid="tp-action-cancelDispatch"]').click();
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'cancelDispatch',
+      taskId: 'TASK-10',
+    });
+  });
+
+  test('TASK-63: To-Do task claimed by someone else offers Release claim (was broken)', async ({
+    page,
+  }) => {
+    await postMessageToWebview(page, {
+      type: 'tasksUpdated',
+      tasks: [
+        {
+          id: 'TASK-11',
+          title: 'Claimed by other',
+          status: 'To Do',
+          category: 'Misc',
+          milestone: 'v1',
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          acceptanceCriteria: [],
+          definitionOfDone: [],
+          claimedBy: 'someone-else',
+          claimedByMe: false,
+          layout: { lane: 'Misc', band: 'v1', depth: 0, subRow: 0 },
+          filePath: '/b/tasks/task-11.md',
+        },
+      ],
+    });
+    await page.waitForTimeout(150);
+    await page.locator('[data-testid="tree-node-TASK-11"]').click();
+    await expect(page.locator('[data-testid="tp-action-release"]')).toBeVisible();
+    await expect(page.locator('[data-testid="tp-action-claim"]')).toHaveCount(0);
+    await page.locator('[data-testid="tp-action-release"]').click();
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'releaseTask',
+      taskId: 'TASK-11',
+    });
+  });
+
+  test('TASK-63: To-Do task claimed by me offers Mark done + Release (was broken)', async ({
+    page,
+  }) => {
+    await postMessageToWebview(page, {
+      type: 'tasksUpdated',
+      tasks: [
+        {
+          id: 'TASK-12',
+          title: 'Claimed by me',
+          status: 'To Do',
+          category: 'Misc',
+          milestone: 'v1',
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          acceptanceCriteria: [],
+          definitionOfDone: [],
+          claimedBy: 'me',
+          claimedByMe: true,
+          layout: { lane: 'Misc', band: 'v1', depth: 0, subRow: 0 },
+          filePath: '/b/tasks/task-12.md',
+        },
+      ],
+    });
+    await page.waitForTimeout(150);
+    await page.locator('[data-testid="tree-node-TASK-12"]').click();
+    await expect(page.locator('[data-testid="tp-action-markDone"]')).toBeVisible();
+    await expect(page.locator('[data-testid="tp-action-release"]')).toBeVisible();
+    await expect(page.locator('[data-testid="tp-action-claim"]')).toHaveCount(0);
+    await page.locator('[data-testid="tp-action-markDone"]').click();
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'updateTask',
+      taskId: 'TASK-12',
+      updates: { status: 'Done' },
+    });
+  });
+
+  test('TASK-63: worktree-claimed To-Do task shows Cancel dispatch (hasWorktree, no dispatchedWorktree)', async ({
+    page,
+  }) => {
+    await postMessageToWebview(page, {
+      type: 'tasksUpdated',
+      tasks: [
+        {
+          id: 'TASK-13',
+          title: 'Has worktree field',
+          status: 'To Do',
+          category: 'Misc',
+          milestone: 'v1',
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          acceptanceCriteria: [],
+          definitionOfDone: [],
+          claimedBy: 'me',
+          claimedByMe: true,
+          worktree: 'task-13-stuff', // claim's worktree field set
+          layout: { lane: 'Misc', band: 'v1', depth: 0, subRow: 0 },
+          filePath: '/b/tasks/task-13.md',
+        },
+      ],
+    });
+    await page.waitForTimeout(150);
+    await page.locator('[data-testid="tree-node-TASK-13"]').click();
+    await expect(page.locator('[data-testid="tp-action-cancelDispatch"]')).toBeVisible();
+    await expect(page.locator('[data-testid="tp-action-markDone"]')).toHaveCount(0);
   });
 });
