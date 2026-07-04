@@ -22,6 +22,9 @@ import {
   isAncestor,
   revCount,
   commitTreeRoot,
+  readRefFileMap,
+  mergeBaseOf,
+  commitMergedTree,
   type BoardGitExec,
 } from '../../core/boardRef';
 import { makeTempGitRepo, TempRepo } from './helpers/tempGitRepo';
@@ -733,5 +736,192 @@ describe('ref-relation helpers', () => {
     const refTree = (await repo.git(['rev-parse', 'refs/heads/taskwright-board^{tree}'])).trim();
     const rootTree = (await repo.git(['rev-parse', `${root}^{tree}`])).trim();
     expect(rootTree).toBe(refTree);
+  });
+});
+
+describe('readRefFileMap (Board Sync v2 Task F — push/pull merge core)', () => {
+  let repo: TempRepo;
+  const indexFile = () => path.join(repo.root, '.taskwright', 'board.index');
+
+  beforeEach(async () => {
+    repo = await makeTempGitRepo();
+    repo.addGitignore(['backlog/tasks/', 'backlog/milestones/']);
+    repo.writeFile('backlog/tasks/task-1 - A.md', 'A\n');
+    repo.writeFile('backlog/tasks/task-2 - B.md', 'B\n');
+    repo.writeFile('backlog/milestones/m-1 - Launch.md', 'M\n');
+  });
+  afterEach(() => repo.cleanup());
+
+  it('reads a commit tree into a path -> content map, matching ls-tree', async () => {
+    const { commit } = await snapshotBoardToRef({
+      repoRoot: repo.root,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      message: 'snapshot',
+      exec: defaultBoardExec,
+    });
+
+    const map = await readRefFileMap(repo.root, commit, defaultBoardExec);
+
+    expect(map).toEqual({
+      'backlog/tasks/task-1 - A.md': 'A\n',
+      'backlog/tasks/task-2 - B.md': 'B\n',
+      'backlog/milestones/m-1 - Launch.md': 'M\n',
+    });
+  });
+
+  it('returns an empty map for a commit with an empty tree', async () => {
+    const env = { GIT_INDEX_FILE: indexFile() };
+    fs.mkdirSync(path.dirname(indexFile()), { recursive: true });
+    await execFileAsync('git', ['read-tree', '--empty'], {
+      cwd: repo.root,
+      env: { ...process.env, ...env },
+    });
+    const tree = (
+      await execFileAsync('git', ['write-tree'], {
+        cwd: repo.root,
+        env: { ...process.env, ...env },
+      })
+    ).stdout.trim();
+    const commit = (
+      await execFileAsync('git', ['commit-tree', tree, '-m', 'empty'], {
+        cwd: repo.root,
+        env: { ...process.env, ...env },
+      })
+    ).stdout.trim();
+
+    expect(await readRefFileMap(repo.root, commit, defaultBoardExec)).toEqual({});
+  });
+});
+
+describe('mergeBaseOf (Board Sync v2 Task F)', () => {
+  let repo: TempRepo;
+  const indexFile = () => path.join(repo.root, '.taskwright', 'board.index');
+
+  beforeEach(async () => {
+    repo = await makeTempGitRepo();
+    repo.addGitignore(['backlog/tasks/']);
+    repo.writeFile('backlog/tasks/task-1 - A.md', 'A\n');
+  });
+  afterEach(() => repo.cleanup());
+
+  it('finds the common ancestor of two commits chained from a shared parent', async () => {
+    const base = await snapshotBoardToRef({
+      repoRoot: repo.root,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      message: 'base',
+      exec: defaultBoardExec,
+    });
+    repo.writeFile('backlog/tasks/task-2 - B.md', 'B\n');
+    const left = await snapshotBoardToRef({
+      repoRoot: repo.root,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      message: 'left',
+      parent: base.commit,
+      exec: defaultBoardExec,
+    });
+    repo.writeFile('backlog/tasks/task-3 - C.md', 'C\n');
+    const right = await snapshotBoardToRef({
+      repoRoot: repo.root,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      message: 'right',
+      parent: base.commit,
+      exec: defaultBoardExec,
+    });
+
+    expect(await mergeBaseOf(repo.root, left.commit, right.commit, defaultBoardExec)).toBe(
+      base.commit
+    );
+  });
+
+  it('returns null for unrelated histories', async () => {
+    const orphan = await snapshotBoardToRef({
+      repoRoot: repo.root,
+      ref: 'refs/heads/other-orphan',
+      indexFile: indexFile(),
+      message: 'orphan',
+      exec: defaultBoardExec,
+    });
+    const main = await snapshotBoardToRef({
+      repoRoot: repo.root,
+      ref: 'taskwright-board',
+      indexFile: indexFile(),
+      message: 'main',
+      exec: defaultBoardExec,
+    });
+
+    expect(await mergeBaseOf(repo.root, orphan.commit, main.commit, defaultBoardExec)).toBeNull();
+  });
+});
+
+describe('commitMergedTree (Board Sync v2 Task F)', () => {
+  let repo: TempRepo;
+  const indexFile = () => path.join(repo.root, '.taskwright', 'board.index');
+
+  beforeEach(async () => {
+    repo = await makeTempGitRepo();
+    repo.addGitignore(['backlog/tasks/']);
+  });
+  afterEach(() => repo.cleanup());
+
+  it('builds a commit whose tree is exactly the given file map, with the given parents', async () => {
+    const p1 = await snapshotBoardToRef({
+      repoRoot: repo.root,
+      ref: 'refs/heads/p1',
+      indexFile: indexFile(),
+      message: 'p1',
+      exec: defaultBoardExec,
+    });
+    const p2 = await snapshotBoardToRef({
+      repoRoot: repo.root,
+      ref: 'refs/heads/p2',
+      indexFile: indexFile(),
+      message: 'p2',
+      exec: defaultBoardExec,
+    });
+    const headBefore = await repo.headSha();
+    const statusBefore = (await repo.git(['status', '--porcelain'])).trim();
+
+    const merged = {
+      'backlog/tasks/task-1 - A.md': 'A-merged\n',
+      'backlog/tasks/task-2 - B.md': 'B-merged\n',
+    };
+    const commit = await commitMergedTree({
+      repoRoot: repo.root,
+      indexFile: indexFile(),
+      parents: [p1.commit, p2.commit],
+      message: 'merged',
+      files: merged,
+      exec: defaultBoardExec,
+    });
+
+    expect(await readRefFileMap(repo.root, commit, defaultBoardExec)).toEqual(merged);
+    const parents = (await repo.git(['rev-list', '--parents', '-n', '1', commit]))
+      .trim()
+      .split(' ');
+    expect(parents).toEqual([commit, p1.commit, p2.commit]);
+
+    // Isolated index: real git state untouched.
+    expect(await repo.headSha()).toBe(headBefore);
+    expect((await repo.git(['status', '--porcelain'])).trim()).toBe(statusBefore);
+  });
+
+  it('produces an empty-tree commit for an empty file map', async () => {
+    const commit = await commitMergedTree({
+      repoRoot: repo.root,
+      indexFile: indexFile(),
+      parents: [],
+      message: 'empty',
+      files: {},
+      exec: defaultBoardExec,
+    });
+    expect(await readRefFileMap(repo.root, commit, defaultBoardExec)).toEqual({});
+    const parents = (await repo.git(['rev-list', '--parents', '-n', '1', commit]))
+      .trim()
+      .split(' ');
+    expect(parents).toHaveLength(1); // no parents
   });
 });

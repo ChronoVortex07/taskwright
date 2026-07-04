@@ -188,6 +188,16 @@
         "category": "Taskwright"
       },
       {
+        "command": "taskwright.pushBoard",
+        "title": "Taskwright: Push Board",
+        "category": "Taskwright"
+      },
+      {
+        "command": "taskwright.pullBoard",
+        "title": "Taskwright: Pull Board",
+        "category": "Taskwright"
+      },
+      {
         "command": "taskwright.openTaskDetail",
         "title": "Taskwright: Open Task Detail"
       },

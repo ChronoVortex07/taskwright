@@ -41,6 +41,8 @@ import {
   demoteTaskHandler,
   createSubtaskHandler,
   requestMergeHandler,
+  pushBoardHandler,
+  pullBoardHandler,
   type McpHandlerDeps,
 } from './handlers';
 
@@ -375,6 +377,26 @@ async function main(): Promise<void> {
       inputSchema: { taskId: z.string().describe('Task ID to integrate, e.g. TASK-7.') },
     },
     async (args) => runTool(() => requestMergeHandler(deps, args))
+  );
+
+  server.registerTool(
+    'push_board',
+    {
+      title: 'Push board',
+      description:
+        'Snapshot the current board, union-merge it with the remote "taskwright-board" ref (a same-task edit on both sides resolves by newer updated_date, always surfaced as a conflict), and push. Requires taskwright.sync.mode = "git" (run the "Taskwright: Enable Board Sync" command first). Returns { pushed, commit, conflicts, rejected? }. On a rejection (the remote moved again), just call push_board again — nothing is lost.',
+    },
+    async () => runTool(() => pushBoardHandler(deps))
+  );
+
+  server.registerTool(
+    'pull_board',
+    {
+      title: 'Pull board',
+      description:
+        'Fetch the remote "taskwright-board" ref, union-merge it with the current local board (your own uncommitted edits are preserved; a same-task edit on both sides resolves by newer updated_date, always surfaced as a conflict), and materialize the result into the board. Requires taskwright.sync.mode = "git". Returns { pulled, files, conflicts }.',
+    },
+    async () => runTool(() => pullBoardHandler(deps))
   );
 
   const transport = new StdioServerTransport();

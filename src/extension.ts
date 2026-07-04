@@ -50,13 +50,16 @@ import {
 import { nodeQueueFs, MergeQueueStore, mergeQueuePath, type MergeQueue } from './core/mergeQueue';
 import {
   resolveSyncConfigFromSettings,
+  readSyncConfig,
   writeSyncConfig,
   syncConfigPath,
+  DEFAULT_SYNC_CONFIG,
   type SyncMode,
 } from './core/syncConfig';
 import { applyBoardIgnore, boardTrackedPaths } from './core/boardMigration';
 import { resolvePrimaryWorktreeRoot } from './core/boardRoot';
 import { snapshotBoardToRef, refTip } from './core/boardRef';
+import { pushBoard, pullBoard } from './core/boardPushPull';
 import { planStatusSync, parseStatusesLine, rewriteStatusesLine } from './core/mergeStatusConfig';
 import type { MergeMode } from './core/mergeQueue';
 
@@ -400,6 +403,94 @@ export async function activate(context: vscode.ExtensionContext) {
       void vscode.window.showInformationMessage(
         'Taskwright board sync enabled. Cross-branch ghost cards are gone, and the board is versioned on the "taskwright-board" ref — push/pull it explicitly to share with others.'
       );
+    })
+  );
+
+  // Board Sync v2 push/pull backbone (Task F): explicit, synchronous commands over
+  // the same pushBoard/pullBoard core the taskwright MCP tools call — no live loop.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('taskwright.pushBoard', async () => {
+      if (!workspaceRootPath) {
+        void vscode.window.showWarningMessage('Open a Taskwright workspace folder first.');
+        return;
+      }
+      const commonDir = await resolveCommonDir(workspaceRootPath);
+      const syncCfg = commonDir
+        ? readSyncConfig(syncConfigPath(commonDir), nodeQueueFs)
+        : DEFAULT_SYNC_CONFIG;
+      if (syncCfg.mode === 'off') {
+        void vscode.window.showWarningMessage(
+          'Board sync is off. Run "Taskwright: Enable Board Sync" first.'
+        );
+        return;
+      }
+      try {
+        const result = await pushBoard({
+          cwd: workspaceRootPath,
+          ref: syncCfg.ref,
+          remote: syncCfg.remote,
+          message: 'chore(taskwright): push board',
+        });
+        tasksHosts.forEach((host) => host.refresh());
+        if (!result.pushed) {
+          void vscode.window.showWarningMessage(
+            `Push Board failed${result.rejected ? ' (remote moved — try again)' : ''}: ${result.message ?? 'unknown error'}`
+          );
+        } else if (result.conflicts.length > 0) {
+          void vscode.window.showWarningMessage(
+            `Board pushed with ${result.conflicts.length} conflict(s) resolved by the newer edit: ${result.conflicts.map((c) => c.id).join(', ')}`
+          );
+        } else {
+          void vscode.window.showInformationMessage('Board pushed.');
+        }
+      } catch (err) {
+        void vscode.window.showErrorMessage(
+          `Push Board failed: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('taskwright.pullBoard', async () => {
+      if (!workspaceRootPath) {
+        void vscode.window.showWarningMessage('Open a Taskwright workspace folder first.');
+        return;
+      }
+      const commonDir = await resolveCommonDir(workspaceRootPath);
+      const syncCfg = commonDir
+        ? readSyncConfig(syncConfigPath(commonDir), nodeQueueFs)
+        : DEFAULT_SYNC_CONFIG;
+      if (syncCfg.mode === 'off') {
+        void vscode.window.showWarningMessage(
+          'Board sync is off. Run "Taskwright: Enable Board Sync" first.'
+        );
+        return;
+      }
+      try {
+        const result = await pullBoard({
+          cwd: workspaceRootPath,
+          ref: syncCfg.ref,
+          remote: syncCfg.remote,
+          message: 'chore(taskwright): pull board',
+        });
+        tasksHosts.forEach((host) => host.refresh());
+        if (!result.pulled) {
+          void vscode.window.showWarningMessage(
+            `Pull Board: ${result.message ?? 'nothing to pull'}`
+          );
+        } else if (result.conflicts.length > 0) {
+          void vscode.window.showWarningMessage(
+            `Board pulled with ${result.conflicts.length} conflict(s) resolved by the newer edit: ${result.conflicts.map((c) => c.id).join(', ')}`
+          );
+        } else {
+          void vscode.window.showInformationMessage('Board pulled.');
+        }
+      } catch (err) {
+        void vscode.window.showErrorMessage(
+          `Pull Board failed: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
     })
   );
 

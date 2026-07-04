@@ -1,8 +1,10 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { resolvePrimaryWorktreeRoot } from './boardRoot';
+import type { BoardFileMap } from './boardMerge';
 
 /**
  * Git-plumbing primitive for the synced board (spec §3.3). Snapshots the board
@@ -445,4 +447,92 @@ export async function pushRefForceWithLease(
     const rejected = /\b(rejected|stale info|non-fast-forward|fetch first)\b/i.test(stderr);
     return { ok: false, rejected, stderr };
   }
+}
+
+/**
+ * Read a commit's board-subdir file tree into an in-memory map (board-relative
+ * path → content) without writing anything to the working copy or the real
+ * index. `committish` is any git-resolvable commit reference — a raw sha (from
+ * {@link refTip}/{@link fetchRef}/{@link snapshotBoardToRef}) or a qualified
+ * ref. Board Sync v2's push/pull merge core (`boardPushPull.ts`) uses this to
+ * read the `base`/`ours`/`theirs` trees `mergeBoards()` (`boardMerge.ts`) needs.
+ */
+export async function readRefFileMap(
+  repoRoot: string,
+  committish: string,
+  exec: BoardGitExec = defaultBoardExec
+): Promise<BoardFileMap> {
+  const listed = (await exec(repoRoot, ['ls-tree', '-r', '--name-only', committish])).stdout.trim();
+  const paths = listed.length > 0 ? listed.split('\n') : [];
+  const map: BoardFileMap = {};
+  for (const rel of paths) {
+    map[rel] = (await exec(repoRoot, [...NO_EOL_CONVERT, 'show', `${committish}:${rel}`])).stdout;
+  }
+  return map;
+}
+
+/**
+ * The best common ancestor of `a` and `b`, or null when there is none (unrelated
+ * histories, e.g. two clones that each independently seeded the board ref
+ * before ever syncing) or either side does not resolve.
+ */
+export async function mergeBaseOf(
+  repoRoot: string,
+  a: string,
+  b: string,
+  exec: BoardGitExec = defaultBoardExec
+): Promise<string | null> {
+  try {
+    const { stdout } = await exec(repoRoot, ['merge-base', a, b]);
+    const sha = stdout.trim();
+    return sha.length > 0 ? sha : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface CommitMergedTreeOptions {
+  repoRoot: string;
+  indexFile: string;
+  /** Parent commit shas, e.g. `[oursCommit, remoteFetchedTip]` for a real 2-parent merge. */
+  parents: string[];
+  message: string;
+  /** The exact tree to commit: board-relative path → content. */
+  files: BoardFileMap;
+  exec?: BoardGitExec;
+}
+
+/**
+ * Build a commit whose tree is exactly `files`, parented on `parents` — lands a
+ * `mergeBoards()` result (`boardMerge.ts`) as a real commit whose history
+ * reflects both sides of the merge, instead of silently favoring one. Uses an
+ * isolated index (`GIT_INDEX_FILE`), so the user's real index/HEAD/working
+ * branch are never touched. Blob content is written through a scratch temp
+ * file for `hash-object` rather than `--stdin`, because {@link BoardGitExec}
+ * has no stdin-piping support (matches this module's existing exec shape).
+ */
+export async function commitMergedTree(opts: CommitMergedTreeOptions): Promise<string> {
+  const exec = opts.exec ?? defaultBoardExec;
+  const env = { GIT_INDEX_FILE: opts.indexFile };
+  fs.mkdirSync(path.dirname(opts.indexFile), { recursive: true });
+  await exec(opts.repoRoot, ['read-tree', '--empty'], env);
+
+  const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskwright-board-merge-'));
+  try {
+    const scratchFile = path.join(scratchDir, 'blob');
+    for (const [rel, content] of Object.entries(opts.files)) {
+      fs.writeFileSync(scratchFile, content);
+      const sha = (
+        await exec(opts.repoRoot, [...NO_EOL_CONVERT, 'hash-object', '-w', '--', scratchFile], env)
+      ).stdout.trim();
+      await exec(opts.repoRoot, ['update-index', '--add', '--cacheinfo', '100644', sha, rel], env);
+    }
+  } finally {
+    fs.rmSync(scratchDir, { recursive: true, force: true });
+  }
+
+  const tree = (await exec(opts.repoRoot, ['write-tree'], env)).stdout.trim();
+  const commitArgs = ['commit-tree', tree, '-m', opts.message];
+  for (const parent of opts.parents) commitArgs.push('-p', parent);
+  return (await exec(opts.repoRoot, commitArgs, env)).stdout.trim();
 }

@@ -475,7 +475,7 @@ integration)` describe blocks from `mcpWriteHandlers.test.ts` (plus a stale comm
   `boardLifecycle.test.ts` cases, ±1 renamed `boardMigration.test.ts`/`configDefaults.test.ts` cases),
   lint, typecheck, and `bun run build` all green.
 
-### [ ] Task F — Board push & pull: `push_board`/`pull_board` MCP tools + commands (DRAFT-20)
+### [x] Task F — Board push & pull: `push_board`/`pull_board` MCP tools + commands (DRAFT-20)
 
 - **Deps:** D, E. **Versioning backbone.**
 - **Do:** `push_board` = `snapshotBoardRoot` → fetch remote ref → `mergeBoards` (union) → commit →
@@ -486,7 +486,81 @@ integration)` describe blocks from `mcpWriteHandlers.test.ts` (plus a stale comm
 - **Accept:** two-clone round-trip (push A → pull B, B reflects A); concurrent disjoint adds union
   cleanly, same-task edit surfaces a conflict (newer wins); a board push never dirties/blocks a code
   merge.
-- **Handoff Notes:** _(…)_
+- **Handoff Notes:** New module `src/core/boardPushPull.ts` holds the shared core
+  (`pushBoard`/`pullBoard`), built on Task D's `snapshotBoardToRef`/`materializeRefToWorktree` and
+  Task E's `mergeBoards` — plus three new git-plumbing primitives added to `boardRef.ts` (kept there,
+  not the new file, since they're plumbing like their siblings): `readRefFileMap(repoRoot, committish,
+exec)` (read a commit's board tree into a `BoardFileMap` via `ls-tree -r` + per-file `show`, no
+  working-copy/index writes — used to read the `base`/`ours`/`theirs` trees `mergeBoards` needs),
+  `mergeBaseOf(repoRoot, a, b, exec)` (thin `git merge-base` wrapper, null on unrelated histories),
+  and `commitMergedTree({repoRoot, indexFile, parents, message, files, exec})` (lands a `mergeBoards`
+  result as a REAL commit with the given parents — e.g. two-parent `[oursCommit, remoteFetchedTip]` —
+  via an isolated index: `read-tree --empty`, then per-file `hash-object -w` through a scratch temp
+  file (this module's `BoardGitExec` has no stdin-piping support, so `--stdin` wasn't an option) +
+  `update-index --add --cacheinfo`, `write-tree`, `commit-tree -p ... -p ...`).
+  **Shared orchestration (`syncLocalRefWithRemote`, private to `boardPushPull.ts`):** both push and
+  pull follow the identical shape — (1) snapshot the CURRENT live board onto the local ref, chained
+  onto the ref's OLD tip (this captures "ours" — for pull, that means live/uncommitted local edits are
+  the "ours" side, not stale committed state); (2) fetch the remote ref; (3) if the remote has nothing
+  this clone lacks (`isAncestor(remoteTip, oursCommit)`, or no remote ref at all) — done, no merge
+  needed; (4) otherwise, base = `mergeBaseOf(oldLocalTip, remoteTip)` (or `undefined` if no old local
+  tip — e.g. a fresh clone's first-ever sync with an already-populated remote, handled correctly by
+  `mergeBoards`' documented no-base semantics: every remote-only file is a "pure add", zero spurious
+  conflicts — covered by a test), `ours`/`theirs` read via `readRefFileMap`, merged via `mergeBoards`,
+  landed via `commitMergedTree` with **both** parents (`[oursCommit, remoteTip]`, a real merge commit,
+  not a rewrite), and the local ref advanced to it. `pushBoard` then just `pushRef`s whatever the local
+  ref now points to (ff-safe: `remoteTip` is a direct parent when a merge happened); `pullBoard`
+  `materializeRefToWorktree`s the SAME ref — i.e. pull reuses Task D's existing materialize primitive
+  unchanged, no new "write a BoardFileMap to disk" helper needed, since the merge result was already
+  landed as a ref commit in step 4. On a push rejection (remote moved again between our fetch and our
+  push — a real race, exercised by a test that lets a third clone push mid-fetch via a wrapped `exec`),
+  `pushBoard` returns `{pushed:false, rejected:true, commit}` rather than retrying automatically per
+  the design's "no live sync" non-goal — the local ref already advanced, so nothing is lost; a plain
+  retry (call `pushBoard` again) re-fetches and re-merges against the new remote state.
+  **MCP wiring:** `pushBoardHandler`/`pullBoardHandler` added to `src/mcp/handlers.ts`, registered as
+  `push_board`/`pull_board` in `server.ts`. They read `taskwright.sync.mode` via the existing
+  `readSyncConfig(syncConfigPath(commonDir), fsDeps)` pattern (mirroring `requestMergeHandler`'s
+  `readMergeConfig` usage) and no-op with a `message` when `mode === 'off'` (matching Task
+  I's `off | git` model) rather than erroring — the MCP tool descriptions tell the agent to run
+  `taskwright.enableSync` first. **`McpHandlerDeps` gained a NEW `boardExec?: BoardGitExec` field**,
+  deliberately separate from the existing `gitExec?: GitExecFn` — `gitExec`'s type has no `env`
+  parameter, so silently reusing it for the board-ref plumbing would drop `GIT_INDEX_FILE` and write
+  through the user's REAL index instead of the isolated one. `gitExec` still does what it always did
+  (feed `gitFacts()` for `commonDir` resolution); `boardExec` (defaults to `defaultBoardExec`) is what
+  actually goes to `pushBoard`/`pullBoard`.
+  **Discovered pre-existing bug (not fixed, out of scope — flagging for whoever hits it next):**
+  `gitFacts()`'s `commonDir` computation is `path.resolve((await exec(cwd, [...'--git-common-dir'])).stdout.trim())`
+  — missing a `cwd` argument to `path.resolve`, so it silently resolves against the CALLING PROCESS's
+  own `process.cwd()` rather than the `cwd` the git command actually ran against, whenever git returns
+  a relative path (the common case). This has never surfaced in production because the real MCP server
+  process's `process.cwd()` always happens to equal `deps.root` (the launcher `require()`s the primary
+  build in-process into the worktree-cwd'd process, per `scripts/taskwright-mcp.cjs`'s doc comment) —
+  but it means `gitFacts` (and therefore `requestMergeHandler`, and now `pushBoardHandler`/
+  `pullBoardHandler`) is UNSAFE to unit-test against a real temp git repo with a real `gitExec` from
+  inside a test runner whose own `process.cwd()` is this repo — doing so would resolve `commonDir` to
+  THIS repo's real `.git` and could write real files into it. Worked around in
+  `mcpBoardPushPullHandlers.test.ts` by faking `gitExec` (matching `mcpMergeHandlers.test.ts`'s
+  existing `makeGitExec` convention) so gitFacts's `--git-dir`/`--git-common-dir`/`symbolic-ref` calls
+  never touch real git at all, while `boardExec` (the actual board plumbing) runs against a real
+  temp repo. Correct fix, if someone wants it: `path.resolve(cwd, raw)`, same pattern
+  `scripts/taskwright-mcp.cjs`'s own `resolveMainServerPath` already uses correctly. Left untouched here
+  since it's `requestMergeHandler`'s pre-existing dependency, not something this task's Do bullet covers.
+  **VS Code commands:** `taskwright.pushBoard`/`taskwright.pullBoard` registered in `extension.ts`
+  (package.json titles added), gated the same way `enableSync`'s callers already are (workspace-root
+  check, `off`-mode warning), calling the identical `pushBoard`/`pullBoard` core (agent/human parity)
+  and showing an info/warning message summarizing the result (pushed/pulled, conflict ids, or a
+  rejection/failure reason) plus a board refresh. Kept deliberately minimal (no status-bar item, no
+  quick-pick, no dedicated conflict-list UI) — that richer UX, plus command-palette gating to a backlog
+  workspace, is explicitly Task G's scope, not this one's Accept criteria.
+  **Tests:** `boardRef.test.ts` gained 6 new tests for the three plumbing primitives (real temp git
+  repos, no mocking — matches this file's existing convention); new `boardPushPull.test.ts` (7 tests)
+  covers first-push-creates-ref, two-clone round-trip, pull-with-no-remote-ref, disjoint-adds-union
+  (both directions), same-task-edit-conflict-newer-wins, push-never-dirties-HEAD/working-tree, and the
+  rejected-push race (a wrapped `exec` lets a third clone race in in between our fetch and push); new
+  `mcpBoardPushPullHandlers.test.ts` (3 tests) covers the MCP-level `off`-mode no-op and a real
+  push-then-pull round trip through the handlers. Full suite (1479 tests, up from 1463 — this task only
+  adds, nothing removed), lint, typecheck, and `bun run build` (webview + extension + standalone MCP
+  bundle) all green.
 
 ### [ ] Task G — Push/Pull board UX: status bar + command palette (DRAFT-22)
 
@@ -566,6 +640,14 @@ _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <
   remote push); deleted the now-dead `boardLifecycle.ts` + `SyncTarget`; added `milestones` to
   `boardMigration.ts`'s tracked-dirs list (Task D's flagged gap). Full suite (1463 tests)/lint/
   typecheck/build green.
+- 2026-07-04 · Task F · `(pending)` · Added `pushBoard`/`pullBoard` core
+  (`src/core/boardPushPull.ts`) over three new `boardRef.ts` plumbing primitives
+  (`readRefFileMap`/`mergeBaseOf`/`commitMergedTree`): snapshot live board → fetch remote → (if
+  diverged) `mergeBoards`-merge into a real 2-parent commit → push or materialize. Wired as MCP tools
+  `push_board`/`pull_board` (`McpHandlerDeps` gained `boardExec` for isolated-index env forwarding,
+  separate from `gitExec`) and as `taskwright.pushBoard`/`taskwright.pullBoard` VS Code commands.
+  Flagged (not fixed) a pre-existing `gitFacts()` `commonDir` resolution bug — see Handoff Notes. Full
+  suite (1479 tests)/lint/typecheck/build green.
 
 ---
 

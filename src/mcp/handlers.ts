@@ -42,6 +42,14 @@ import {
   type QueueFsDeps,
 } from '../core/mergeQueue';
 import { mergeConfigPath, readMergeConfig } from '../core/mergeConfig';
+import { readSyncConfig, syncConfigPath } from '../core/syncConfig';
+import {
+  pushBoard,
+  pullBoard,
+  type PushBoardResult,
+  type PullBoardResult,
+} from '../core/boardPushPull';
+import type { BoardGitExec } from '../core/boardRef';
 import {
   requestMerge,
   type BoardOps,
@@ -75,6 +83,10 @@ export interface McpHandlerDeps {
   board?: BoardOps;
   /** Injectable fs adapter for queue/config I/O (defaults to nodeQueueFs). Tests override. */
   fsDeps?: QueueFsDeps;
+  /** Injectable git runner for board-ref plumbing that needs isolated-index env
+   *  forwarding (defaults to boardRef's defaultBoardExec) — `gitExec` above has
+   *  no env param and would silently drop `GIT_INDEX_FILE`. Tests override. */
+  boardExec?: BoardGitExec;
 }
 
 export interface PlanProgressSummary {
@@ -277,6 +289,70 @@ export async function requestMergeHandler(
     },
     args.taskId
   );
+}
+
+/** Board sync is off — the standard "not enabled" response shape for push/pull. */
+function syncOffMessage(): string {
+  return 'Board sync is off (taskwright.sync.mode). Run "Taskwright: Enable Board Sync" first.';
+}
+
+/**
+ * `push_board` (Board Sync v2 Task F): snapshot the live board, union-merge
+ * with the remote `taskwright-board` ref, and push. A no-op (with a
+ * `message` explaining why) when `taskwright.sync.mode` is `off`.
+ */
+export async function pushBoardHandler(deps: McpHandlerDeps): Promise<PushBoardResult> {
+  const exec = deps.gitExec ?? defaultGitExec;
+  const facts = await gitFacts(exec, deps.root);
+  const fsDeps = deps.fsDeps ?? nodeQueueFs;
+  const syncCfg = readSyncConfig(syncConfigPath(facts.commonDir), fsDeps);
+  if (syncCfg.mode === 'off') {
+    return {
+      pushed: false,
+      ref: syncCfg.ref,
+      remote: syncCfg.remote,
+      commit: '',
+      conflicts: [],
+      message: syncOffMessage(),
+    };
+  }
+  return pushBoard({
+    cwd: deps.root,
+    ref: syncCfg.ref,
+    remote: syncCfg.remote,
+    message: 'chore(taskwright): push board',
+    exec: deps.boardExec,
+  });
+}
+
+/**
+ * `pull_board` (Board Sync v2 Task F): fetch the remote `taskwright-board`
+ * ref, union-merge with the local board (uncommitted local edits are
+ * preserved), and materialize the result. A no-op when `taskwright.sync.mode`
+ * is `off`.
+ */
+export async function pullBoardHandler(deps: McpHandlerDeps): Promise<PullBoardResult> {
+  const exec = deps.gitExec ?? defaultGitExec;
+  const facts = await gitFacts(exec, deps.root);
+  const fsDeps = deps.fsDeps ?? nodeQueueFs;
+  const syncCfg = readSyncConfig(syncConfigPath(facts.commonDir), fsDeps);
+  if (syncCfg.mode === 'off') {
+    return {
+      pulled: false,
+      ref: syncCfg.ref,
+      remote: syncCfg.remote,
+      files: [],
+      conflicts: [],
+      message: syncOffMessage(),
+    };
+  }
+  return pullBoard({
+    cwd: deps.root,
+    ref: syncCfg.ref,
+    remote: syncCfg.remote,
+    message: 'chore(taskwright): pull board',
+    exec: deps.boardExec,
+  });
 }
 
 export function toSummary(task: Task, root: string, derived?: TreeDerivedState): TaskSummary {
