@@ -8,11 +8,11 @@ import {
 } from '../../core/boardMigration';
 
 describe('boardMigration', () => {
-  it('block ignores the four board subdirs under the fenced markers', () => {
+  it('block ignores the five board subdirs under the fenced markers', () => {
     const block = boardIgnoreBlock('backlog');
     expect(block.startsWith(BOARD_IGNORE_BEGIN)).toBe(true);
     expect(block.trimEnd().endsWith(BOARD_IGNORE_END)).toBe(true);
-    for (const d of ['tasks', 'drafts', 'completed', 'archive']) {
+    for (const d of ['tasks', 'drafts', 'completed', 'archive', 'milestones']) {
       expect(block).toContain(`backlog/${d}/`);
     }
   });
@@ -31,12 +31,13 @@ describe('boardMigration', () => {
     expect(occurrences).toBe(1);
   });
 
-  it('lists the four tracked dir paths for rm --cached', () => {
+  it('lists the five tracked dir paths for rm --cached', () => {
     expect(boardTrackedPaths('backlog')).toEqual([
       'backlog/tasks',
       'backlog/drafts',
       'backlog/completed',
       'backlog/archive',
+      'backlog/milestones',
     ]);
   });
 });

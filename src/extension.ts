@@ -55,7 +55,8 @@ import {
   type SyncMode,
 } from './core/syncConfig';
 import { applyBoardIgnore, boardTrackedPaths } from './core/boardMigration';
-import { reconcileBoardRef } from './core/boardLifecycle';
+import { resolvePrimaryWorktreeRoot } from './core/boardRoot';
+import { snapshotBoardToRef, refTip } from './core/boardRef';
 import { planStatusSync, parseStatusesLine, rewriteStatusesLine } from './core/mergeStatusConfig';
 import type { MergeMode } from './core/mergeQueue';
 
@@ -134,8 +135,7 @@ async function syncMergeConfig(repoRoot: string): Promise<void> {
 
 /**
  * Publish taskwright.sync.* to the shared config the out-of-process MCP server
- * reads, so agents' claim_task/release_task route through the sync engine.
- * (Manifest key `sync.pollIntervalSeconds` maps to the config field `pollSeconds`.)
+ * reads.
  */
 async function publishSyncConfig(repoRoot: string): Promise<void> {
   const commonDir = await resolveCommonDir(repoRoot);
@@ -145,26 +145,27 @@ async function publishSyncConfig(repoRoot: string): Promise<void> {
     mode: cfg.get('sync.mode'),
     ref: cfg.get('sync.ref'),
     remote: cfg.get('sync.remote'),
-    pollSeconds: cfg.get('sync.pollIntervalSeconds'),
+    installHooks: cfg.get('sync.installHooks'),
   });
   writeSyncConfig(syncConfigPath(commonDir), merged, nodeQueueFs);
 }
 
 /**
  * The one-time, one-consent "move board off code branches" migration + enable.
- * Adds the gitignore block, untracks the board dirs in a single commit, sets the
- * chosen sync mode, publishes the shared config, and seeds/pushes the board ref.
+ * Adds the gitignore block, untracks the board dirs in a single commit, sets
+ * `sync.mode` to `git`, publishes the shared config, and seeds the
+ * `taskwright-board` ref from the current board (Board Sync v2 §8) — pushing it
+ * to a remote is a separate, explicit Push Board action (not part of enabling).
  * Returns the chosen mode, or undefined when the user cancels.
  */
 async function runEnableSync(repoRoot: string): Promise<SyncMode | undefined> {
   const pick = await vscode.window.showWarningMessage(
-    'Enable Taskwright board sync? This makes ONE commit that moves board task files off your code branches (they will live on the "taskwright-board" ref instead). This removes the read-only cross-branch "ghost" cards. You can pick GitHub sharing or local-only.',
+    'Enable Taskwright board sync? This makes ONE commit that moves board task files off your code branches (they will live on the "taskwright-board" ref instead). This removes the read-only cross-branch "ghost" cards, and lets you version + share the board via explicit Push/Pull Board actions.',
     { modal: true },
-    'Enable (GitHub sharing)',
-    'Enable (local only)'
+    'Enable'
   );
   if (!pick) return undefined;
-  const mode: SyncMode = pick === 'Enable (GitHub sharing)' ? 'github' : 'local';
+  const mode: SyncMode = 'git';
 
   const git = (args: string[]) => execFileAsync('git', args, { cwd: repoRoot, timeout: 30_000 });
 
@@ -189,20 +190,27 @@ async function runEnableSync(repoRoot: string): Promise<SyncMode | undefined> {
     .update('sync.mode', mode, vscode.ConfigurationTarget.Workspace);
   await publishSyncConfig(repoRoot);
 
-  // 4. Seed + push the board ref.
+  // 4. Seed the board ref from the current board (local only — no push/remote
+  // here; sharing happens via the separate Push Board action). Idempotent:
+  // chains onto the ref's current tip when it already exists instead of
+  // creating a duplicate orphan root each time the command is re-run.
   const cfg = vscode.workspace.getConfiguration('taskwright');
+  const ref = cfg.get<string>('sync.ref') ?? 'taskwright-board';
   try {
-    await reconcileBoardRef({
-      repoRoot,
-      ref: cfg.get('sync.ref') ?? 'taskwright-board',
-      remote: mode === 'github' ? (cfg.get('sync.remote') ?? 'origin') : undefined,
-      indexFile: path.join(repoRoot, '.taskwright', 'board.index'),
+    const primaryRoot = await resolvePrimaryWorktreeRoot(repoRoot);
+    const parent = await refTip(primaryRoot, ref);
+    await snapshotBoardToRef({
+      repoRoot: primaryRoot,
+      ref,
+      indexFile: path.join(primaryRoot, '.taskwright', 'board.index'),
+      message: 'chore(taskwright): seed board ref (enableSync)',
+      parent: parent ?? undefined,
       backlogDir: 'backlog',
     });
   } catch (err) {
-    console.error('[Taskwright] enableSync reconcile failed:', err);
+    console.error('[Taskwright] enableSync ref seed failed:', err);
     void vscode.window.showWarningMessage(
-      'Board sync enabled locally, but seeding the shared ref failed (check your git remote/credentials). It will retry on the next poll.'
+      'Board sync enabled, but seeding the "taskwright-board" ref failed. You can retry with the Push Board command once available.'
     );
   }
   return mode;
@@ -390,9 +398,7 @@ export async function activate(context: vscode.ExtensionContext) {
       if (!mode) return;
       tasksHosts.forEach((host) => host.refresh());
       void vscode.window.showInformationMessage(
-        mode === 'github'
-          ? 'Taskwright board sync enabled (GitHub). Claims are now collision-proof across sessions and machines.'
-          : 'Taskwright board sync enabled (local). Cross-branch ghost cards are gone; enable GitHub sharing later to sync with others.'
+        'Taskwright board sync enabled. Cross-branch ghost cards are gone, and the board is versioned on the "taskwright-board" ref — push/pull it explicitly to share with others.'
       );
     })
   );
@@ -1508,7 +1514,7 @@ export async function activate(context: vscode.ExtensionContext) {
         (affectsTaskwrightConfig(event, 'sync.mode') ||
           affectsTaskwrightConfig(event, 'sync.ref') ||
           affectsTaskwrightConfig(event, 'sync.remote') ||
-          affectsTaskwrightConfig(event, 'sync.pollIntervalSeconds'))
+          affectsTaskwrightConfig(event, 'sync.installHooks'))
       ) {
         void publishSyncConfig(workspaceRootPath);
       }

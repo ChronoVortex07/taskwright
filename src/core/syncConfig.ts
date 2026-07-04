@@ -7,51 +7,53 @@ import type { QueueFsDeps } from './mergeQueue';
  * out-of-process MCP server read the same source of truth. Mirrors mergeConfig.
  */
 
-export type SyncMode = 'off' | 'local' | 'github';
+export type SyncMode = 'off' | 'git';
 
 export interface SyncConfig {
   mode: SyncMode;
   ref: string;
   remote: string;
-  pollSeconds: number;
+  installHooks: boolean;
 }
 
 export const DEFAULT_SYNC_CONFIG: SyncConfig = {
   mode: 'off',
   ref: 'taskwright-board',
   remote: 'origin',
-  pollSeconds: 20,
+  installHooks: false,
 };
 
 export function syncConfigPath(commonDir: string): string {
   return path.join(commonDir, 'taskwright', 'sync-config.json');
 }
 
-function isSyncMode(v: unknown): v is SyncMode {
-  return v === 'off' || v === 'local' || v === 'github';
+/** v1 modes read from an old settings.json / sync-config.json, remapped to v2's `off | git`. */
+function coerceMode(v: unknown): SyncMode {
+  if (v === 'off' || v === 'git') return v;
+  if (v === 'local') return 'off';
+  if (v === 'github') return 'git';
+  return DEFAULT_SYNC_CONFIG.mode;
 }
 
 function coerceString(v: unknown, fallback: string): string {
   return typeof v === 'string' && v.trim().length > 0 ? v.trim() : fallback;
 }
 
-function coercePoll(v: unknown): number {
-  return typeof v === 'number' && Number.isFinite(v) && v >= 5
-    ? v
-    : DEFAULT_SYNC_CONFIG.pollSeconds;
+function coerceBool(v: unknown, fallback: boolean): boolean {
+  return typeof v === 'boolean' ? v : fallback;
 }
 
 export function resolveSyncConfigFromSettings(raw: {
   mode?: unknown;
   ref?: unknown;
   remote?: unknown;
-  pollSeconds?: unknown;
+  installHooks?: unknown;
 }): SyncConfig {
   return {
-    mode: isSyncMode(raw.mode) ? raw.mode : DEFAULT_SYNC_CONFIG.mode,
+    mode: coerceMode(raw.mode),
     ref: coerceString(raw.ref, DEFAULT_SYNC_CONFIG.ref),
     remote: coerceString(raw.remote, DEFAULT_SYNC_CONFIG.remote),
-    pollSeconds: coercePoll(raw.pollSeconds),
+    installHooks: coerceBool(raw.installHooks, DEFAULT_SYNC_CONFIG.installHooks),
   };
 }
 

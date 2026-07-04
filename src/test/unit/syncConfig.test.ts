@@ -29,32 +29,62 @@ describe('syncConfig', () => {
     );
   });
 
-  it('defaults to off with the canonical ref/remote/poll', () => {
+  it('defaults to off with the canonical ref/remote, hooks opt-out', () => {
     expect(DEFAULT_SYNC_CONFIG).toEqual({
       mode: 'off',
       ref: 'taskwright-board',
       remote: 'origin',
-      pollSeconds: 20,
+      installHooks: false,
     });
   });
 
   it('coerces partial/invalid settings to defaults', () => {
-    expect(resolveSyncConfigFromSettings({ mode: 'github', ref: 'my-board' })).toEqual({
-      mode: 'github',
+    expect(resolveSyncConfigFromSettings({ mode: 'git', ref: 'my-board' })).toEqual({
+      mode: 'git',
       ref: 'my-board',
       remote: 'origin',
-      pollSeconds: 20,
+      installHooks: false,
     });
-    expect(resolveSyncConfigFromSettings({ mode: 'bogus', pollSeconds: -3 })).toEqual(
+    expect(resolveSyncConfigFromSettings({ mode: 'bogus', installHooks: 'yes' })).toEqual(
       DEFAULT_SYNC_CONFIG
     );
   });
 
-  it('round-trips through read/write; missing file → defaults', () => {
+  it('migrates legacy v1 modes on read: local -> off, github -> git', () => {
+    expect(resolveSyncConfigFromSettings({ mode: 'local' }).mode).toBe('off');
+    expect(resolveSyncConfigFromSettings({ mode: 'github' }).mode).toBe('git');
+    expect(resolveSyncConfigFromSettings({ mode: 'off' }).mode).toBe('off');
+  });
+
+  it('coerces installHooks to a boolean, defaulting to false', () => {
+    expect(resolveSyncConfigFromSettings({ installHooks: true }).installHooks).toBe(true);
+    expect(resolveSyncConfigFromSettings({ installHooks: false }).installHooks).toBe(false);
+    expect(resolveSyncConfigFromSettings({ installHooks: 'true' }).installHooks).toBe(false);
+    expect(resolveSyncConfigFromSettings({}).installHooks).toBe(false);
+  });
+
+  it('round-trips through read/write; missing file -> defaults', () => {
     const fsd = memFs();
     expect(readSyncConfig('/x/sync-config.json', fsd)).toEqual(DEFAULT_SYNC_CONFIG);
-    const cfg: SyncConfig = { mode: 'local', ref: 'b', remote: 'upstream', pollSeconds: 30 };
+    const cfg: SyncConfig = { mode: 'git', ref: 'b', remote: 'upstream', installHooks: true };
     writeSyncConfig('/x/sync-config.json', cfg, fsd);
     expect(readSyncConfig('/x/sync-config.json', fsd)).toEqual(cfg);
+  });
+
+  it('a persisted legacy config file (local/github) migrates on read', () => {
+    const fsd = memFs({
+      '/x/sync-config.json': JSON.stringify({
+        mode: 'github',
+        ref: 'taskwright-board',
+        remote: 'origin',
+        pollSeconds: 20,
+      }),
+    });
+    expect(readSyncConfig('/x/sync-config.json', fsd)).toEqual({
+      mode: 'git',
+      ref: 'taskwright-board',
+      remote: 'origin',
+      installHooks: false,
+    });
   });
 });

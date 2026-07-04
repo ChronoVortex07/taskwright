@@ -73,27 +73,25 @@
           "type": "string",
           "enum": [
             "off",
-            "local",
-            "github"
+            "git"
           ],
           "default": "off",
-          "markdownDescription": "How the Taskwright board is stored and shared. `off` (default): tasks are committed to your code branches as today. `local`: the board lives on a dedicated local ref (off your code branches) — kills cross-branch read-only ghosts, no sync. `github`: additionally push/pull that ref to a shared remote for near-real-time, collision-proof multi-user claims. Enable via the **Taskwright: Enable Board Sync** command, which performs the one-time off-branch migration."
+          "markdownDescription": "How the Taskwright board is versioned. `off` (default): the board is local, git-ignored working files — no versioning. `git`: the board is additionally snapshotted onto a dedicated `taskwright-board` ref you can explicitly push/pull to share it — no live/background sync. Enable via the **Taskwright: Enable Board Sync** command, which performs the one-time off-branch migration and seeds the ref."
         },
         "taskwright.sync.ref": {
           "type": "string",
           "default": "taskwright-board",
-          "markdownDescription": "Name of the dedicated orphan branch that stores the synced board (kept off your code branches). Change only if it collides with an existing branch."
+          "markdownDescription": "Name of the dedicated orphan branch that stores the versioned board (kept off your code branches). Change only if it collides with an existing branch."
         },
         "taskwright.sync.remote": {
           "type": "string",
           "default": "origin",
-          "markdownDescription": "Git remote used to share the board when `taskwright.sync.mode` is `github`. Uses your existing push credentials — no separate account or service."
+          "markdownDescription": "Git remote used to push/pull the board ref when `taskwright.sync.mode` is `git`. Uses your existing push credentials — no separate account or service."
         },
-        "taskwright.sync.pollIntervalSeconds": {
-          "type": "number",
-          "default": 20,
-          "minimum": 5,
-          "markdownDescription": "How often (seconds) Taskwright fetches the shared board ref to show teammates' changes. Claims are collision-proof the instant they happen (atomic push); this only controls display latency."
+        "taskwright.sync.installHooks": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Opt-in: install Windows-safe `pre-push`/`post-merge` git hooks that automatically push/pull the board ref alongside your normal code push/pull. Off by default — the explicit Push/Pull Board commands always work without this."
         },
         "taskwright.dispatchTemplate": {
           "type": "string",

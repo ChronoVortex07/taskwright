@@ -4,7 +4,7 @@
  * the list of paths to `git rm -r --cached` so they stop being tracked.
  */
 
-const SUBDIRS = ['tasks', 'drafts', 'completed', 'archive'] as const;
+const SUBDIRS = ['tasks', 'drafts', 'completed', 'archive', 'milestones'] as const;
 
 export const BOARD_IGNORE_BEGIN = '# >>> taskwright synced board >>>';
 export const BOARD_IGNORE_END = '# <<< taskwright synced board <<<';
