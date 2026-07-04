@@ -1,5 +1,11 @@
 # Synced Board — Phase 3: `syncConfig` + `boardLifecycle` Implementation Plan
 
+> **Superseded by Board Sync v2** — see
+> [`docs/superpowers/specs/2026-07-04-board-sync-v2-single-shared-board-design.md`](../specs/2026-07-04-board-sync-v2-single-shared-board-design.md).
+> `syncConfig.ts` was **repurposed** to the v2 `off | git` mode set, but `boardLifecycle.ts`'s live
+> reconcile/poll + compaction (built here) was **deleted outright** once its own callers were
+> repointed. Kept for historical context only; do not execute this plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the two pieces that make the synced board self-managing: `src/core/syncConfig.ts` (a shared, MCP-readable settings file, mirroring `mergeConfig.ts`) and `src/core/boardLifecycle.ts` (automatic create/seed/fetch/push reconciliation of the board ref, plus throttled history compaction).

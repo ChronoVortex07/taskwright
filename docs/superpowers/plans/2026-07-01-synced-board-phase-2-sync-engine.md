@@ -1,5 +1,10 @@
 # Synced Board — Phase 2: `boardSyncEngine` Implementation Plan
 
+> **Superseded by Board Sync v2** — see
+> [`docs/superpowers/specs/2026-07-04-board-sync-v2-single-shared-board-design.md`](../specs/2026-07-04-board-sync-v2-single-shared-board-design.md).
+> `boardSyncEngine.ts`'s live CAS loop (built here) was **deleted outright**; the single-board model
+> makes it structurally unnecessary. Kept for historical context only; do not execute this plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build `src/core/boardSyncEngine.ts` — the fetch → materialize → check → mutate → snapshot → push **compare-and-swap** loop that makes claims collision-proof over a shared git remote, plus a `refreshBoard` for near-real-time display.

@@ -15,7 +15,7 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
 
 ## Architecture (inherited)
 
-- `src/core/` — `BacklogParser`/`BacklogWriter` (read/write task files), `BacklogCli` (shells out to the optional `backlog` CLI — used only for the cross-branch board view), `CrossBranchTaskLoader` + `GitBranchService` (cross-branch task view), `FileWatcher`,
+- `src/core/` — `BacklogParser`/`BacklogWriter` (read/write task files), `BacklogCli` (shells out to the optional `backlog` CLI — used only for the cross-branch board view), `GitBranchService`, `FileWatcher`,
   `AgentIntegrationDetector`.
 - `src/providers/` — webview views (Kanban, task list/detail/preview).
 - `src/language/` — completion, hover, document links.
@@ -80,29 +80,39 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   claim-conflict surfacing (confirm before overriding a live foreign claim) and stale-claim expiry
   (claims older than `backlog.claimStalenessHours`, default 12h, are reclaimable without a prompt).
   Kanban cards show an active-task indicator and a stale-claim badge (amber), enriched in
-  `TasksController` (`isActiveTask`/`claimStale`). Cross-worktree board is inherited (Backlog.md
-  `check_active_branches` via `CrossBranchTaskLoader`). Proof: `e2e/board-indicators.spec.ts`.
-- **Synced board (GitHub-only, opt-in)** ✅: `taskwright.sync.mode` (`off` default | `local` |
-  `github`) moves the board **off code branches** onto a dedicated `taskwright-board` ref, killing the
-  read-only cross-branch "ghost" cards at the root (the board no longer lives on `task-*`/worktree
-  branches, so there is nothing to cross-scan — `BacklogParser.getTasksWithCrossBranch` goes local-only
-  when sync is on and excludes the board ref by name). Pure cores: `src/core/boardRef.ts` (isolated-index
-  `snapshotBoardToRef`/`materializeRefToWorktree` — never touches the user's HEAD/index/branch),
-  `src/core/boardSyncEngine.ts` (fetch→materialize→check→snapshot→**ff-only push** CAS loop:
-  `claimTaskSynced`/`releaseTaskSynced`/`refreshBoard`; two racers can't both claim because `git push` is
-  an atomic ref compare-and-swap), `src/core/boardLifecycle.ts` (`reconcileBoardRef` auto setup/heal +
-  lease-guarded `compactBoardRef`), `src/core/syncConfig.ts` (shared `<commonDir>/taskwright/sync-config.json`,
-  MCP-readable), `src/core/boardMigration.ts` (gitignore block + rm-cached paths). Wire-in:
-  `BoardSyncController` (reconcile/poll/status bar), `publishSyncConfig` + `taskwright.enableSync` command
-  (one-consent migration) in `extension.ts`, MCP `claim_task`/`release_task` and the UI `claimActions`
-  both route through the engine when `mode !== 'off'` — and so does **every MCP board write tool**
-  (`create_task`/`edit_task`/`create_subtask`/`attach_plan`/`complete`/`archive`/`restore`/`promote`/
-  `demote` via the generic `applyBoardWriteSynced` CAS loop + `withSyncedBoardWrite` in
-  `src/mcp/handlers.ts`), because a local-only write is silently pruned/overwritten by the next
-  materialize (TASK-28: `create_task` → `claim_task` used to delete the just-created task). Known gap:
-  extension-UI writes (`TasksController` create/edit/drag) still land only in the materialized local
-  copy without snapshot+push — follow-up task. Merge queue stays per-clone (documented boundary).
-  Design: `docs/superpowers/specs/2026-07-01-github-synced-board-design.md`; plans: `docs/superpowers/plans/2026-07-01-synced-board-phase-{1..4}-*.md`.
+  `TasksController` (`isActiveTask`/`claimStale`). Proof: `e2e/board-indicators.spec.ts`. (Cross-branch
+  scanning was later made unconditionally inert by Board Sync v2, below.)
+- **Board Sync v2 — single shared board + discrete push/pull** ✅: replaced the v1 GitHub live-CAS
+  engine (which kept N copies of the board and a poll loop trying to reconcile them — root cause of
+  silent rollbacks, file desyncs, and a blank Tree tab). v2 collapses to **exactly one physical
+  board** (the primary worktree's `backlog/`), resolved from any worktree by `resolveBoardRoot()`
+  (`src/core/boardRoot.ts`, parses `git worktree list --porcelain`) and used unconditionally by the MCP
+  server (`resolveWorkspaceBacklogRoot`) and the extension host (`BacklogWorkspaceManager`) — there is
+  nothing to reconcile because there is nothing to desync. Writes are atomic (`atomicWriteFileSync`,
+  write-temp-then-rename, `src/core/atomicWrite.ts`); claims (`claim_task`/`release_task`) are direct
+  surgical writes via `ClaimService`, no CAS. `check_active_branches` is effectively inert —
+  `BacklogParser.getTasksWithCrossBranch` is unconditionally local-only, so there are no cross-branch
+  ghost cards regardless of the setting.
+  **Versioning is a separate, discrete layer**, not a live loop: `taskwright.sync.mode` is `off`
+  (default; local git-ignored board, no versioning) | `git` (legacy `local`/`github` values migrate
+  automatically to `off`/`git` on read, `src/core/syncConfig.ts`). When `git`, `push_board`/`pull_board`
+  (MCP tools and `taskwright.pushBoard`/`taskwright.pullBoard` commands, one shared core
+  `src/core/boardPushPull.ts`) snapshot the board onto a `taskwright-board` ref (reusing
+  `src/core/boardRef.ts`'s isolated-index `snapshotBoardRoot`/`materializeToBoardRoot`, which never
+  touch the user's HEAD/index/branch), union-merge divergence via the pure `mergeBoards()`
+  (`src/core/boardMerge.ts` — per-file: only-one-side keeps it, both-sides-edited resolves by newer
+  frontmatter `updated_date` with the conflict surfaced, never silently dropped), and push/materialize.
+  A status-bar item + command palette (`src/core/boardSyncUx.ts`) surface mode/last-sync/conflicts;
+  conflict notifications always offer an "Open" action. Opt-in, Windows-safe `pre-push`/`post-merge`
+  git hooks (`taskwright.sync.installHooks`, `scripts/board-sync-hook.cjs`) call the identical
+  push/pull core, `--no-verify` to avoid recursion, and degrade gracefully (log, never abort the git
+  op) — never auto-installed. `taskwright.enableSync` is repurposed to idempotently ensure the
+  gitignore/untrack migration, remap the mode to `git`, and seed the ref — it never pushes to a
+  remote itself. `backlog/milestones/` is included in the versioned/snapshotted paths.
+  Design: `docs/superpowers/specs/2026-07-04-board-sync-v2-single-shared-board-design.md`; runbook:
+  `docs/superpowers/plans/2026-07-04-board-sync-v2-execution-handoff.md`. The prior GitHub-only CAS
+  design (`docs/superpowers/specs/2026-07-01-github-synced-board-design.md` and its
+  `2026-07-01-synced-board-phase-{1..4}-*.md` plans) is superseded — kept for history only.
 - **Tech-tree canvas (P2a)** ✅: a **Tree** tab (now the default view) renders the board as a dependency
   tech-tree. Pure core `src/webview/lib/treeGeometry.ts` computes node/edge geometry from the task graph
   (lanes = categories, bands = milestones/ages); the extension pushes layout via the `treeLayoutUpdated`

@@ -1,7 +1,16 @@
 # Design: GitHub-only synced board (off-branch storage + collision-proof claims)
 
 **Date:** 2026-07-01
-**Status:** Approved (brainstorm) — pending implementation plan
+**Status:** Superseded — see
+[`docs/superpowers/specs/2026-07-04-board-sync-v2-single-shared-board-design.md`](../specs/2026-07-04-board-sync-v2-single-shared-board-design.md)
+
+> **Superseded by Board Sync v2.** The live CAS engine (fetch → materialize → check → snapshot →
+> ff-only push, on a poll) this spec describes was retired: it kept N copies of the board (one
+> materialized copy per worktree, plus the ref) and a live background loop trying to reconcile them,
+> which in practice produced silent rollbacks, file desyncs, and a blank Tree tab. v2 collapses to
+> **one physical board** (the primary worktree's `backlog/`, resolved by `resolveBoardRoot()`) with
+> git-native sharing moved to **discrete, user-initiated** push/pull + union-merge — no live loop, no
+> per-worktree copy. Kept for historical context only; do not implement against this document.
 
 ## 1. Problem & root cause
 

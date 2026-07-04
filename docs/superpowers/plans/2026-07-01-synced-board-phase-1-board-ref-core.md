@@ -1,5 +1,10 @@
 # Synced Board — Phase 1: `boardRef` core Implementation Plan
 
+> **Superseded by Board Sync v2** — see
+> [`docs/superpowers/specs/2026-07-04-board-sync-v2-single-shared-board-design.md`](../specs/2026-07-04-board-sync-v2-single-shared-board-design.md).
+> The `boardRef.ts` primitives this plan built were **reused**, but the CAS engine they fed (Phase 2)
+> was retired. Kept for historical context only; do not execute this plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build `src/core/boardRef.ts` — the git-plumbing primitive that snapshots the board subdirectories onto a dedicated ref and materializes that ref back into the working copy, **without ever touching the user's HEAD, index, or working branch**.

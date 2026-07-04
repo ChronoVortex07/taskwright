@@ -1,5 +1,11 @@
 # Synced Board — Phase 4: wire-in, UI, and migration Implementation Plan
 
+> **Superseded by Board Sync v2** — see
+> [`docs/superpowers/specs/2026-07-04-board-sync-v2-single-shared-board-design.md`](../specs/2026-07-04-board-sync-v2-single-shared-board-design.md).
+> The `off`/`local`/`github` mode trichotomy and synced-write claim routing this plan wired in are
+> gone; v2 replaced them with a two-mode (`off | git`) config and direct surgical writes to the one
+> board. Kept for historical context only; do not execute this plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the synced board live end-to-end: route claims (UI + MCP) through the sync engine, stop the cross-branch loader from surfacing ghosts in sync mode, publish the config for the MCP server, add the poll/status controller, and provide the one-time, one-consent "enable sync" migration that moves the board off code branches.

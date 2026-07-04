@@ -711,7 +711,7 @@ exec)` (read a commit's board tree into a `BoardFileMap` via `ls-tree -r` + per-
   typecheck, and `bun run build` (webview + extension + both hook bundles + standalone MCP bundle) all
   green.
 
-### [ ] Task J — Docs: rewrite CLAUDE.md/AGENTS.md sync sections + retire old specs (DRAFT-24)
+### [x] Task J — Docs: rewrite CLAUDE.md/AGENTS.md sync sections + retire old specs (DRAFT-24)
 
 - **Deps:** C, F, I. **Do last** so docs match shipped behavior.
 - **Do:** rewrite the "Synced board" sections of `CLAUDE.md`/`AGENTS.md` to the v2 model (one physical
@@ -722,7 +722,31 @@ exec)` (read a commit's board tree into a `BoardFileMap` via `ls-tree -r` + per-
 - **Accept:** docs describe only v2, no dangling refs to `boardSyncEngine` CAS / off-local-github
   modes; v1 specs carry a superseded-by pointer; a reader can enable sync, push, and pull without
   hitting removed features.
-- **Handoff Notes:** _(…)_
+- **Handoff Notes:** `CLAUDE.md`'s "Synced board (GitHub-only, opt-in)" bullet is fully rewritten to
+  "Board Sync v2 — single shared board + discrete push/pull": one physical board via
+  `resolveBoardRoot()`, atomic writes, direct-write claims, `off | git` config with legacy
+  `local`/`github` migration, `push_board`/`pull_board` + `mergeBoards()` union-merge, the status-bar/
+  command-palette UX, and opt-in Windows-safe hooks — pointing at the v2 spec + this runbook. Also
+  fixed two **dangling references** discovered while doing this (not scoped to the "Synced board"
+  bullet, but the same class of staleness the Accept criterion targets): the Architecture list and the
+  Multi-session-polish (P5) bullet both still named `CrossBranchTaskLoader`, which Task C deleted
+  outright — removed/reworded both. `AGENTS.md`'s "Synced board" paragraph is rewritten the same way:
+  one physical board + advisory claims (no CAS surrender language), and versioning as an explicit
+  opt-in `push_board`/`pull_board` step with the same-task-conflict/rejection semantics spelled out.
+  **Superseded-by banners** added to the v1 spec
+  (`docs/superpowers/specs/2026-07-01-github-synced-board-design.md`) and all four
+  `2026-07-01-synced-board-phase-{1..4}-*.md` plans, each pointing at the v2 spec and naming what was
+  reused vs. deleted (phase 1's `boardRef.ts` primitives were reused; phases 2–4's CAS
+  engine/lifecycle/mode-trichotomy were deleted) — "kept for historical context only; do not
+  execute/implement against this document."
+  **Also fixed (adjacent, discovered while claiming this task):** DRAFT-17/18/20/21/22/23 (Tasks
+  C/E/F/I/G/H) still showed board status `"To Do"` despite being merged — the exact inconsistency
+  Task G's Handoff Notes flagged as "whoever tackles Task J... is aware." This was blocking DRAFT-24
+  itself (`claim_task` returned `locked: true, blockedBy: [DRAFT-17, DRAFT-20, DRAFT-21]`), so fixed by
+  flipping all six to `Done` via `edit_task` after verifying each one's progress-log commit sha is real
+  (`git log --oneline --all | grep <sha>`), one sequential write at a time per the runbook's guardrail
+  5, before claiming DRAFT-24.
+  No code changed — `bun run lint`/`bun run typecheck`/`bun run test` all still green (docs-only diff).
 
 ---
 
@@ -794,6 +818,14 @@ _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <
   across fresh clones afterward, both directions). `syncBoardHooks()` wired into `extension.ts`
   (activation + `sync.installHooks` config-change), plus `taskwright.installBoardHooks`/
   `uninstallBoardHooks` commands. Full suite (1505 tests)/lint/typecheck/build green.
+- 2026-07-04 · Task J · `<pending>` · Rewrote `CLAUDE.md`/`AGENTS.md` "Synced board" prose to
+  the v2 model (one physical board, `off | git` config, `push_board`/`pull_board` + union-merge,
+  status-bar/palette UX, opt-in hooks); fixed two dangling `CrossBranchTaskLoader` references
+  (deleted by Task C) found along the way. Added superseded-by banners to the v1 spec and its four
+  phase plans. Also flipped DRAFT-17/18/20/21/22/23's stale `To Do` board status to `Done`
+  (verified against real merged commit shas) — this was the flagged inconsistency from Task G's
+  notes, and was actually blocking `claim_task` on this very task. Docs-only; full suite
+  (1505 tests)/lint/typecheck green, no code changed.
 
 ---
 

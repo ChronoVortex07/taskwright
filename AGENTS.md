@@ -26,13 +26,22 @@ external CLI. At the start of a task session:
 Generated task files stay byte-for-byte compatible with Backlog.md, so the board remains
 readable by the upstream tools if they are installed.
 
-**Synced board (when `taskwright.sync.mode` is `local`/`github`).** The board lives on a dedicated
-`taskwright-board` ref (off code branches), not in `backlog/tasks` on your branch — those dirs are
-git-ignored and materialized from the ref. `claim_task`/`release_task` route through the sync engine:
-a claim does an atomic fetch→push, so if another session/machine already holds the task your claim
-**surrenders** (`claimed: false, surrendered: true, heldBy: …`) — pick a different task. Do not edit or
-commit `backlog/tasks` files by hand in this mode; use the MCP write tools. The cross-branch board view
-is disabled (nothing to scan), which is what removes the read-only "ghost" cards.
+**Board Sync v2.** There is always exactly **one physical board** — the primary checkout's `backlog/`,
+resolved from any worktree (no per-worktree copy, no poll, no CAS). `claim_task`/`release_task` are
+direct surgical writes to it; a claim only fails if another session already holds the task
+(`claimed: false` — pick a different task). Do not edit `backlog/tasks` files by hand; always use the
+MCP write tools. Cross-branch scanning is inert (nothing to scan), so there are no read-only "ghost"
+cards regardless of `check_active_branches`.
+
+Git-native **sharing** is a separate, opt-in, discrete step — never a live sync. `taskwright.sync.mode`
+is `off` (default) or `git`; when `git`, call `push_board` / `pull_board` (MCP tools, or the
+`taskwright.pushBoard` / `taskwright.pullBoard` commands / status-bar button) to snapshot the board
+onto the `taskwright-board` ref and union-merge it with the remote. A same-task edit on both sides
+resolves by newer `updated_date` and is always surfaced as a conflict — never silently dropped. If
+`push_board` reports `rejected: true` (the remote moved again), just call it again; nothing is lost.
+Run `taskwright.enableSync` once first to turn sync on. Opt-in `pre-push`/`post-merge` git hooks can
+automate this (`taskwright.sync.installHooks`), but board sync never blocks or fails your actual git
+operation.
 
 </CRITICAL_INSTRUCTION>
 
