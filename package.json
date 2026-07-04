@@ -345,6 +345,16 @@
           "when": "view == taskwright.kanban",
           "group": "navigation@1"
         }
+      ],
+      "commandPalette": [
+        {
+          "command": "taskwright.pushBoard",
+          "when": "taskwright.hasBacklog"
+        },
+        {
+          "command": "taskwright.pullBoard",
+          "when": "taskwright.hasBacklog"
+        }
       ]
     },
     "viewsContainers": {

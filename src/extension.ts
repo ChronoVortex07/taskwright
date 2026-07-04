@@ -60,6 +60,13 @@ import { applyBoardIgnore, boardTrackedPaths } from './core/boardMigration';
 import { resolvePrimaryWorktreeRoot } from './core/boardRoot';
 import { snapshotBoardToRef, refTip } from './core/boardRef';
 import { pushBoard, pullBoard } from './core/boardPushPull';
+import type { MergeConflict } from './core/boardMerge';
+import {
+  formatBoardSyncStatusBar,
+  buildBoardSyncQuickPickItems,
+  formatConflictMessage,
+  type BoardSyncStatusBarState,
+} from './core/boardSyncUx';
 import { planStatusSync, parseStatusesLine, rewriteStatusesLine } from './core/mergeStatusConfig';
 import type { MergeMode } from './core/mergeQueue';
 
@@ -67,6 +74,7 @@ const execFileAsync = promisify(execFile);
 
 let fileWatcher: FileWatcher | undefined;
 let workspaceStatusBarItem: vscode.StatusBarItem | undefined;
+let boardSyncStatusBarItem: vscode.StatusBarItem | undefined;
 // True once this session has (re-)registered the Taskwright MCP server with
 // Claude Code, so deactivate only attempts cleanup for users who set it up.
 let claudeMcpRegistered = false;
@@ -313,6 +321,14 @@ export async function activate(context: vscode.ExtensionContext) {
     console.log('[Taskwright] Found backlog folder:', backlogFolder);
   }
 
+  // Gates command-palette visibility of workspace-dependent commands (Task G:
+  // push/pull board only makes sense once a backlog workspace is open).
+  void vscode.commands.executeCommand(
+    'setContext',
+    'taskwright.hasBacklog',
+    Boolean(backlogFolder)
+  );
+
   // Initialize parser (may be undefined if no backlog folder)
   let parser = activeRoot
     ? new BacklogParser(
@@ -400,9 +416,83 @@ export async function activate(context: vscode.ExtensionContext) {
       const mode = await runEnableSync(workspaceRootPath);
       if (!mode) return;
       tasksHosts.forEach((host) => host.refresh());
+      void refreshBoardSyncStatusBar();
       void vscode.window.showInformationMessage(
         'Taskwright board sync enabled. Cross-branch ghost cards are gone, and the board is versioned on the "taskwright-board" ref — push/pull it explicitly to share with others.'
       );
+    })
+  );
+
+  // Board Sync v2 push/pull UX (Task G): a status-bar item summarizing mode +
+  // last push/pull + conflict count, with a quick-pick for push/pull/enable —
+  // and a shared "never silent" conflict notification with an Open action.
+  // Reads the same `boardSyncState` the push/pull commands below update.
+  let boardSyncState: BoardSyncStatusBarState = { mode: DEFAULT_SYNC_CONFIG.mode };
+
+  async function refreshBoardSyncStatusBar(): Promise<void> {
+    if (!workspaceRootPath) {
+      boardSyncStatusBarItem?.hide();
+      return;
+    }
+    const commonDir = await resolveCommonDir(workspaceRootPath);
+    const syncCfg = commonDir
+      ? readSyncConfig(syncConfigPath(commonDir), nodeQueueFs)
+      : DEFAULT_SYNC_CONFIG;
+    boardSyncState = { ...boardSyncState, mode: syncCfg.mode };
+
+    if (!boardSyncStatusBarItem) {
+      boardSyncStatusBarItem = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Left,
+        98
+      );
+      boardSyncStatusBarItem.command = 'taskwright.boardSyncQuickPick';
+      context.subscriptions.push(boardSyncStatusBarItem);
+    }
+    const { text, tooltip } = formatBoardSyncStatusBar(boardSyncState);
+    boardSyncStatusBarItem.text = text;
+    boardSyncStatusBarItem.tooltip = tooltip;
+    boardSyncStatusBarItem.show();
+  }
+  void refreshBoardSyncStatusBar();
+
+  /** Never-silent conflict surfacing, shared by push and pull: lists ids, offers to open one. */
+  async function showConflictNotification(
+    verb: 'pushed' | 'pulled',
+    conflicts: MergeConflict[]
+  ): Promise<void> {
+    const choice = await vscode.window.showWarningMessage(
+      formatConflictMessage(verb, conflicts),
+      'Open'
+    );
+    if (choice !== 'Open') return;
+    const targetId =
+      conflicts.length === 1
+        ? conflicts[0].id
+        : (
+            await vscode.window.showQuickPick(
+              conflicts.map((c) => ({ label: c.id, description: c.path })),
+              { placeHolder: 'Open which conflicted task?' }
+            )
+          )?.label;
+    if (targetId) {
+      void vscode.commands.executeCommand('taskwright.openTaskDetail', targetId);
+    }
+  }
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('taskwright.boardSyncQuickPick', async () => {
+      const picked = await vscode.window.showQuickPick(
+        buildBoardSyncQuickPickItems(boardSyncState),
+        { placeHolder: 'Board Sync' }
+      );
+      if (!picked) return;
+      if (picked.action === 'enableSync') {
+        await vscode.commands.executeCommand('taskwright.enableSync');
+      } else if (picked.action === 'push') {
+        await vscode.commands.executeCommand('taskwright.pushBoard');
+      } else {
+        await vscode.commands.executeCommand('taskwright.pullBoard');
+      }
     })
   );
 
@@ -432,18 +522,40 @@ export async function activate(context: vscode.ExtensionContext) {
           message: 'chore(taskwright): push board',
         });
         tasksHosts.forEach((host) => host.refresh());
+        boardSyncState = {
+          ...boardSyncState,
+          lastSync: {
+            type: 'push',
+            atIso: new Date().toISOString(),
+            ok: result.pushed,
+            conflictIds: result.conflicts.map((c) => c.id),
+            failureReason: result.pushed
+              ? undefined
+              : `${result.rejected ? 'remote moved — ' : ''}${result.message ?? 'unknown error'}`,
+          },
+        };
+        void refreshBoardSyncStatusBar();
         if (!result.pushed) {
           void vscode.window.showWarningMessage(
             `Push Board failed${result.rejected ? ' (remote moved — try again)' : ''}: ${result.message ?? 'unknown error'}`
           );
         } else if (result.conflicts.length > 0) {
-          void vscode.window.showWarningMessage(
-            `Board pushed with ${result.conflicts.length} conflict(s) resolved by the newer edit: ${result.conflicts.map((c) => c.id).join(', ')}`
-          );
+          void showConflictNotification('pushed', result.conflicts);
         } else {
           void vscode.window.showInformationMessage('Board pushed.');
         }
       } catch (err) {
+        boardSyncState = {
+          ...boardSyncState,
+          lastSync: {
+            type: 'push',
+            atIso: new Date().toISOString(),
+            ok: false,
+            conflictIds: [],
+            failureReason: err instanceof Error ? err.message : String(err),
+          },
+        };
+        void refreshBoardSyncStatusBar();
         void vscode.window.showErrorMessage(
           `Push Board failed: ${err instanceof Error ? err.message : String(err)}`
         );
@@ -475,18 +587,38 @@ export async function activate(context: vscode.ExtensionContext) {
           message: 'chore(taskwright): pull board',
         });
         tasksHosts.forEach((host) => host.refresh());
+        boardSyncState = {
+          ...boardSyncState,
+          lastSync: {
+            type: 'pull',
+            atIso: new Date().toISOString(),
+            ok: result.pulled,
+            conflictIds: result.conflicts.map((c) => c.id),
+            failureReason: result.pulled ? undefined : (result.message ?? 'unknown error'),
+          },
+        };
+        void refreshBoardSyncStatusBar();
         if (!result.pulled) {
           void vscode.window.showWarningMessage(
             `Pull Board: ${result.message ?? 'nothing to pull'}`
           );
         } else if (result.conflicts.length > 0) {
-          void vscode.window.showWarningMessage(
-            `Board pulled with ${result.conflicts.length} conflict(s) resolved by the newer edit: ${result.conflicts.map((c) => c.id).join(', ')}`
-          );
+          void showConflictNotification('pulled', result.conflicts);
         } else {
           void vscode.window.showInformationMessage('Board pulled.');
         }
       } catch (err) {
+        boardSyncState = {
+          ...boardSyncState,
+          lastSync: {
+            type: 'pull',
+            atIso: new Date().toISOString(),
+            ok: false,
+            conflictIds: [],
+            failureReason: err instanceof Error ? err.message : String(err),
+          },
+        };
+        void refreshBoardSyncStatusBar();
         void vscode.window.showErrorMessage(
           `Pull Board failed: ${err instanceof Error ? err.message : String(err)}`
         );

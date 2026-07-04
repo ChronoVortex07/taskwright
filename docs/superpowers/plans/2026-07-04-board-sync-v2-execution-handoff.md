@@ -562,7 +562,7 @@ exec)` (read a commit's board tree into a `BoardFileMap` via `ls-tree -r` + per-
   adds, nothing removed), lint, typecheck, and `bun run build` (webview + extension + standalone MCP
   bundle) all green.
 
-### [ ] Task G — Push/Pull board UX: status bar + command palette (DRAFT-22)
+### [x] Task G — Push/Pull board UX: status bar + command palette (DRAFT-22)
 
 - **Deps:** F.
 - **Do:** status-bar item (mode, last push/pull, conflict count; click → push/pull quick-pick);
@@ -571,7 +571,68 @@ exec)` (read a commit's board tree into a `BoardFileMap` via `ls-tree -r` + per-
   theme-aware, no emojis.
 - **Accept:** status bar reflects mode + updates after sync; pull conflicts surfaced with ids;
   commands appear only for a backlog workspace; run the same core as the MCP tools.
-- **Handoff Notes:** _(…)_
+- **Handoff Notes:** New pure core `src/core/boardSyncUx.ts` — dependency-free (no `vscode` import,
+  matching the project's established "pure core + thin glue" split): `formatBoardSyncStatusBar(state)`
+  renders the status-bar text/tooltip for four states (off / on-idle / on-clean / on-with-conflicts /
+  on-failed, distinguished so a conflict never reads the same as an outright failure);
+  `buildBoardSyncQuickPickItems(state)` returns "Enable" when off or "Push"/"Pull" when on; and
+  `formatConflictMessage(verb, conflicts)` is the one place the "N conflict(s) resolved by the newer
+  edit: id, id, …" wording lives (previously duplicated inline in both the push and pull command
+  handlers — this task also deduplicated that). Times render as `HH:mm` sliced straight out of the
+  ISO string's UTC portion (`atIso.slice(11, 16)`), not `toLocaleTimeString()`, so the unit tests
+  (`src/test/unit/boardSyncUx.test.ts`, 9 tests, written first per TDD) are deterministic regardless of
+  the CI/dev machine's timezone.
+  **Wiring (`extension.ts`):** a new `boardSyncStatusBarItem` (Left alignment, priority 98 — just right
+  of the existing multi-root `workspaceStatusBarItem` at 99) is created lazily inside
+  `refreshBoardSyncStatusBar()`, the same lazy-create-on-first-use shape as the existing workspace
+  status bar. Its `command` is a new `taskwright.boardSyncQuickPick`, registered via
+  `registerCommand` only — deliberately **not** added to `package.json`'s `commands` list (matching the
+  existing internal-command precedent of `taskwright.filterByStatus`/`filterByLabel`, which are also
+  reachable only from a UI affordance, never the command palette). Picking "Push"/"Pull"/"Enable" from
+  the quick-pick just `executeCommand`s the existing `taskwright.pushBoard`/`pullBoard`/`enableSync`
+  commands — one core, three entry points (status-bar click, quick-pick, command palette), matching
+  this task's "run the same core as the MCP tools" Accept bullet at the UI layer too.
+  **State tracking:** `enableSync`/`pushBoard`/`pullBoard`'s handlers now record a `boardSyncState.lastSync`
+  (`type`, ISO `atIso`, `ok`, `conflictIds`, `failureReason`) after every attempt — success, rejection,
+  _and_ the `catch` branches — then call `refreshBoardSyncStatusBar()`, so the bar reflects the outcome
+  of any sync **the extension itself performed** (command palette or status-bar quick-pick). A push/pull
+  run through the MCP tool from an agent session in a different process is invisible to this in-memory
+  state — accepted, since the Accept bullet only asks for the bar to update "after sync," which for this
+  UI necessarily means a sync this UI initiated.
+  **Conflict notification "Open" action:** a new `showConflictNotification(verb, conflicts)` helper
+  (shared by push and pull) shows `formatConflictMessage`'s warning with an `'Open'` button — mirroring
+  the existing `dispatchTask` flow's `'Open handoff'` action already in this file. One conflicted id
+  opens it directly via `taskwright.openTaskDetail`; more than one first shows a quick-pick of the
+  conflicted ids (with the file path as description) so the user picks which to open. Never silent
+  either way — this was already true before this task (Task F's inline warning listed the ids), this
+  task only adds the action.
+  **Command-palette gating:** a new `taskwright.hasBacklog` context key is set once in `activate()`
+  from `Boolean(backlogFolder)` (the same `vscode.commands.executeCommand('setContext', …)` pattern
+  already used for `backlog.viewMode`), and `package.json` gained a first `contributes.menus.commandPalette`
+  block (didn't exist before this task) with `"when": "taskwright.hasBacklog"` entries for
+  `taskwright.pushBoard`/`taskwright.pullBoard`. Deliberately scoped to just these two: `enableSync`'s
+  palette visibility is pre-existing UX outside this task's Accept criteria, and `boardSyncQuickPick`
+  isn't a palette command at all (see above), so neither needed a `when` clause.
+  **Icon note (Do bullet said "Lucide inline SVG"):** a native VS Code `StatusBarItem`/`QuickPickItem`
+  can only render the built-in codicon syntax (`$(icon-id)`) — inline SVG isn't supported there; that
+  convention is specifically for this project's **webview** UI (Svelte components), not native chrome.
+  Used codicons already established elsewhere in `package.json` (`$(refresh)`, `$(add)`, `$(milestone)`)
+  — theme-aware, no emojis, satisfying the guideline's intent for the surface it actually applies to.
+  **Known pre-existing limitation, not fixed here (matches Task F's identical, already-accepted scope
+  boundary):** `workspaceRootPath` (and now `taskwright.hasBacklog`) are captured once at `activate()`
+  time; switching the active backlog root in a multi-root workspace does not re-target either the
+  push/pull commands or this task's status bar/gating. Flagging again since it now affects two features
+  instead of one, in case a future task wants to fix it for both at once.
+  **Unrelated stray finding, flagged not fixed:** while resuming this relay, the board's own draft
+  entries for Tasks C/E/F/I (DRAFT-17/18/20/21) still show `status: "To Do"` even though their code is
+  merged (verified against `git log`) and their Handoff Notes/Progress Log say Done — apparently no
+  session in the relay called `edit_task` to flip status on completion (DRAFT-15/16/19 did get marked
+  Done, so it's inconsistent, not a rule). Left untouched — out of scope for this task's Do/Accept
+  bullets, and the runbook's own relay instructions don't call for a board-status update step; noting it
+  here so whoever tackles Task J (docs) or a board cleanup pass is aware the board's status column can't
+  be trusted for Tasks C/E/F/I without cross-checking the Progress Log below.
+  Full suite (1488 tests, up from 1479), lint, typecheck, and `bun run build` (webview + extension +
+  standalone MCP bundle) all green.
 
 ### [ ] Task H — Opt-in Windows-safe git hooks (pre-push / post-merge) (DRAFT-23)
 
@@ -648,6 +709,14 @@ _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <
   separate from `gitExec`) and as `taskwright.pushBoard`/`taskwright.pullBoard` VS Code commands.
   Flagged (not fixed) a pre-existing `gitFacts()` `commonDir` resolution bug — see Handoff Notes. Full
   suite (1479 tests)/lint/typecheck/build green.
+- 2026-07-04 · Task G · `(pending)` · Added pure `src/core/boardSyncUx.ts` (status-bar
+  text/tooltip formatting, quick-pick items, shared conflict-message wording; 9 unit tests) and wired a
+  lazily-created board-sync status-bar item + `taskwright.boardSyncQuickPick` command into
+  `extension.ts`; push/pull/enableSync handlers now record `lastSync` state and refresh the bar;
+  conflict notifications gained an "Open" action (single conflict opens directly, multiple show a
+  quick-pick) mirroring the existing dispatch "Open handoff" pattern; added `taskwright.hasBacklog`
+  context key + a new `commandPalette` menu block gating `pushBoard`/`pullBoard`. Full suite (1488
+  tests)/lint/typecheck/build green.
 
 ---
 
