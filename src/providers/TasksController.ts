@@ -230,11 +230,6 @@ export class TasksController {
       });
       this.host.postMessage({ type: 'settingsUpdated', settings: this.getTasksViewSettings() });
 
-      // Activate cross-branch mode from config
-      if (config.check_active_branches) {
-        this.dataSourceMode = 'cross-branch';
-      }
-
       let taskLoader: Promise<Task[]>;
       if (this.viewMode === 'archived') {
         taskLoader = this.parser.getArchivedTasks();
@@ -740,7 +735,11 @@ export class TasksController {
             if (message.category === 'Misc' || message.category.trim() === '') {
               await this.treeFieldService.clearCategory(message.taskId, this.parser);
             } else {
-              await this.treeFieldService.setCategory(message.taskId, message.category, this.parser);
+              await this.treeFieldService.setCategory(
+                message.taskId,
+                message.category,
+                this.parser
+              );
             }
           }
           // Milestone (band) via BacklogWriter. Backburner = no milestone (empty string,

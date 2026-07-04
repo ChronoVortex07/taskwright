@@ -14,10 +14,6 @@ import {
   DocumentType,
   DecisionStatus,
 } from './types';
-import { GitBranchService } from './GitBranchService';
-import { CrossBranchTaskLoader } from './CrossBranchTaskLoader';
-import { readSyncConfig, syncConfigPath, DEFAULT_SYNC_CONFIG } from './syncConfig';
-import { nodeQueueFs } from './mergeQueue';
 
 /**
  * Raw frontmatter structure from YAML parsing
@@ -496,69 +492,13 @@ export class BacklogParser {
   }
 
   /**
-   * Get tasks with cross-branch support.
-   * If cross-branch is enabled in config and the workspace is a git repo,
-   * loads and merges tasks from all active branches.
-   * Falls back to local-only on any errors.
+   * Board Sync v2 (Task C): the board is always a single local root, so there is
+   * nothing to cross-scan — this is unconditionally local-only regardless of
+   * `check_active_branches`. Kept as a distinct method (rather than inlining
+   * `getTasks()` at call sites) so existing callers are unaffected.
    */
   async getTasksWithCrossBranch(): Promise<Task[]> {
-    const config = await this.getConfig();
-
-    // Check if cross-branch features are enabled
-    if (!config.check_active_branches) {
-      // Local-only mode (default)
-      return this.getTasks();
-    }
-
-    // Get workspace root (explicit if provided, otherwise parent of backlog folder)
-    const wsRoot = this.workspaceRoot ?? path.dirname(this.backlogPath);
-
-    // Check if this is a git repository
-    const gitService = new GitBranchService(wsRoot);
-    if (!(await gitService.isGitRepository())) {
-      console.log('[Taskwright Parser] Not a git repository, falling back to local-only');
-      return this.getTasks();
-    }
-
-    // Synced-board gate: when sync is on, the board lives off code branches, so
-    // there is nothing to cross-scan — going local-only is what prevents the
-    // read-only "ghost" cards from transient worktree/task-* branches. The board
-    // ref is also excluded by name as belt-and-suspenders in the transitional case.
-    const sync = await this.resolveSyncConfigMode(gitService);
-    if (sync.mode !== 'off') {
-      return this.getTasks();
-    }
-
-    try {
-      const backlogDir = path.relative(wsRoot, this.backlogPath);
-      const loader = new CrossBranchTaskLoader(gitService, this, config, wsRoot, backlogDir, [
-        sync.ref,
-      ]);
-      return await loader.loadTasksAcrossBranches();
-    } catch (error) {
-      // Fallback to local-only on git errors
-      console.error(
-        '[Taskwright Parser] Cross-branch loading failed, falling back to local:',
-        error
-      );
-      return this.getTasks();
-    }
-  }
-
-  /**
-   * Resolve the synced-board mode + ref from the shared `sync-config.json` under
-   * the git common dir. Defaults to `off` when it can't be read (sync is opt-in).
-   */
-  private async resolveSyncConfigMode(
-    gitService: GitBranchService
-  ): Promise<{ mode: string; ref: string }> {
-    try {
-      const commonDir = await gitService.getCommonDir();
-      if (!commonDir) return DEFAULT_SYNC_CONFIG;
-      return readSyncConfig(syncConfigPath(commonDir), nodeQueueFs);
-    } catch {
-      return DEFAULT_SYNC_CONFIG;
-    }
+    return this.getTasks();
   }
 
   /**

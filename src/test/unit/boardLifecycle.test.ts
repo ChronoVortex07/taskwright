@@ -1,11 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import {
-  reconcileBoardRef,
-  compactBoardRef,
-  DEFAULT_COMPACT_THRESHOLD,
-  type LifecycleDeps,
-} from '../../core/boardLifecycle';
-import type { SyncTarget } from '../../core/boardSyncEngine';
+import { reconcileBoardRef, type LifecycleDeps } from '../../core/boardLifecycle';
+import type { SyncTarget } from '../../core/boardRef';
 
 const TARGET: SyncTarget = {
   repoRoot: '/repo',
@@ -24,9 +19,6 @@ function deps(over: Partial<LifecycleDeps> = {}): Partial<LifecycleDeps> {
     isAncestor: async () => false,
     snapshot: async () => ({ commit: 'seed' }),
     materialize: async () => {},
-    revCount: async () => 0,
-    commitTreeRoot: async () => 'ROOT',
-    pushForceWithLease: async () => ({ ok: true, rejected: false, stderr: '' }),
     ...over,
   };
 }
@@ -119,51 +111,5 @@ describe('reconcileBoardRef', () => {
     );
     expect(out).toEqual({ action: 'created' });
     expect(pushed).toBe(0);
-  });
-});
-
-describe('compactBoardRef', () => {
-  it('does nothing below the threshold', async () => {
-    const out = await compactBoardRef(TARGET, {
-      maxCommits: 200,
-      deps: deps({ revCount: async () => 10 }),
-    });
-    expect(out).toEqual({ squashed: false });
-  });
-
-  it('squashes with a lease-guarded force-push above the threshold', async () => {
-    let leaseTip: string | undefined;
-    const out = await compactBoardRef(TARGET, {
-      maxCommits: 200,
-      deps: deps({
-        revCount: async () => 500,
-        fetchRef: async () => 'REMOTE_TIP',
-        commitTreeRoot: async () => 'ROOT',
-        setLocalRef: async () => {},
-        pushForceWithLease: async (_r, _rem, _ref, tip) => {
-          leaseTip = tip;
-          return { ok: true, rejected: false, stderr: '' };
-        },
-      }),
-    });
-    expect(out).toEqual({ squashed: true });
-    expect(leaseTip).toBe('REMOTE_TIP'); // lease is on the observed remote tip
-  });
-
-  it('aborts (no squash) when the lease is stale', async () => {
-    const out = await compactBoardRef(TARGET, {
-      maxCommits: 200,
-      deps: deps({
-        revCount: async () => 500,
-        fetchRef: async () => 'REMOTE_TIP',
-        commitTreeRoot: async () => 'ROOT',
-        pushForceWithLease: async () => ({ ok: false, rejected: true, stderr: 'stale info' }),
-      }),
-    });
-    expect(out).toEqual({ squashed: false });
-  });
-
-  it('exposes a sane default threshold', () => {
-    expect(DEFAULT_COMPACT_THRESHOLD).toBe(200);
   });
 });

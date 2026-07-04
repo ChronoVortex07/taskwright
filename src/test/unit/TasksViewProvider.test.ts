@@ -1386,7 +1386,7 @@ describe('TasksViewProvider', () => {
   });
 
   describe('cross-branch mode from config', () => {
-    it('should use cross-branch loader when check_active_branches is true', async () => {
+    it('stays local-only when check_active_branches is true (Board Sync v2 Task C / TASK-35)', async () => {
       (mockParser.getConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
         check_active_branches: true,
       });
@@ -1397,8 +1397,8 @@ describe('TasksViewProvider', () => {
 
       await provider.refresh();
 
-      expect(mockParser.getTasksWithCrossBranch).toHaveBeenCalled();
-      expect(mockParser.getTasks).not.toHaveBeenCalled();
+      expect(mockParser.getTasks).toHaveBeenCalled();
+      expect(mockParser.getTasksWithCrossBranch).not.toHaveBeenCalled();
     });
 
     it('should stay in local-only mode when check_active_branches is false', async () => {

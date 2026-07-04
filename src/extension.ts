@@ -56,14 +56,12 @@ import {
 } from './core/syncConfig';
 import { applyBoardIgnore, boardTrackedPaths } from './core/boardMigration';
 import { reconcileBoardRef } from './core/boardLifecycle';
-import { BoardSyncController } from './providers/BoardSyncController';
 import { planStatusSync, parseStatusesLine, rewriteStatusesLine } from './core/mergeStatusConfig';
 import type { MergeMode } from './core/mergeQueue';
 
 const execFileAsync = promisify(execFile);
 
 let fileWatcher: FileWatcher | undefined;
-let crossBranchStatusBarItem: vscode.StatusBarItem | undefined;
 let workspaceStatusBarItem: vscode.StatusBarItem | undefined;
 // True once this session has (re-)registered the Taskwright MCP server with
 // Claude Code, so deactivate only attempts cleanup for users who set it up.
@@ -382,19 +380,6 @@ export async function activate(context: vscode.ExtensionContext) {
     void publishSyncConfig(workspaceRootPath);
   }
 
-  // Synced-board controller: reconcile the board ref, poll the shared remote to
-  // reflect teammates' changes, and reflect state in the status bar. No-ops when
-  // taskwright.sync.mode is 'off'. Refreshing the board hosts materializes any
-  // incoming changes into the UI.
-  let boardSync: BoardSyncController | undefined;
-  if (workspaceRootPath) {
-    boardSync = new BoardSyncController(workspaceRootPath, () =>
-      tasksHosts.forEach((host) => host.refresh())
-    );
-    context.subscriptions.push(boardSync);
-    void boardSync.start();
-  }
-
   context.subscriptions.push(
     vscode.commands.registerCommand('taskwright.enableSync', async () => {
       if (!workspaceRootPath) {
@@ -403,7 +388,6 @@ export async function activate(context: vscode.ExtensionContext) {
       }
       const mode = await runEnableSync(workspaceRootPath);
       if (!mode) return;
-      await boardSync?.start(); // restart with the new mode
       tasksHosts.forEach((host) => host.refresh());
       void vscode.window.showInformationMessage(
         mode === 'github'
@@ -537,7 +521,7 @@ export async function activate(context: vscode.ExtensionContext) {
     tasksHosts.forEach((host) => host.refresh());
 
     // Check cross-branch config for the new root
-    checkCrossBranchConfig(parser, context, tasksHosts);
+    checkCrossBranchConfig(parser);
 
     // Check agent integration status for the new root
     tasksHosts.forEach((host) => host.checkAndSendIntegrationState());
@@ -1526,7 +1510,7 @@ export async function activate(context: vscode.ExtensionContext) {
           affectsTaskwrightConfig(event, 'sync.remote') ||
           affectsTaskwrightConfig(event, 'sync.pollIntervalSeconds'))
       ) {
-        void publishSyncConfig(workspaceRootPath).then(() => boardSync?.start());
+        void publishSyncConfig(workspaceRootPath);
       }
       if (affectsTaskwrightConfig(event, 'mergeMode')) {
         const backlogForStatus = manager.getActiveRoot()?.backlogPath;
@@ -1539,9 +1523,9 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // Check for cross-branch feature configuration and CLI availability
+  // Check for cross-branch feature configuration
   if (parser) {
-    checkCrossBranchConfig(parser, context, tasksHosts);
+    checkCrossBranchConfig(parser);
     tasksHosts.forEach((host) => host.checkAndSendIntegrationState());
   }
 
@@ -1551,9 +1535,6 @@ export async function activate(context: vscode.ExtensionContext) {
 export function deactivate(): Thenable<void> | undefined {
   if (fileWatcher) {
     fileWatcher.dispose();
-  }
-  if (crossBranchStatusBarItem) {
-    crossBranchStatusBarItem.dispose();
   }
   if (workspaceStatusBarItem) {
     workspaceStatusBarItem.dispose();
@@ -1572,37 +1553,20 @@ export function deactivate(): Thenable<void> | undefined {
 }
 
 /**
- * Check if cross-branch features are configured.
- * Now uses native git support instead of external CLI.
- * Shows appropriate status bar indicators.
+ * Board Sync v2 (Task C): the board is always the single primary `backlog/`
+ * root, so `check_active_branches` is treated as effectively off — there is
+ * nothing to cross-scan. This only surfaces a heads-up log when the (now
+ * inert) setting is still on; it no longer flips the tasks boards into
+ * cross-branch mode, which used to blank the Tree tab (TASK-35).
  */
-async function checkCrossBranchConfig(
-  parser: BacklogParser,
-  context: vscode.ExtensionContext,
-  tasksHosts: TasksBoardSurface[]
-): Promise<void> {
+async function checkCrossBranchConfig(parser: BacklogParser): Promise<void> {
   try {
     const config = await parser.getConfig();
-    const crossBranchEnabled = config.check_active_branches === true;
-
-    if (!crossBranchEnabled) {
-      // Local-only mode is configured (or default) - hide status bar
-      console.log('[Taskwright] Cross-branch features not enabled in config');
-      return;
+    if (config.check_active_branches) {
+      console.log(
+        '[Taskwright] check_active_branches is set but has no effect: the board is a single local root and is always shown in full.'
+      );
     }
-
-    // Cross-branch features are enabled - native support is now available
-    console.log('[Taskwright] Cross-branch features enabled, using native git support');
-
-    // Create status bar item
-    crossBranchStatusBarItem = BacklogCli.createStatusBarItem();
-    context.subscriptions.push(crossBranchStatusBarItem);
-
-    // Update to show cross-branch mode
-    BacklogCli.updateStatusBarItem(crossBranchStatusBarItem, 'cross-branch');
-
-    // Notify the tasks boards about the data source mode
-    tasksHosts.forEach((host) => host.setDataSourceMode('cross-branch'));
   } catch (error) {
     console.error('[Taskwright] Error checking cross-branch config:', error);
   }

@@ -43,6 +43,16 @@ export type BoardGitExec = (
   env?: Record<string, string>
 ) => Promise<{ stdout: string; stderr: string }>;
 
+/** A board-ref location: which repo, which ref, where its isolated index lives. */
+export interface SyncTarget {
+  repoRoot: string;
+  ref: string;
+  /** When omitted, the operation works local-only (no fetch/push). */
+  remote?: string;
+  indexFile: string;
+  backlogDir?: string;
+}
+
 /** Real git via execFile; `env` is merged over the ambient environment. */
 export const defaultBoardExec: BoardGitExec = (cwd, args, env) =>
   execFileAsync('git', args, {
@@ -157,12 +167,11 @@ function listLocalBoardFiles(repoRoot: string, backlogDir: string): Set<string> 
  * subdirs match the ref. `listed` is the *snapshot* of local files taken before
  * this call — it is deliberately decoupled from live disk state, because between
  * listing and unlinking a sibling materialize on the same shared working tree
- * (another poll, an MCP session, or `reconcileBoardRef`/`compactBoardRef`) can
- * unlink one of these paths first. Pruning is an idempotent *ensure-absent*
- * operation, so `{ force: true }` makes an already-removed target a no-op rather
- * than an ENOENT that would abort the whole materialize (freezing the
- * `board.materialized` marker). No `recursive`: `listed` only ever contains
- * files (see `walkFiles`), never directories.
+ * (another MCP session, or `reconcileBoardRef`) can unlink one of these paths
+ * first. Pruning is an idempotent *ensure-absent* operation, so `{ force: true }`
+ * makes an already-removed target a no-op rather than an ENOENT that would abort
+ * the whole materialize. No `recursive`: `listed` only ever contains files (see
+ * `walkFiles`), never directories.
  */
 export function pruneStaleBoardFiles(
   repoRoot: string,

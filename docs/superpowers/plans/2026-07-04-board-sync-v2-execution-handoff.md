@@ -275,7 +275,7 @@ non-existent location` trailing line) — so no cwd-based branching was needed f
   (Task C removes the old one) — matches the task's explicit non-goals.
   Full suite (1530 tests)/lint/typecheck/`bun run build` all green.
 
-### [ ] Task C — Retire live CAS/poll/materialize machinery + local-only cross-branch (DRAFT-17)
+### [x] Task C — Retire live CAS/poll/materialize machinery + local-only cross-branch (DRAFT-17)
 
 - **Deps:** B. **Removal PR — only after B routes all writes to the one board.**
 - **Do:** delete `boardSyncEngine.ts` CAS loop (`applyBoardWriteSynced`, `claim/release/setStatusSynced`,
@@ -287,7 +287,87 @@ non-existent location` trailing line) — so no cwd-based branching was needed f
   nothing to cross-scan). **Subsumes** TASK-35 (blank Tree tab).
 - **Accept:** full suite green after removal (no dangling refs to deleted symbols); claim/release work
   with no CAS; Tree/Kanban/List render with `check_active_branches` true OR false, no ghost cards.
-- **Handoff Notes:** _(…)_
+- **Handoff Notes:** Deleted wholesale: `src/core/boardSyncEngine.ts` (392 lines — the whole CAS loop:
+  `applyBoardWriteSynced`/`claimTaskSynced`/`releaseTaskSynced`/`setStatusSynced`/`refreshBoard`/the
+  `board.materialized` marker helpers), `src/providers/BoardSyncController.ts` (poll timer +
+  compaction-poll trigger — nothing salvaged; Task G rebuilds a status bar from scratch against the
+  push/pull backbone, not this), `src/core/CrossBranchTaskLoader.ts` (its only caller was
+  `getTasksWithCrossBranch`, now inlined to `getTasks()`), and `scripts/setup-cross-branch-demo.sh` +
+  its test (the demo workspace's entire premise — showing cross-branch merge behavior — is gone). Their
+  four test files went with them (`boardSyncEngine.test.ts`, `BoardSyncController.test.ts`,
+  `CrossBranchTaskLoader.test.ts`, `CrossBranchDemoSetupScript.test.ts`).
+  **`SyncTarget` relocation:** `boardLifecycle.ts`'s `reconcileBoardRef` still needs the `SyncTarget`
+  shape (repoRoot/ref/remote/indexFile/backlogDir) after `boardSyncEngine.ts` — its original home — is
+  gone. Moved the interface to `boardRef.ts` (the "reused" git-plumbing module per the design spec) as a
+  plain data shape; no new plumbing.
+  **`boardLifecycle.ts` kept, trimmed:** `reconcileBoardRef` survives — its only remaining caller is
+  `extension.ts`'s `runEnableSync` (`taskwright.enableSync` command), which is a **one-shot**,
+  user-triggered heal/seed, not the live/poll usage this task's "Do" bullet targets (that was
+  `BoardSyncController.start()`, deleted with the controller). Task I's own plan already intends to
+  repoint `runEnableSync`'s ref-seeding to `snapshotBoardRoot` — touching it further here would be scope
+  creep into Task I's territory, so it's untouched. `compactBoardRef` + `DEFAULT_COMPACT_THRESHOLD` **are**
+  deleted — their only caller was the poll controller's `tick()`, and squashing was explicitly named in
+  this task's scope ("compaction poll"); `LifecycleDeps`/`defaultLifecycleDeps` lost the three
+  fields/deps (`revCount`/`commitTreeRoot`/`pushForceWithLease`) that existed solely to support it. The
+  underlying git primitives (`revCount`/`commitTreeRoot`/`pushRefForceWithLease` in `boardRef.ts`) were
+  left alone — they're generic, currently uncalled but harmless, and Task H's compaction-adjacent needs
+  (if any) can reuse them later.
+  **`BacklogParser.getTasksWithCrossBranch`:** collapsed to a one-line `return this.getTasks()` (kept as
+  a distinct method, not inlined at call sites, so existing callers — `TaskDetailProvider`,
+  `TaskPreviewViewProvider`, `TasksController` — are unaffected). Deleted the now-dead
+  `resolveSyncConfigMode` private helper and its imports (`GitBranchService`, `readSyncConfig`,
+  `syncConfigPath`, `DEFAULT_SYNC_CONFIG`, `nodeQueueFs`, `CrossBranchTaskLoader`) — none had another
+  caller in this file.
+  **`mcp/handlers.ts`:** removed the whole sync import block, `McpHandlerDeps`'s four sync-injection
+  fields (`claimSynced`/`releaseSynced`/`syncConfigForRoot`/`boardWriteSynced`), `makeSyncedBoard`,
+  `resolveSyncConfig`/`syncTargetFor`/`withSyncedBoardWrite`. `claimTaskHandler`/`releaseTaskHandler`
+  now go straight to `deps.claimService` (the code that already lived in each handler's `else` branch).
+  The ten `withSyncedBoardWrite(deps, message, apply)` wrapper calls (`attach_plan`, `create_task`,
+  `complete_task`, `archive_task`, `restore_task`, `promote_draft`, `promote_drafts`, `demote_task`,
+  `edit_task`, `create_subtask`) unwrap to their bare `apply()` bodies inlined directly in each handler.
+  `requestMergeHandler`'s board selection collapses to `deps.board ?? makePrimaryBoard(facts.primaryRoot, exec)`
+  unconditionally — the `syncCfg.mode !== 'off' ? makeSyncedBoard(...) : ...` ternary is gone.
+  `readSyncConfig`/`syncConfigPath`/`DEFAULT_SYNC_CONFIG`/`SyncConfig` (from `syncConfig.ts`, which Task I
+  still repurposes) had no remaining consumer in this file once `resolveSyncConfig` was deleted, so that
+  import is gone too — `syncConfig.ts` itself is untouched.
+  **`claimActions.ts`:** removed `resolveSyncTarget` and the `if (syncTarget)` branches in
+  `claimTaskForCurrentUser`/`releaseTaskClaim` — both now go straight to the `ClaimService` path that
+  already existed below. `GitBranchService`/`getCommonDir` are still imported/used by the surviving
+  `currentBranch()` helper; only the sync-specific usage was removed.
+  **TASK-35 root cause (blank Tree tab), found and fixed — not just "subsumed" by accident:** making
+  `getTasksWithCrossBranch()` local-only doesn't by itself fix the blank Tree tab, because
+  `TasksController.refresh()` has its **own** gate: `if (config.check_active_branches) { this.dataSourceMode
+= 'cross-branch'; }` (now deleted), and while in that mode it **skips `loadTreeBoardFromParser`
+  entirely** (`treeBoard` stays `undefined`) — that skip, not which parser method got called, is what
+  actually blanked the Tree tab. Removing the config-driven activation in `TasksController.ts` fixes it at
+  the source. The **second**, independent trigger of the same `dataSourceMode` field was
+  `extension.ts`'s `checkCrossBranchConfig()`, called on activation and `switchActiveBacklog`, which did
+  `tasksHosts.forEach((host) => host.setDataSourceMode('cross-branch'))` **and** showed a status bar
+  reading "Backlog: Cross-Branch — Viewing tasks across all branches" — both had to go too, or the second
+  path would silently re-trigger the exact same bug through the `TasksBoardSurface.setDataSourceMode` API
+  instead of the config check. `checkCrossBranchConfig` now only logs a heads-up that the setting is inert
+  (signature dropped `context`/`tasksHosts`, no longer needed); the now-permanently-unassigned
+  `crossBranchStatusBarItem` global and its `deactivate()` dispose branch were removed outright (unlike
+  the `boardRef.ts` primitives above, this one had no future reuse case — it only ever meant "cross-branch
+  mode," which no longer exists). `setDataSourceMode`/`DataSourceMode`/`TasksBoardSurface` themselves are
+  untouched (still real, harmless-if-unused API surface) — only the two call sites that drove them off
+  `check_active_branches` are gone.
+  **Left alone (adjacent, out of scope):** the `off`/`local`/`github` mode trichotomy in `syncConfig.ts`
+  (Task I's territory); `BacklogCli.ts`'s CLI-availability status bar helpers (a different, pre-existing
+  concept — external `backlog` binary detection, not board-sync — already had zero production callers for
+  `showCrossbranchWarning` before this task); the `boardRef.test.ts` isolated-index primitive tests
+  (unrelated, still exercise reused plumbing).
+  **Tests:** added a `BacklogParser.test.ts` regression asserting `getTasksWithCrossBranch()` returns
+  exactly `getTasks()` even with `check_active_branches: true`; added two TASK-35 regressions
+  (`TasksController.test.ts`: tree layout still derives with `check_active_branches: true`;
+  `TasksController.test.ts` + `TasksViewProvider.test.ts`: local-only loader stays selected). Deleted the
+  `compactBoardRef` describe block from `boardLifecycle.test.ts`, the `makeSyncedBoard` describe block
+  from `mcpMergeHandlers.test.ts`, the `synced claim routing` describe block from `mcpHandlers.test.ts`,
+  and the two `synced-board write routing (TASK-28)` / `synced-board create -> claim race (TASK-28
+integration)` describe blocks from `mcpWriteHandlers.test.ts` (plus a stale comment there that named
+  `withSyncedBoardWrite` by name as the reason a regression test calls the writer directly — fixed to
+  describe the real reason without referencing the deleted symbol). Full suite (1454 tests — down from
+  1530 as expected, this is a removal PR), lint, typecheck, and `bun run build` all green.
 
 ### [ ] Task E — Union-merge core (DRAFT-18)
 
@@ -384,6 +464,13 @@ _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <
   `src/core/boardRef.ts` (root-resolving wrappers around the existing `snapshotBoardToRef`/
   `materializeRefToWorktree`, via `resolvePrimaryWorktreeRoot()`); added `milestones` to
   `BOARD_SUBDIRS` (fixes TASK-36 round-trip). Full suite (1530 tests)/lint/typecheck/build green.
+- 2026-07-04 · Task C · `<sha>` · Deleted `boardSyncEngine.ts`/`BoardSyncController.ts`/
+  `CrossBranchTaskLoader.ts`/the cross-branch demo script (+ their 4 test files); simplified
+  `mcp/handlers.ts` claim/release/board-write to direct surgical writes (no CAS);
+  `BacklogParser.getTasksWithCrossBranch` now unconditionally `getTasks()`; fixed TASK-35's actual root
+  cause (`TasksController`'s config-driven `dataSourceMode` activation skipped tree derivation entirely)
+  and retired the matching `extension.ts` trigger + its now-false "Cross-Branch" status bar. Full suite
+  (1454 tests)/lint/typecheck/build green.
 
 ---
 

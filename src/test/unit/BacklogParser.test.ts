@@ -615,6 +615,33 @@ project_name: "Simple Project"
     });
   });
 
+  describe('getTasksWithCrossBranch (Board Sync v2 Task C — unconditionally local-only)', () => {
+    afterEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it('returns exactly getTasks(), even when check_active_branches is true', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      (fs.readdirSync as ReturnType<typeof vi.fn>).mockReturnValue(['task-1 - Local.md']);
+      vi.mocked(fs.readFileSync).mockImplementation((filePath: unknown) => {
+        if (String(filePath).endsWith('config.yml')) {
+          return 'check_active_branches: true\n';
+        }
+        return `---\nid: TASK-1\ntitle: Local\nstatus: To Do\n---\n`;
+      });
+
+      const parser = new BacklogParser('/fake/backlog');
+      const [local, crossBranch] = await Promise.all([
+        parser.getTasks(),
+        parser.getTasksWithCrossBranch(),
+      ]);
+
+      expect(crossBranch).toEqual(local);
+      expect(crossBranch).toHaveLength(1);
+      expect(crossBranch[0].id).toBe('TASK-1');
+    });
+  });
+
   describe('Config: Additional Fields', () => {
     afterEach(() => {
       vi.clearAllMocks();
@@ -2216,7 +2243,9 @@ status: In Progress
       it('aliases a legacy status: Draft on-disk draft to the board default (P6 back-compat)', async () => {
         vi.mocked(fs.existsSync).mockReturnValue(true);
         (fs.readdirSync as ReturnType<typeof vi.fn>).mockReturnValue(['draft-1 - Legacy.md']);
-        vi.mocked(fs.readFileSync).mockReturnValue('---\nid: DRAFT-1\ntitle: Legacy\nstatus: Draft\n---\n');
+        vi.mocked(fs.readFileSync).mockReturnValue(
+          '---\nid: DRAFT-1\ntitle: Legacy\nstatus: Draft\n---\n'
+        );
         const parser = new BacklogParser('/fake/backlog');
         const drafts = await parser.getDrafts();
         expect(drafts[0].status).toBe('To Do'); // no config default → 'To Do'
@@ -2229,7 +2258,9 @@ status: In Progress
         // regression that dropped the config read and hardcoded 'To Do' would fail here.
         vi.mocked(fs.existsSync).mockReturnValue(true);
         (fs.readdirSync as ReturnType<typeof vi.fn>).mockReturnValue(['draft-1 - Legacy.md']);
-        vi.mocked(fs.readFileSync).mockReturnValue('---\nid: DRAFT-1\ntitle: Legacy\nstatus: Draft\n---\n');
+        vi.mocked(fs.readFileSync).mockReturnValue(
+          '---\nid: DRAFT-1\ntitle: Legacy\nstatus: Draft\n---\n'
+        );
         const parser = new BacklogParser('/fake/backlog');
         vi.spyOn(parser, 'getConfig').mockResolvedValue({ default_status: 'Backlog' });
         const drafts = await parser.getDrafts();

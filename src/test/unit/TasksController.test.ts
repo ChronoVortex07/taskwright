@@ -263,14 +263,14 @@ describe('TasksController', () => {
     expect(posted).toContainEqual({ type: 'activeTabChanged', tab: 'list' });
   });
 
-  it('uses the cross-branch loader when check_active_branches is enabled', async () => {
+  it('stays local-only even when check_active_branches is enabled (Board Sync v2 Task C / TASK-35)', async () => {
     (mockParser.getConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
       check_active_branches: true,
     });
     const controller = new TasksController(host, mockParser, mockContext);
     await controller.refresh();
-    expect(mockParser.getTasksWithCrossBranch).toHaveBeenCalled();
-    expect(mockParser.getTasks).not.toHaveBeenCalled();
+    expect(mockParser.getTasks).toHaveBeenCalled();
+    expect(mockParser.getTasksWithCrossBranch).not.toHaveBeenCalled();
   });
 
   it('enriches tasks with mergeState from the injected queue reader', async () => {
@@ -377,20 +377,35 @@ describe('TasksController', () => {
     it('marks claimedByMe true only for tasks claimed by the current identity', async () => {
       (mockParser.getTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
         {
-          id: 'TASK-1', title: 'Mine', status: 'In Progress', labels: [], assignee: [],
-          dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
-          filePath: '/fake/backlog/tasks/task-1.md', claimedBy: currentIdentity(),
+          id: 'TASK-1',
+          title: 'Mine',
+          status: 'In Progress',
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          acceptanceCriteria: [],
+          definitionOfDone: [],
+          filePath: '/fake/backlog/tasks/task-1.md',
+          claimedBy: currentIdentity(),
         } as Task,
         {
-          id: 'TASK-2', title: 'Theirs', status: 'In Progress', labels: [], assignee: [],
-          dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
-          filePath: '/fake/backlog/tasks/task-2.md', claimedBy: 'someone-else',
+          id: 'TASK-2',
+          title: 'Theirs',
+          status: 'In Progress',
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          acceptanceCriteria: [],
+          definitionOfDone: [],
+          filePath: '/fake/backlog/tasks/task-2.md',
+          claimedBy: 'someone-else',
         } as Task,
       ]);
       const controller = new TasksController(host, mockParser, mockContext);
       await controller.refresh();
       const upd = posted.find((m) => m.type === 'tasksUpdated') as Extract<
-        ExtensionMessage, { type: 'tasksUpdated' }
+        ExtensionMessage,
+        { type: 'tasksUpdated' }
       >;
       const byId = new Map(upd.tasks.map((t) => [t.id, t]));
       expect((byId.get('TASK-1') as Task).claimedByMe).toBe(true);
@@ -411,13 +426,21 @@ describe('TasksController', () => {
         priorities: ['P0', 'P1', 'P2'],
       });
       (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [],
-        dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
+        id: 'TASK-1',
+        title: 'T',
+        status: 'To Do',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
         filePath: '/fake/backlog/tasks/task-1.md',
       } as Task);
       const controller = new TasksController(host, mockParser, mockContext);
       await controller.handleMessage({
-        type: 'updateTask', taskId: 'TASK-1', updates: { priority: 'P0' },
+        type: 'updateTask',
+        taskId: 'TASK-1',
+        updates: { priority: 'P0' },
       });
       expect(updateSpy).toHaveBeenCalledWith('TASK-1', { priority: 'P0' }, mockParser);
     });
@@ -426,15 +449,25 @@ describe('TasksController', () => {
       const updateSpy = vi
         .spyOn(BacklogWriter.prototype, 'updateTask')
         .mockResolvedValue(undefined as never);
-      (mockParser.getConfig as ReturnType<typeof vi.fn>).mockResolvedValue({ priorities: ['P0', 'P1', 'P2'] });
+      (mockParser.getConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+        priorities: ['P0', 'P1', 'P2'],
+      });
       (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [],
-        dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
+        id: 'TASK-1',
+        title: 'T',
+        status: 'To Do',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
         filePath: '/fake/backlog/tasks/task-1.md',
       } as Task);
       const controller = new TasksController(host, mockParser, mockContext);
       await controller.handleMessage({
-        type: 'updateTask', taskId: 'TASK-1', updates: { priority: 'nope' },
+        type: 'updateTask',
+        taskId: 'TASK-1',
+        updates: { priority: 'nope' },
       });
       expect(updateSpy).not.toHaveBeenCalled();
     });
@@ -569,6 +602,19 @@ describe('TasksController — tree tab', () => {
     expect(Array.isArray(msg.warnings)).toBe(true);
   });
 
+  it('still derives the tree layout when check_active_branches is enabled (TASK-35 regression)', async () => {
+    (mockParser.getConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+      check_active_branches: true,
+    });
+    const controller = new TasksController(host, mockParser, mockContext);
+    await controller.refresh();
+    const types = postedTypes();
+    const treeIdx = types.indexOf('treeLayoutUpdated');
+    expect(treeIdx).toBeGreaterThanOrEqual(0);
+    const msg = posted[treeIdx] as Extract<ExtensionMessage, { type: 'treeLayoutUpdated' }>;
+    expect(msg.laneOrder).toEqual(['Features', 'Misc', 'Bugs']);
+  });
+
   it('defaults the persisted view mode to tree when nothing is stored', async () => {
     const controller = new TasksController(host, mockParser, mockContext);
     controller.loadPersistedState();
@@ -594,61 +640,121 @@ describe('TasksController — tree tab', () => {
 
   describe('TasksController — P3b drag writes', () => {
     it('reslotTask: category via TreeFieldService.setCategory, milestone via updateTask (resolved)', async () => {
-      const setCat = vi.spyOn(TreeFieldService.prototype, 'setCategory').mockResolvedValue('Features');
-      const updateSpy = vi.spyOn(BacklogWriter.prototype, 'updateTask').mockResolvedValue(undefined as never);
+      const setCat = vi
+        .spyOn(TreeFieldService.prototype, 'setCategory')
+        .mockResolvedValue('Features');
+      const updateSpy = vi
+        .spyOn(BacklogWriter.prototype, 'updateTask')
+        .mockResolvedValue(undefined as never);
       (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [], dependencies: [],
-        acceptanceCriteria: [], definitionOfDone: [], filePath: '/fake/backlog/tasks/task-1.md',
+        id: 'TASK-1',
+        title: 'T',
+        status: 'To Do',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/fake/backlog/tasks/task-1.md',
       } as Task);
       (mockParser.resolveMilestone as ReturnType<typeof vi.fn>).mockResolvedValue('v1');
       const controller = new TasksController(host, mockParser, mockContext);
-      await controller.handleMessage({ type: 'reslotTask', taskId: 'TASK-1', category: 'Features', milestone: 'v1' });
+      await controller.handleMessage({
+        type: 'reslotTask',
+        taskId: 'TASK-1',
+        category: 'Features',
+        milestone: 'v1',
+      });
       expect(setCat).toHaveBeenCalledWith('TASK-1', 'Features', mockParser);
       expect(updateSpy).toHaveBeenCalledWith('TASK-1', { milestone: 'v1' }, mockParser);
     });
 
     it('reslotTask: Misc clears the category, Backburner clears the milestone', async () => {
-      const clearCat = vi.spyOn(TreeFieldService.prototype, 'clearCategory').mockResolvedValue(undefined as never);
-      const updateSpy = vi.spyOn(BacklogWriter.prototype, 'updateTask').mockResolvedValue(undefined as never);
+      const clearCat = vi
+        .spyOn(TreeFieldService.prototype, 'clearCategory')
+        .mockResolvedValue(undefined as never);
+      const updateSpy = vi
+        .spyOn(BacklogWriter.prototype, 'updateTask')
+        .mockResolvedValue(undefined as never);
       (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [], dependencies: [],
-        acceptanceCriteria: [], definitionOfDone: [], filePath: '/fake/backlog/tasks/task-1.md',
+        id: 'TASK-1',
+        title: 'T',
+        status: 'To Do',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/fake/backlog/tasks/task-1.md',
       } as Task);
       const controller = new TasksController(host, mockParser, mockContext);
-      await controller.handleMessage({ type: 'reslotTask', taskId: 'TASK-1', category: 'Misc', milestone: 'Backburner' });
+      await controller.handleMessage({
+        type: 'reslotTask',
+        taskId: 'TASK-1',
+        category: 'Misc',
+        milestone: 'Backburner',
+      });
       expect(clearCat).toHaveBeenCalledWith('TASK-1', mockParser);
       // Backburner clears milestone via an empty string (updateTask omits empty milestone on write).
       expect(updateSpy).toHaveBeenCalledWith('TASK-1', { milestone: '' }, mockParser);
     });
 
     it('addDependency: writes task[taskId].dependencies += dependsOn (deduped) via updateTask', async () => {
-      const updateSpy = vi.spyOn(BacklogWriter.prototype, 'updateTask').mockResolvedValue(undefined as never);
+      const updateSpy = vi
+        .spyOn(BacklogWriter.prototype, 'updateTask')
+        .mockResolvedValue(undefined as never);
       (mockParser.getTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
-        { id: 'TASK-1', dependencies: [] }, { id: 'TASK-2', dependencies: [] },
+        { id: 'TASK-1', dependencies: [] },
+        { id: 'TASK-2', dependencies: [] },
       ]);
       (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [], dependencies: [],
-        acceptanceCriteria: [], definitionOfDone: [], filePath: '/fake/backlog/tasks/task-1.md',
+        id: 'TASK-1',
+        title: 'T',
+        status: 'To Do',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/fake/backlog/tasks/task-1.md',
       } as Task);
       const controller = new TasksController(host, mockParser, mockContext);
-      await controller.handleMessage({ type: 'addDependency', taskId: 'TASK-1', dependsOn: 'TASK-2' });
+      await controller.handleMessage({
+        type: 'addDependency',
+        taskId: 'TASK-1',
+        dependsOn: 'TASK-2',
+      });
       expect(updateSpy).toHaveBeenCalledWith('TASK-1', { dependencies: ['TASK-2'] }, mockParser);
     });
 
     it('addDependency: refuses a cycle (no write)', async () => {
-      const updateSpy = vi.spyOn(BacklogWriter.prototype, 'updateTask').mockResolvedValue(undefined as never);
+      const updateSpy = vi
+        .spyOn(BacklogWriter.prototype, 'updateTask')
+        .mockResolvedValue(undefined as never);
       // TASK-2 already depends on TASK-1, so adding TASK-2 to TASK-1 closes 1→2→1.
       (mockParser.getTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
-        { id: 'TASK-1', dependencies: [] }, { id: 'TASK-2', dependencies: ['TASK-1'] },
+        { id: 'TASK-1', dependencies: [] },
+        { id: 'TASK-2', dependencies: ['TASK-1'] },
       ]);
       // getTask must return a real task so the handler reaches the cycle guard
       // (otherwise it bails at `if (!task) break;` and the test is vacuous).
       (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [], dependencies: [],
-        acceptanceCriteria: [], definitionOfDone: [], filePath: '/fake/backlog/tasks/task-1.md',
+        id: 'TASK-1',
+        title: 'T',
+        status: 'To Do',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/fake/backlog/tasks/task-1.md',
       } as Task);
       const controller = new TasksController(host, mockParser, mockContext);
-      await controller.handleMessage({ type: 'addDependency', taskId: 'TASK-1', dependsOn: 'TASK-2' });
+      await controller.handleMessage({
+        type: 'addDependency',
+        taskId: 'TASK-1',
+        dependsOn: 'TASK-2',
+      });
       // Assert BOTH the user-visible refusal and the no-write, so deleting the
       // cycle guard turns this test red instead of leaving it vacuously green.
       expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
@@ -658,13 +764,26 @@ describe('TasksController — tree tab', () => {
     });
 
     it('removeDependency: writes the pruned dependency array via updateTask', async () => {
-      const updateSpy = vi.spyOn(BacklogWriter.prototype, 'updateTask').mockResolvedValue(undefined as never);
+      const updateSpy = vi
+        .spyOn(BacklogWriter.prototype, 'updateTask')
+        .mockResolvedValue(undefined as never);
       (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [], dependencies: ['TASK-2', 'TASK-3'],
-        acceptanceCriteria: [], definitionOfDone: [], filePath: '/fake/backlog/tasks/task-1.md',
+        id: 'TASK-1',
+        title: 'T',
+        status: 'To Do',
+        labels: [],
+        assignee: [],
+        dependencies: ['TASK-2', 'TASK-3'],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/fake/backlog/tasks/task-1.md',
       } as Task);
       const controller = new TasksController(host, mockParser, mockContext);
-      await controller.handleMessage({ type: 'removeDependency', taskId: 'TASK-1', dependsOn: 'TASK-2' });
+      await controller.handleMessage({
+        type: 'removeDependency',
+        taskId: 'TASK-1',
+        dependsOn: 'TASK-2',
+      });
       expect(updateSpy).toHaveBeenCalledWith('TASK-1', { dependencies: ['TASK-3'] }, mockParser);
     });
   });
@@ -675,8 +794,16 @@ describe('TasksController — tree tab', () => {
       // parser.getDrafts must return the requested ids as drafts for validation to pass:
       (mockParser.getDrafts as ReturnType<typeof vi.fn>).mockResolvedValue([
         {
-          id: 'DRAFT-1', title: 'a', status: 'Draft', folder: 'drafts', labels: [], assignee: [],
-          dependencies: [], acceptanceCriteria: [], definitionOfDone: [], filePath: '/b/drafts/draft-1.md',
+          id: 'DRAFT-1',
+          title: 'a',
+          status: 'Draft',
+          folder: 'drafts',
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          acceptanceCriteria: [],
+          definitionOfDone: [],
+          filePath: '/b/drafts/draft-1.md',
         },
       ]);
       (mockParser.getTasks as ReturnType<typeof vi.fn>).mockResolvedValue([]);
@@ -690,8 +817,18 @@ describe('TasksController — tree tab', () => {
   describe('TasksController — GAP-1b tree-mode draft union', () => {
     it('tree tab unions drafts into the tasksUpdated payload', async () => {
       (mockParser.getDrafts as ReturnType<typeof vi.fn>).mockResolvedValue([
-        { id: 'DRAFT-1', title: 'Proposed', status: 'Draft', folder: 'drafts', labels: [], assignee: [],
-          dependencies: [], acceptanceCriteria: [], definitionOfDone: [], filePath: '/b/drafts/draft-1.md' },
+        {
+          id: 'DRAFT-1',
+          title: 'Proposed',
+          status: 'Draft',
+          folder: 'drafts',
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          acceptanceCriteria: [],
+          definitionOfDone: [],
+          filePath: '/b/drafts/draft-1.md',
+        },
       ]);
       const controller = new TasksController(host, mockParser, mockContext);
       controller.setViewMode('tree');
@@ -702,8 +839,18 @@ describe('TasksController — tree tab', () => {
 
     it('kanban tab does NOT union drafts into the payload', async () => {
       (mockParser.getDrafts as ReturnType<typeof vi.fn>).mockResolvedValue([
-        { id: 'DRAFT-1', title: 'Proposed', status: 'Draft', folder: 'drafts', labels: [], assignee: [],
-          dependencies: [], acceptanceCriteria: [], definitionOfDone: [], filePath: '/b/drafts/draft-1.md' },
+        {
+          id: 'DRAFT-1',
+          title: 'Proposed',
+          status: 'Draft',
+          folder: 'drafts',
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          acceptanceCriteria: [],
+          definitionOfDone: [],
+          filePath: '/b/drafts/draft-1.md',
+        },
       ]);
       const controller = new TasksController(host, mockParser, mockContext);
       controller.setViewMode('kanban');
@@ -720,14 +867,34 @@ describe('TasksController — tree tab', () => {
       // the real impl so config/queue reads elsewhere in refresh are unaffected.
       const mocked = vi.mocked(fs.existsSync);
       mocked.mockImplementation(((p: fs.PathLike) =>
-        String(p).includes('task-9-dispatched') ? true : realExists(p as string)) as typeof fs.existsSync);
+        String(p).includes('task-9-dispatched')
+          ? true
+          : realExists(p as string)) as typeof fs.existsSync);
       (mockParser.getTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
-        { id: 'TASK-9', title: 'Dispatched', status: 'In Progress', folder: 'tasks',
-          labels: [], assignee: [], dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
-          filePath: '/fake/backlog/tasks/task-9.md' },
-        { id: 'TASK-8', title: 'Other', status: 'In Progress', folder: 'tasks',
-          labels: [], assignee: [], dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
-          filePath: '/fake/backlog/tasks/task-8.md' },
+        {
+          id: 'TASK-9',
+          title: 'Dispatched',
+          status: 'In Progress',
+          folder: 'tasks',
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          acceptanceCriteria: [],
+          definitionOfDone: [],
+          filePath: '/fake/backlog/tasks/task-9.md',
+        },
+        {
+          id: 'TASK-8',
+          title: 'Other',
+          status: 'In Progress',
+          folder: 'tasks',
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          acceptanceCriteria: [],
+          definitionOfDone: [],
+          filePath: '/fake/backlog/tasks/task-8.md',
+        },
       ]);
       const controller = new TasksController(host, mockParser, mockContext);
       controller.setViewMode('tree');
