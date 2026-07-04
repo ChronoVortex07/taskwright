@@ -198,6 +198,16 @@
         "category": "Taskwright"
       },
       {
+        "command": "taskwright.installBoardHooks",
+        "title": "Taskwright: Install Board Sync Hooks (pre-push/post-merge)",
+        "category": "Taskwright"
+      },
+      {
+        "command": "taskwright.uninstallBoardHooks",
+        "title": "Taskwright: Uninstall Board Sync Hooks",
+        "category": "Taskwright"
+      },
+      {
         "command": "taskwright.openTaskDetail",
         "title": "Taskwright: Open Task Detail"
       },
@@ -353,6 +363,14 @@
         },
         {
           "command": "taskwright.pullBoard",
+          "when": "taskwright.hasBacklog"
+        },
+        {
+          "command": "taskwright.installBoardHooks",
+          "when": "taskwright.hasBacklog"
+        },
+        {
+          "command": "taskwright.uninstallBoardHooks",
           "when": "taskwright.hasBacklog"
         }
       ]

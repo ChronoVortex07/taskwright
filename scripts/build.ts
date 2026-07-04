@@ -26,6 +26,13 @@ const builds: esbuild.BuildOptions[] = [
     outfile: 'dist/hooks/worktree-guard.js',
     external: ['vscode'],
   },
+  {
+    // Opt-in board-sync pre-push/post-merge hook payload — required (not run
+    // directly) by the committed `scripts/board-sync-hook.cjs` launcher.
+    entryPoints: ['src/hooks/board-sync-hook.ts'],
+    outfile: 'dist/hooks/board-sync-hook.js',
+    external: ['vscode'],
+  },
 ];
 
 const common: esbuild.BuildOptions = {

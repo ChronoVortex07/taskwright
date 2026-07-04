@@ -634,7 +634,7 @@ exec)` (read a commit's board tree into a `BoardFileMap` via `ls-tree -r` + per-
   Full suite (1488 tests, up from 1479), lint, typecheck, and `bun run build` (webview + extension +
   standalone MCP bundle) all green.
 
-### [ ] Task H — Opt-in Windows-safe git hooks (pre-push / post-merge) (DRAFT-23)
+### [x] Task H — Opt-in Windows-safe git hooks (pre-push / post-merge) (DRAFT-23)
 
 - **Deps:** F.
 - **Do:** committed, dependency-free hook script (pattern of `scripts/taskwright-mcp.cjs`) that
@@ -645,7 +645,71 @@ exec)` (read a commit's board tree into a `BoardFileMap` via `ls-tree -r` + per-
   never abort the git op). Document caveats + manual fallback.
 - **Accept:** with hooks, `git push` also pushes the board ref and `git pull` materializes updates; a
   hook failure logs and does not abort/corrupt the git op; uninstall removes them cleanly.
-- **Handoff Notes:** _(…)_
+- **Handoff Notes:** Four pieces, bottom-up: (1) a generalized labeled-fence hook installer, (2) the
+  push/pull payload the hooks actually run, (3) the committed launcher, (4) extension wiring.
+  **`src/core/hookInstaller.ts` generalized, not rewritten:** the existing `FENCE_START`/`guardBlock`/
+  `resolveHookTarget`/`installGuard`/`uninstallGuard` (fixed to `pre-commit`, one hardcoded fence) are
+  untouched — new, separate `labeledBlock`/`upsertLabeledFence`/`removeLabeledFence`/
+  `resolveHookTargetFor`/`installLabeledHook`/`uninstallLabeledHook` take an arbitrary `hookName` +
+  `label`, husky-aware the same way. `installBoardSyncHooks`/`uninstallBoardSyncHooks` are thin
+  board-sync-specific wrappers over these: `pre-push` runs `node "scripts/board-sync-hook.cjs" push`,
+  `post-merge` runs `... pull`, both suffixed `|| true` — a board-sync hiccup must never fail/abort the
+  user's real git operation. `BOARD_SYNC_HOOK_SCRIPT_REL = 'scripts/board-sync-hook.cjs'` is exported so
+  the fence text and the launcher's actual location can't drift apart. 10 new unit tests
+  (`hookInstaller.test.ts`).
+  **`src/hooks/board-sync-hook.ts`** (new, bundled to `dist/hooks/board-sync-hook.js` via a new
+  `scripts/build.ts` entry, `external: ['vscode']` — same shape as the existing `worktree-guard.ts`
+  entry): `runBoardSyncHook(mode, commonDir, deps?)` reads `sync-config.json` off the **passed-in**
+  `commonDir` (never re-derives it — the launcher already had to resolve it to find this bundle),
+  no-ops (`{skipped:true}`) when `taskwright.sync.mode` is `off`, otherwise calls the **same**
+  `pushBoard`/`pullBoard` core as Task F's MCP tools/commands with `cwd: path.dirname(commonDir)`
+  (the primary root). Logs failures/conflicts via an injectable `log` (default `console.error`) but
+  never throws — a hook must never abort the git op. `--no-verify`/recursion and CRLF byte-exactness
+  are **already** handled inside `boardRef.ts`'s `pushRef`/`snapshotBoardToRef`/`materializeRefToWorktree`
+  (Task F/D), so this task needed no extra work for either — confirmed by reading `pushRef`'s own doc
+  comment, which already explains `--no-verify` prevents exactly this recursion (originally for a
+  different reason, TASK-28's slow-lint-hook problem, but the effect is identical here: a board-ref
+  push can never re-trigger this same `pre-push` hook). 3 unit tests (`boardSyncHook.test.ts`, real temp
+  git repos + a real bare origin, matching `boardPushPull.test.ts`'s convention) cover off-mode no-op,
+  a real push-then-pull-into-a-second-clone round trip, and a pull-with-nothing-to-fetch-yet no-op.
+  **`scripts/board-sync-hook.cjs`** (new, committed plain CJS, pattern of `taskwright-mcp.cjs`):
+  resolves the primary's git common dir via `git rev-parse --path-format=absolute --git-common-dir`
+  (own `execFileSync` call, same as the MCP launcher), locates `<primaryRoot>/dist/hooks/board-sync-hook.js`,
+  and — **this is the one real finding of the task** — runs it as a **separate spawned child process**
+  (`execFileSync(process.execPath, [bundlePath, mode, commonDir], {stdio:'inherit'})`), NOT via
+  `require(bundlePath)` + an un-awaited "fire-and-forget" promise as first implemented. The first version
+  passed all unit tests but, verified empirically against real temp repos with real bare-remote pushes/
+  pulls and real installed `pre-push`/`post-merge` hooks (looped ~15× across fresh clones, outside the
+  test suite — this can't be reproduced deterministically in a unit test), **intermittently no-op'd
+  silently**: exit 0, zero output, board ref never advanced. Root cause: a `.then()`/`.catch()`-chained
+  async call left un-awaited at a CJS script's top level relies entirely on Node's event loop staying
+  non-empty (via the pending child `git` process handles inside `pushBoard`/`pullBoard`) for the process
+  to survive long enough to finish — usually true, but demonstrably not guaranteed once this script is
+  itself a child of a **git-invoked hook's own process**, where teardown timing can race the grandchild
+  spawns. Re-running the exact same 8-clone pull / 5-clone push loop against the `execFileSync`-based
+  version came back 13/13 — `execFileSync` blocks on a genuinely separate process with its own
+  independent event loop, so there's nothing left to race. `main()`'s own mode-validation/repo-location/
+  bundle-existence logging is unchanged; only the final dispatch changed. `boardSyncHookLauncher.test.ts`
+  (4 tests, mirrors `taskwrightMcpLauncher.test.ts`) covers the pure `resolveBundlePath` only — the
+  process-spawn fix itself isn't practically unit-testable (see above); treat the manual-verification
+  loop above as this Accept bullet's actual evidence, not the unit tests alone.
+  **`src/extension.ts` wiring:** new `syncBoardHooks(repoRoot)` (mirrors `syncWorktreeGuard`'s shape) —
+  installs both hooks when `taskwright.sync.installHooks` is true, uninstalls when false, chmods a
+  plain (non-husky) `pre-push`/`post-merge` `+x` on POSIX (best-effort, no-op on Windows). Called at
+  activation (alongside `syncWorktreeGuard`) and on `sync.installHooks` config changes (a new branch
+  alongside the existing `publishSyncConfig` one, which already fired on this setting but only wrote the
+  shared JSON, never touched the actual hook files). Two new commands, `taskwright.installBoardHooks` /
+  `taskwright.uninstallBoardHooks` (DRAFT-23's explicit "or a command" alternative to the setting) —
+  each flips `sync.installHooks` in workspace settings **and** calls `syncBoardHooks` directly (not
+  relying solely on the config-change event, matching `runEnableSync`'s existing precedent of calling
+  `publishSyncConfig` directly rather than trusting the event alone), then shows a confirmation message.
+  Both gated in the command palette on the existing `taskwright.hasBacklog` context key, alongside
+  `pushBoard`/`pullBoard`.
+  **Not touched (Task J's territory):** `CLAUDE.md`/`AGENTS.md` still don't mention hooks at all — the
+  runbook assigns the doc rewrite to Task J, done last.
+  Full suite (1505 tests, up from 1488 — 10 hookInstaller + 3 boardSyncHook + 4 launcher), lint,
+  typecheck, and `bun run build` (webview + extension + both hook bundles + standalone MCP bundle) all
+  green.
 
 ### [ ] Task J — Docs: rewrite CLAUDE.md/AGENTS.md sync sections + retire old specs (DRAFT-24)
 
@@ -717,6 +781,19 @@ _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <
   quick-pick) mirroring the existing dispatch "Open handoff" pattern; added `taskwright.hasBacklog`
   context key + a new `commandPalette` menu block gating `pushBoard`/`pullBoard`. Full suite (1488
   tests)/lint/typecheck/build green.
+- 2026-07-04 · Task H · `(pending)` · Added opt-in `pre-push`(push)/`post-merge`(pull)
+  board-sync hooks: generalized `hookInstaller.ts` with a labeled-fence installer (worktree guard's
+  fixed pre-commit fence untouched) + `installBoardSyncHooks`/`uninstallBoardSyncHooks`; new
+  `src/hooks/board-sync-hook.ts` (`runBoardSyncHook`, bundled to `dist/hooks/board-sync-hook.js`) calls
+  the same `pushBoard`/`pullBoard` core as Task F; new committed launcher
+  `scripts/board-sync-hook.cjs`. Found and fixed a real intermittent bug during manual verification: the
+  launcher's first cut required the bundle in-process and fired its async work without awaiting it,
+  which silently no-op'd under real git-hook invocation some fraction of the time (Node's process can
+  exit before a same-process un-awaited promise chain finishes when it's itself a child of a git-invoked
+  hook) — fixed by spawning the payload as a separate blocking child process instead (verified 13/13
+  across fresh clones afterward, both directions). `syncBoardHooks()` wired into `extension.ts`
+  (activation + `sync.installHooks` config-change), plus `taskwright.installBoardHooks`/
+  `uninstallBoardHooks` commands. Full suite (1505 tests)/lint/typecheck/build green.
 
 ---
 

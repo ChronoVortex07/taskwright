@@ -9,6 +9,12 @@ import {
   installGuard,
   uninstallGuard,
   HookFsDeps,
+  resolveHookTargetFor,
+  installLabeledHook,
+  uninstallLabeledHook,
+  BOARD_SYNC_HOOK_SCRIPT_REL,
+  installBoardSyncHooks,
+  uninstallBoardSyncHooks,
 } from '../../core/hookInstaller';
 
 const REL = '.taskwright/hooks/worktree-guard.js';
@@ -109,5 +115,101 @@ describe('installGuard / uninstallGuard', () => {
     uninstallGuard('/repo', fs);
     expect(fs.files['/repo/.husky/pre-commit']).toContain('npx lint-staged');
     expect(fs.files['/repo/.husky/pre-commit']).not.toContain(FENCE_START);
+  });
+});
+
+describe('resolveHookTargetFor', () => {
+  it('targets .husky/<hookName> when it exists', () => {
+    const fs = memFs({ '/repo/.husky/pre-push': '#!/bin/sh\n' });
+    const t = resolveHookTargetFor('/repo', 'pre-push', fs);
+    expect(t.manager).toBe('husky');
+    expect(t.hookPath.replace(/\\/g, '/')).toBe('/repo/.husky/pre-push');
+  });
+
+  it('falls back to .git/hooks/<hookName> otherwise', () => {
+    const t = resolveHookTargetFor('/repo', 'post-merge', memFs());
+    expect(t.manager).toBe('plain');
+    expect(t.hookPath.replace(/\\/g, '/')).toBe('/repo/.git/hooks/post-merge');
+  });
+});
+
+describe('installLabeledHook / uninstallLabeledHook', () => {
+  const LABEL = 'taskwright test hook';
+
+  it('appends a labeled fence to an existing husky hook and is idempotent', () => {
+    const fs = memFs({ '/repo/.husky/pre-push': '#!/bin/sh\nnpx something\n' });
+    expect(installLabeledHook('/repo', 'pre-push', LABEL, 'echo hi', fs)).toBe('husky');
+    const after = fs.files['/repo/.husky/pre-push'];
+    expect(after).toContain('npx something');
+    expect(after).toContain('# >>> taskwright test hook >>>');
+    expect(after).toContain('echo hi');
+    installLabeledHook('/repo', 'pre-push', LABEL, 'echo hi', fs);
+    expect(fs.files['/repo/.husky/pre-push'].match(/taskwright test hook/g)!.length).toBe(2); // start+end only
+  });
+
+  it('seeds a shebang for a brand-new plain hook', () => {
+    const fs = memFs();
+    expect(installLabeledHook('/repo', 'post-merge', LABEL, 'echo hi', fs)).toBe('plain');
+    const body = fs.files['/repo/.git/hooks/post-merge'];
+    expect(body.startsWith('#!/bin/sh')).toBe(true);
+    expect(body).toContain('echo hi');
+  });
+
+  it('uninstall removes only its own labeled fence, leaving other content intact', () => {
+    const fs = memFs({ '/repo/.husky/pre-push': '#!/bin/sh\nnpx something\n' });
+    installLabeledHook('/repo', 'pre-push', LABEL, 'echo hi', fs);
+    uninstallLabeledHook('/repo', 'pre-push', LABEL, fs);
+    expect(fs.files['/repo/.husky/pre-push']).toContain('npx something');
+    expect(fs.files['/repo/.husky/pre-push']).not.toContain('taskwright test hook');
+  });
+
+  it('uninstall is a no-op when the hook file does not exist', () => {
+    const fs = memFs();
+    expect(() => uninstallLabeledHook('/repo', 'pre-push', LABEL, fs)).not.toThrow();
+    expect(fs.files['/repo/.git/hooks/pre-push']).toBeUndefined();
+  });
+});
+
+describe('installBoardSyncHooks / uninstallBoardSyncHooks', () => {
+  it('installs a non-blocking pre-push (push) and post-merge (pull) fence referencing the committed launcher', () => {
+    const fs = memFs();
+    const { prePush, postMerge } = installBoardSyncHooks('/repo', fs);
+    expect(prePush).toBe('plain');
+    expect(postMerge).toBe('plain');
+
+    const push = fs.files['/repo/.git/hooks/pre-push'];
+    expect(push).toContain(BOARD_SYNC_HOOK_SCRIPT_REL);
+    expect(push).toContain(`"${BOARD_SYNC_HOOK_SCRIPT_REL}" push`);
+    expect(push).toContain('|| true'); // never blocks the push on failure
+
+    const pull = fs.files['/repo/.git/hooks/post-merge'];
+    expect(pull).toContain(BOARD_SYNC_HOOK_SCRIPT_REL);
+    expect(pull).toContain(`"${BOARD_SYNC_HOOK_SCRIPT_REL}" pull`);
+    expect(pull).toContain('|| true');
+  });
+
+  it('is idempotent (re-running does not duplicate the fence)', () => {
+    const fs = memFs();
+    installBoardSyncHooks('/repo', fs);
+    installBoardSyncHooks('/repo', fs);
+    const push = fs.files['/repo/.git/hooks/pre-push'];
+    expect(push.match(/taskwright board sync \(push\)/g)!.length).toBe(2); // start+end only
+  });
+
+  it('prefers husky hooks when present, independently per hook', () => {
+    const fs = memFs({ '/repo/.husky/pre-push': '#!/bin/sh\nnpx lint-staged\n' });
+    const { prePush, postMerge } = installBoardSyncHooks('/repo', fs);
+    expect(prePush).toBe('husky');
+    expect(postMerge).toBe('plain');
+    expect(fs.files['/repo/.husky/pre-push']).toContain('npx lint-staged');
+  });
+
+  it('uninstall removes both fences, leaving surrounding hook content intact', () => {
+    const fs = memFs({ '/repo/.husky/pre-push': '#!/bin/sh\nnpx lint-staged\n' });
+    installBoardSyncHooks('/repo', fs);
+    uninstallBoardSyncHooks('/repo', fs);
+    expect(fs.files['/repo/.husky/pre-push']).toContain('npx lint-staged');
+    expect(fs.files['/repo/.husky/pre-push']).not.toContain(BOARD_SYNC_HOOK_SCRIPT_REL);
+    expect(fs.files['/repo/.git/hooks/post-merge']).not.toContain(BOARD_SYNC_HOOK_SCRIPT_REL);
   });
 });

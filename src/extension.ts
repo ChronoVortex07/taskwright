@@ -39,7 +39,13 @@ import {
 } from './core/claudeMcp';
 import { injectConvention } from './core/agentConvention';
 import { affectsTaskwrightConfig, getTaskwrightConfig } from './config';
-import { installGuard, uninstallGuard, type HookFsDeps } from './core/hookInstaller';
+import {
+  installGuard,
+  uninstallGuard,
+  installBoardSyncHooks,
+  uninstallBoardSyncHooks,
+  type HookFsDeps,
+} from './core/hookInstaller';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import {
@@ -117,6 +123,38 @@ function syncWorktreeGuard(repoRoot: string, extensionUri: vscode.Uri): void {
     }
   } catch (e) {
     console.warn('[Taskwright] Worktree guard sync failed:', e);
+  }
+}
+
+/**
+ * Install or remove the opt-in Board Sync v2 `pre-push`/`post-merge` hooks for
+ * `repoRoot`, per `taskwright.sync.installHooks` (off by default — never
+ * auto-installed). Both hooks shell out to the committed
+ * `scripts/board-sync-hook.cjs`, which calls the same `pushBoard`/`pullBoard`
+ * core as the Push/Pull Board commands and never blocks the user's git
+ * operation on failure.
+ */
+function syncBoardHooks(repoRoot: string): void {
+  try {
+    if (!getTaskwrightConfig<boolean>('sync.installHooks', false)) {
+      uninstallBoardSyncHooks(repoRoot, guardFs);
+      return;
+    }
+    const { prePush, postMerge } = installBoardSyncHooks(repoRoot, guardFs);
+    for (const [manager, hookName] of [
+      [prePush, 'pre-push'],
+      [postMerge, 'post-merge'],
+    ] as const) {
+      if (manager === 'plain') {
+        try {
+          fs.chmodSync(path.join(repoRoot, '.git', 'hooks', hookName), 0o755);
+        } catch {
+          /* chmod is a no-op / unsupported on Windows */
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[Taskwright] Board sync hooks sync failed:', e);
   }
 }
 
@@ -403,6 +441,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   if (workspaceRootPath) {
     syncWorktreeGuard(workspaceRootPath, context.extensionUri);
+    syncBoardHooks(workspaceRootPath);
     void syncMergeConfig(workspaceRootPath);
     void publishSyncConfig(workspaceRootPath);
   }
@@ -623,6 +662,39 @@ export async function activate(context: vscode.ExtensionContext) {
           `Pull Board failed: ${err instanceof Error ? err.message : String(err)}`
         );
       }
+    })
+  );
+
+  // Board Sync v2 Task H: opt-in pre-push/post-merge hooks over the same
+  // pushBoard/pullBoard core — an explicit command alternative to flipping
+  // `taskwright.sync.installHooks` directly in settings.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('taskwright.installBoardHooks', async () => {
+      if (!workspaceRootPath) {
+        void vscode.window.showWarningMessage('Open a Taskwright workspace folder first.');
+        return;
+      }
+      await vscode.workspace
+        .getConfiguration('taskwright')
+        .update('sync.installHooks', true, vscode.ConfigurationTarget.Workspace);
+      syncBoardHooks(workspaceRootPath);
+      void vscode.window.showInformationMessage(
+        'Board sync hooks installed: `git push` also pushes the board ref, and `git pull`/merge materializes board updates. Failures are logged, never block the git operation. Uninstall via "Taskwright: Uninstall Board Sync Hooks".'
+      );
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('taskwright.uninstallBoardHooks', async () => {
+      if (!workspaceRootPath) {
+        void vscode.window.showWarningMessage('Open a Taskwright workspace folder first.');
+        return;
+      }
+      await vscode.workspace
+        .getConfiguration('taskwright')
+        .update('sync.installHooks', false, vscode.ConfigurationTarget.Workspace);
+      syncBoardHooks(workspaceRootPath);
+      void vscode.window.showInformationMessage('Board sync hooks removed.');
     })
   );
 
@@ -1740,6 +1812,9 @@ export async function activate(context: vscode.ExtensionContext) {
           affectsTaskwrightConfig(event, 'sync.installHooks'))
       ) {
         void publishSyncConfig(workspaceRootPath);
+      }
+      if (workspaceRootPath && affectsTaskwrightConfig(event, 'sync.installHooks')) {
+        syncBoardHooks(workspaceRootPath);
       }
       if (affectsTaskwrightConfig(event, 'mergeMode')) {
         const backlogForStatus = manager.getActiveRoot()?.backlogPath;
