@@ -23,21 +23,50 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 /**
- * Given the output of `git rev-parse --path-format=absolute --git-common-dir`
- * and the cwd it ran from, return the primary checkout's board-sync-hook
- * bundle path plus the resolved absolute common dir (the caller needs both —
- * the bundle path to check it's built, the common dir to locate
- * sync-config.json). Pure string logic — no I/O.
+ * Resolve an absolute common-dir from a raw `git rev-parse --git-common-dir`
+ * output line. Pure string logic — no I/O. Exported for unit tests.
  *
- * @param {string} commonDirOutput raw `git rev-parse` output (may be relative
- *   or have trailing whitespace).
- * @param {string} cwd base for resolving a relative common dir.
+ * @param {string} raw  git output (may be relative, absolute, or have
+ *   leading/trailing whitespace).
+ * @param {string} cwd  base for resolving a relative path.
+ * @returns {{ bundlePath: string, commonDir: string }}
  */
-function resolveBundlePath(commonDirOutput, cwd) {
-  const raw = String(commonDirOutput).trim();
-  const commonDir = path.isAbsolute(raw) ? raw : path.resolve(cwd, raw);
+function resolveBundlePath(raw, cwd) {
+  const trimmed = String(raw).trim();
+  const commonDir = path.isAbsolute(trimmed) ? trimmed : path.resolve(cwd, trimmed);
   const primaryRoot = path.dirname(commonDir);
   return { bundlePath: path.join(primaryRoot, 'dist', 'hooks', 'board-sync-hook.js'), commonDir };
+}
+
+/**
+ * Resolve `--git-common-dir`, falling back from `--path-format=absolute`
+ * (requires git ≥ 2.31) to manual relative-path resolution for older git.
+ */
+function resolveCommonDir(cwd) {
+  // Try the modern flag first.
+  try {
+    const raw = execFileSync(
+      'git',
+      ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+      { cwd, encoding: 'utf8' }
+    );
+    return resolveBundlePath(raw, cwd);
+  } catch (_e) {
+    // Fall back: git < 2.31 doesn't support --path-format=absolute.
+  }
+  try {
+    const raw = execFileSync(
+      'git',
+      ['rev-parse', '--git-common-dir'],
+      { cwd, encoding: 'utf8' }
+    );
+    return resolveBundlePath(raw, cwd);
+  } catch (error) {
+    console.error(
+      `[board-sync-hook] cannot locate the git repository (${error && error.message}).`
+    );
+    return null;
+  }
 }
 
 function main() {
@@ -49,22 +78,15 @@ function main() {
     return;
   }
 
-  let commonDirRaw;
-  try {
-    commonDirRaw = execFileSync(
-      'git',
-      ['rev-parse', '--path-format=absolute', '--git-common-dir'],
-      { cwd: process.cwd(), encoding: 'utf8' }
-    );
-  } catch (error) {
-    console.error(`[board-sync-hook] cannot locate the git repository (${error && error.message}).`);
-    return;
-  }
+  const resolved = resolveCommonDir(process.cwd());
+  if (!resolved) return;
 
-  const { bundlePath, commonDir } = resolveBundlePath(commonDirRaw, process.cwd());
+  const { bundlePath, commonDir } = resolved;
+
   if (!fs.existsSync(bundlePath)) {
     console.error(
-      `[board-sync-hook] not built at ${bundlePath} — run 'bun run build' in the primary Taskwright checkout.`
+      `[board-sync-hook] payload not built at ${bundlePath} — ` +
+        `run 'bun run build' in the primary Taskwright checkout (${path.dirname(commonDir)}).`
     );
     return;
   }
@@ -85,12 +107,19 @@ function main() {
     execFileSync(process.execPath, [bundlePath, mode, commonDir], {
       cwd: process.cwd(),
       stdio: 'inherit',
+      // On Windows, git hook processes occasionally inherit a detached console
+      // that causes EIO on stdio; setting a generous timeout + detached false
+      // ensures a clean child lifecycle regardless of platform.
+      timeout: 5 * 60 * 1000,
     });
   } catch (error) {
     // The bundle's own CLI entry never throws/exits non-zero on a push/pull
     // failure (see `runBoardSyncHook`) — a non-zero exit here means the child
     // node process itself crashed unexpectedly. Log, never block the git op.
-    console.error(`[board-sync-hook] ${mode} failed: ${error && error.message}`);
+    const detail = error && error.code
+      ? `${error.message} (code: ${error.code})`
+      : error && error.message;
+    console.error(`[board-sync-hook] ${mode} child process failed: ${detail}`);
   }
 }
 
@@ -98,4 +127,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { resolveBundlePath };
+module.exports = { resolveBundlePath, resolveCommonDir };

@@ -1,2 +1,7 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Normalize all text files to LF regardless of platform or core.autocrlf.
+# text=auto enables CRLF→LF conversion on commit for detected text files;
+# eol=lf ensures checkout always produces LF (overrides core.autocrlf).
+# Without this, a Windows clone with core.autocrlf=true produces CRLF working
+# files against the repo's LF blobs — every file appears modified before any
+# edit is made (see docs for phantom-modification recovery).
+* text=auto eol=lf

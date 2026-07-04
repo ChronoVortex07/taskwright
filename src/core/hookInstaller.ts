@@ -43,11 +43,25 @@ export interface HookFsDeps {
   write: (p: string, content: string) => void;
 }
 
+/**
+ * True when the repo uses husky v2+ (`core.hookspath = .husky/_`). Husky v2's
+ * shim directory `.husky/_/` intercepts ALL git hooks — a `.git/hooks/<name>`
+ * file is dead letter, because git never looks in `.git/hooks/` when
+ * `core.hookspath` is set. Detect via the husky runner script `.husky/_/h`,
+ * which is the one file guaranteed to exist in every husky v2 install.
+ */
+function isHuskyV2(repoRoot: string, deps: HookFsDeps): boolean {
+  return deps.exists(path.join(repoRoot, '.husky', '_', 'h'));
+}
+
 /** Where the guard hook lives, husky-aware. */
 export function resolveHookTarget(
   repoRoot: string,
   deps: HookFsDeps
 ): { manager: 'husky' | 'plain'; hookPath: string } {
+  if (isHuskyV2(repoRoot, deps)) {
+    return { manager: 'husky', hookPath: path.join(repoRoot, '.husky', 'pre-commit') };
+  }
   const husky = path.join(repoRoot, '.husky', 'pre-commit');
   if (deps.exists(husky)) return { manager: 'husky', hookPath: husky };
   return { manager: 'plain', hookPath: path.join(repoRoot, '.git', 'hooks', 'pre-commit') };
@@ -121,6 +135,13 @@ export function resolveHookTargetFor(
   hookName: string,
   deps: HookFsDeps
 ): { manager: 'husky' | 'plain'; hookPath: string } {
+  // When husky v2 manages all hooks, always write to .husky/<hookName> even if
+  // that file doesn't exist yet — the husky shim at .husky/_/<hookName> will
+  // find and execute it. Without this, hooks like post-checkout and post-merge
+  // are installed to .git/hooks/ which git ignores entirely under core.hookspath.
+  if (isHuskyV2(repoRoot, deps)) {
+    return { manager: 'husky', hookPath: path.join(repoRoot, '.husky', hookName) };
+  }
   const husky = path.join(repoRoot, '.husky', hookName);
   if (deps.exists(husky)) return { manager: 'husky', hookPath: husky };
   return { manager: 'plain', hookPath: path.join(repoRoot, '.git', 'hooks', hookName) };

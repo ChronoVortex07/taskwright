@@ -1,11 +1,16 @@
-# Pre-push checks. These require the local toolchain (bun) on PATH. GUI push
-# clients (VS Code Source Control, GitHub Desktop) often run hooks with a
-# minimal environment that lacks user-installed tools like bun, so guard the
-# checks: run them when bun is available, otherwise skip with a warning. CI
-# enforces both regardless (see .github/workflows/ci.yml).
+# Pre-push quality checks. These require the local toolchain (bun) on PATH.
+# GUI push clients (VS Code Source Control, GitHub Desktop) often run hooks
+# with a minimal environment that lacks user-installed tools like bun, so
+# guard the checks: run them when bun is available, otherwise skip with a
+# warning. CI enforces both regardless (see .github/workflows/ci.yml), so
+# local failures are advisory — they warn but never block the push.
 if command -v bun >/dev/null 2>&1; then
-  bun run depcheck || exit 1
-  bun run licenses:check || exit 1
+  failed=""
+  bun run depcheck || failed="$failed depcheck"
+  bun run licenses:check || failed="$failed licenses:check"
+  if [ -n "$failed" ]; then
+    echo "husky/pre-push: checks failed:$failed — these are enforced by CI; push is still allowed."
+  fi
 else
   echo "husky/pre-push: 'bun' not found on PATH — skipping depcheck & licenses:check locally (CI enforces these)."
 fi

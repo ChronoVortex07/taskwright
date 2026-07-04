@@ -87,6 +87,13 @@ describe('resolveHookTarget', () => {
     expect(t.hookPath.replace(/\\/g, '/')).toBe('/repo/.husky/pre-commit');
   });
 
+  it('targets .husky/pre-commit when husky v2 manages all hooks (.husky/_/h exists), even if .husky/pre-commit does not', () => {
+    const fs = memFs({ '/repo/.husky/_/h': '#!/usr/bin/env sh\n' });
+    const t = resolveHookTarget('/repo', fs);
+    expect(t.manager).toBe('husky');
+    expect(t.hookPath.replace(/\\/g, '/')).toBe('/repo/.husky/pre-commit');
+  });
+
   it('falls back to .git/hooks/pre-commit otherwise', () => {
     const t = resolveHookTarget('/repo', memFs());
     expect(t.manager).toBe('plain');
@@ -128,6 +135,16 @@ describe('resolveHookTargetFor', () => {
     const t = resolveHookTargetFor('/repo', 'pre-push', fs);
     expect(t.manager).toBe('husky');
     expect(t.hookPath.replace(/\\/g, '/')).toBe('/repo/.husky/pre-push');
+  });
+
+  it('targets .husky/<hookName> when husky v2 manages all hooks (.husky/_/h exists), even if .husky/<hookName> does not exist yet', () => {
+    // This is the key fix: a husky v2 repo redirects all hooks via .husky/_/<hookName> shims,
+    // so writing to .git/hooks/<hookName> is dead letter. The function must return
+    // .husky/<hookName> even when the file doesn't exist yet.
+    const fs = memFs({ '/repo/.husky/_/h': '#!/usr/bin/env sh\n' });
+    const t = resolveHookTargetFor('/repo', 'post-checkout', fs);
+    expect(t.manager).toBe('husky');
+    expect(t.hookPath.replace(/\\/g, '/')).toBe('/repo/.husky/post-checkout');
   });
 
   it('falls back to .git/hooks/<hookName> otherwise', () => {
@@ -242,6 +259,14 @@ describe('installPostCheckoutWarn / uninstallPostCheckoutWarn', () => {
     expect(content).toContain(POST_CHECKOUT_WARN_LABEL);
     expect(content).toContain(WARN_REL);
     expect(content).toContain('|| true');
+  });
+
+  it('installs to .husky/post-checkout (not .git/hooks/) when husky v2 manages all hooks, even though .husky/post-checkout does not exist yet', () => {
+    const fs = memFs({ '/repo/.husky/_/h': '#!/usr/bin/env sh\n' });
+    expect(installPostCheckoutWarn('/repo', WARN_REL, fs)).toBe('husky');
+    // Must write to .husky/ (where the husky shim will find it), not .git/hooks/ (dead letter).
+    expect(fs.files['/repo/.husky/post-checkout']).toContain(POST_CHECKOUT_WARN_LABEL);
+    expect(fs.files['/repo/.git/hooks/post-checkout']).toBeUndefined();
   });
 
   it('falls back to .git/hooks/post-checkout when husky is absent', () => {
