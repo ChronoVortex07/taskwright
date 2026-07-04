@@ -33,6 +33,14 @@ const builds: esbuild.BuildOptions[] = [
     outfile: 'dist/hooks/board-sync-hook.js',
     external: ['vscode'],
   },
+  {
+    // Advisory post-checkout worktree-isolation warn hook — a tiny standalone
+    // Node script the git hook runs. Reuses the vscode-free worktreeGuard core.
+    // Always exits 0 (advisory only; never blocks the checkout).
+    entryPoints: ['src/hooks/worktree-warn.ts'],
+    outfile: 'dist/hooks/worktree-warn.js',
+    external: ['vscode'],
+  },
 ];
 
 const common: esbuild.BuildOptions = {

@@ -45,6 +45,8 @@ import {
   uninstallGuard,
   installBoardSyncHooks,
   uninstallBoardSyncHooks,
+  installPostCheckoutWarn,
+  uninstallPostCheckoutWarn,
   type HookFsDeps,
 } from './core/hookInstaller';
 import { execFile } from 'child_process';
@@ -87,6 +89,7 @@ let boardSyncStatusBarItem: vscode.StatusBarItem | undefined;
 let claudeMcpRegistered = false;
 
 const GUARD_REL = '.taskwright/hooks/worktree-guard.js';
+const WARN_REL = '.taskwright/hooks/worktree-warn.js';
 
 const guardFs: HookFsDeps = {
   exists: fs.existsSync,
@@ -124,6 +127,36 @@ function syncWorktreeGuard(repoRoot: string, extensionUri: vscode.Uri): void {
     }
   } catch (e) {
     console.warn('[Taskwright] Worktree guard sync failed:', e);
+  }
+}
+
+/**
+ * Install or remove the advisory post-checkout warn hook for `repoRoot`,
+ * per the `taskwright.enforceWorktreeIsolation` setting. Same setting as the
+ * pre-commit guard — the post-checkout hook warns (never blocks) when a
+ * dispatched task branch is checked out in the primary tree.
+ */
+function syncPostCheckoutWarn(repoRoot: string, extensionUri: vscode.Uri): void {
+  try {
+    if (!getTaskwrightConfig<boolean>('enforceWorktreeIsolation', true)) {
+      uninstallPostCheckoutWarn(repoRoot, guardFs);
+      return;
+    }
+    const bundled = path.join(extensionUri.fsPath, 'dist', 'hooks', 'worktree-warn.js');
+    if (!fs.existsSync(bundled)) return; // dev build without the bundle yet
+    const dest = path.join(repoRoot, WARN_REL);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(bundled, dest);
+    const manager = installPostCheckoutWarn(repoRoot, WARN_REL, guardFs);
+    if (manager === 'plain') {
+      try {
+        fs.chmodSync(path.join(repoRoot, '.git', 'hooks', 'post-checkout'), 0o755);
+      } catch {
+        /* chmod is a no-op / unsupported on Windows */
+      }
+    }
+  } catch (e) {
+    console.warn('[Taskwright] Post-checkout warn sync failed:', e);
   }
 }
 
@@ -442,6 +475,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   if (workspaceRootPath) {
     syncWorktreeGuard(workspaceRootPath, context.extensionUri);
+    syncPostCheckoutWarn(workspaceRootPath, context.extensionUri);
     syncBoardHooks(workspaceRootPath);
     void syncMergeConfig(workspaceRootPath);
     void publishSyncConfig(workspaceRootPath);
@@ -699,10 +733,18 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // Merge-queue board enrichment: resolve the shared queue location once, inject
-  // a reader into both board hosts, and watch the queue file so out-of-process
+  // Merge-queue board enrichment: resolve the shared queue location, inject a
+  // reader into both board hosts, and watch the queue file so out-of-process
   // mutations (request_merge merging/dequeuing, approve/send-back) refresh the
   // board without a manual reload.
+  //
+  // Also caches the common dir on the detail provider so it doesn't spawn
+  // `git rev-parse` per panel open.
+  //
+  // Extracted so it can be re-called on a backlog-root switch (the file watcher
+  // needs to re-point to the new common dir's queue file).
+  let mergeQueueWatcherDispose: vscode.Disposable | undefined;
+
   if (workspaceRootPath) {
     void (async () => {
       const commonDir = await resolveCommonDir(workspaceRootPath);
@@ -722,7 +764,8 @@ export async function activate(context: vscode.ExtensionContext) {
       fs.watchFile(queueFile, { interval: 1000 }, (curr, prev) => {
         if (curr.mtimeMs !== prev.mtimeMs) onQueueChange();
       });
-      context.subscriptions.push({ dispose: () => fs.unwatchFile(queueFile) });
+      mergeQueueWatcherDispose = new vscode.Disposable(() => fs.unwatchFile(queueFile));
+      context.subscriptions.push(mergeQueueWatcherDispose);
     })();
   }
 
@@ -763,6 +806,13 @@ export async function activate(context: vscode.ExtensionContext) {
   const taskDetailProvider = new TaskDetailProvider(context.extensionUri, parser);
   if (backlogFolder) {
     taskDetailProvider.setBacklogPath(backlogFolder);
+  }
+  // Cache the git common dir on the detail provider so resolveMergeState
+  // reuses it instead of spawning `git rev-parse` per panel open.
+  if (workspaceRootPath) {
+    resolveCommonDir(workspaceRootPath).then((cd) => {
+      if (cd) taskDetailProvider.setCommonDir(cd);
+    });
   }
   console.log('[Taskwright] Task detail provider created');
 
@@ -812,6 +862,11 @@ export async function activate(context: vscode.ExtensionContext) {
     taskPreviewProvider.setParser(parser);
     taskDetailProvider.setParser(parser);
     taskDetailProvider.setBacklogPath(root.backlogPath);
+    // Re-resolve the common dir for the new root so the detail panel doesn't
+    // spawn git rev-parse on every open after a workspace switch.
+    void resolveCommonDir(root.workspaceFolder.uri.fsPath).then((cd) => {
+      if (cd) taskDetailProvider.setCommonDir(cd);
+    });
     contentDetailProvider.setParser(parser);
     treeNavigatorProvider.setParser(parser);
     treeNavigatorProvider.refresh();
@@ -830,6 +885,34 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Update workspace status bar
     updateWorkspaceStatusBar(manager);
+
+    // Re-point the merge-queue reader + file watcher to the new root's common
+    // dir. The old watcher's path (derived from the prior workspace root) is
+    // stale — dispose it first, then set up the new one.
+    if (root.workspaceFolder) {
+      void (async () => {
+        // Dispose the old watcher so it doesn't poll a dead path.
+        if (mergeQueueWatcherDispose) {
+          mergeQueueWatcherDispose.dispose();
+          mergeQueueWatcherDispose = undefined;
+        }
+        const newCommon = await resolveCommonDir(root.workspaceFolder.uri.fsPath);
+        if (!newCommon) return;
+        const store = new MergeQueueStore(mergeQueuePath(newCommon), nodeQueueFs);
+        const reader = (): MergeQueue => store.read();
+        tasksHosts.forEach((host) => host.setMergeQueueReader(reader));
+        taskDetailProvider.setCommonDir(newCommon);
+        tasksHosts.forEach((host) => host.refresh());
+
+        const queueFile = mergeQueuePath(newCommon);
+        const onQueueChange = () => tasksHosts.forEach((host) => host.refresh());
+        fs.watchFile(queueFile, { interval: 1000 }, (curr, prev) => {
+          if (curr.mtimeMs !== prev.mtimeMs) onQueueChange();
+        });
+        mergeQueueWatcherDispose = new vscode.Disposable(() => fs.unwatchFile(queueFile));
+        context.subscriptions.push(mergeQueueWatcherDispose);
+      })();
+    }
   }
 
   // Subscribe to active root changes (e.g. from selectBacklog or addRoot)
@@ -1824,6 +1907,7 @@ export async function activate(context: vscode.ExtensionContext) {
       }
       if (affectsTaskwrightConfig(event, 'enforceWorktreeIsolation') && workspaceRootPath) {
         syncWorktreeGuard(workspaceRootPath, context.extensionUri);
+        syncPostCheckoutWarn(workspaceRootPath, context.extensionUri);
       }
       if (
         workspaceRootPath &&

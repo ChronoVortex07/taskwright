@@ -15,6 +15,10 @@ import {
   BOARD_SYNC_HOOK_SCRIPT_REL,
   installBoardSyncHooks,
   uninstallBoardSyncHooks,
+  warnGuardBlock,
+  POST_CHECKOUT_WARN_LABEL,
+  installPostCheckoutWarn,
+  uninstallPostCheckoutWarn,
 } from '../../core/hookInstaller';
 
 const REL = '.taskwright/hooks/worktree-guard.js';
@@ -211,5 +215,61 @@ describe('installBoardSyncHooks / uninstallBoardSyncHooks', () => {
     expect(fs.files['/repo/.husky/pre-push']).toContain('npx lint-staged');
     expect(fs.files['/repo/.husky/pre-push']).not.toContain(BOARD_SYNC_HOOK_SCRIPT_REL);
     expect(fs.files['/repo/.git/hooks/post-merge']).not.toContain(BOARD_SYNC_HOOK_SCRIPT_REL);
+  });
+});
+
+const WARN_REL = '.taskwright/hooks/worktree-warn.js';
+
+describe('warnGuardBlock', () => {
+  it('returns an advisory (exit 0) node invocation for post-checkout', () => {
+    const b = warnGuardBlock(WARN_REL);
+    expect(b).toContain(`if [ -f "${WARN_REL}" ]`);
+    expect(b).toContain('|| true'); // advisory only
+    expect(b).not.toContain('|| exit 1'); // never blocks
+  });
+
+  it('only evaluates on branch checkouts (post-checkout flag $3 == 1)', () => {
+    const b = warnGuardBlock(WARN_REL);
+    expect(b).toContain('"$3" -ne 1');
+  });
+});
+
+describe('installPostCheckoutWarn / uninstallPostCheckoutWarn', () => {
+  it('installs a labeled fence into a husky post-checkout hook', () => {
+    const fs = memFs({ '/repo/.husky/post-checkout': '#!/bin/sh\n' });
+    expect(installPostCheckoutWarn('/repo', WARN_REL, fs)).toBe('husky');
+    const content = fs.files['/repo/.husky/post-checkout'];
+    expect(content).toContain(POST_CHECKOUT_WARN_LABEL);
+    expect(content).toContain(WARN_REL);
+    expect(content).toContain('|| true');
+  });
+
+  it('falls back to .git/hooks/post-checkout when husky is absent', () => {
+    const fs = memFs();
+    expect(installPostCheckoutWarn('/repo', WARN_REL, fs)).toBe('plain');
+    expect(fs.files['/repo/.git/hooks/post-checkout']).toContain(POST_CHECKOUT_WARN_LABEL);
+  });
+
+  it('is idempotent (re-running does not duplicate the fence)', () => {
+    const fs = memFs();
+    installPostCheckoutWarn('/repo', WARN_REL, fs);
+    installPostCheckoutWarn('/repo', WARN_REL, fs);
+    const content = fs.files['/repo/.git/hooks/post-checkout'];
+    const matches = content.match(/taskwright post-checkout warn/g);
+    expect(matches!.length).toBe(2); // start + end only
+  });
+
+  it('uninstall removes the fence, leaving surrounding content intact', () => {
+    const fs = memFs({ '/repo/.husky/post-checkout': '#!/bin/sh\nnpx lint-staged\n' });
+    installPostCheckoutWarn('/repo', WARN_REL, fs);
+    uninstallPostCheckoutWarn('/repo', fs);
+    expect(fs.files['/repo/.husky/post-checkout']).toContain('npx lint-staged');
+    expect(fs.files['/repo/.husky/post-checkout']).not.toContain(POST_CHECKOUT_WARN_LABEL);
+  });
+
+  it('uninstall is a no-op when the hook file does not exist', () => {
+    const fs = memFs();
+    expect(() => uninstallPostCheckoutWarn('/repo', fs)).not.toThrow();
+    expect(fs.files['/repo/.git/hooks/post-checkout']).toBeUndefined();
   });
 });

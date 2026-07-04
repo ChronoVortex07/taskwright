@@ -1,6 +1,11 @@
 import * as path from 'path';
 import type { MergeMode, QueueFsDeps } from './mergeQueue';
 
+/** The "In Progress" board status — the status a task returns to when a merge is
+ *  aborted or the task is sent back from review. Shared by `request_merge`
+ *  (finishTask.ts) and the board approval UI (mergeActions.ts). */
+export const IN_PROGRESS = 'In Progress';
+
 export const MERGE_MODES: MergeMode[] = ['manual-review', 'auto-merge', 'auto-pr'];
 
 export function isMergeMode(value: unknown): value is MergeMode {

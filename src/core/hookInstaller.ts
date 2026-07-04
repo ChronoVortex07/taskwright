@@ -205,3 +205,44 @@ export function uninstallBoardSyncHooks(repoRoot: string, deps: HookFsDeps): voi
   uninstallLabeledHook(repoRoot, 'pre-push', BOARD_PUSH_HOOK_LABEL, deps);
   uninstallLabeledHook(repoRoot, 'post-merge', BOARD_PULL_HOOK_LABEL, deps);
 }
+
+// --- Post-checkout warn hook (§4.2 of the worktree-isolation spec) ---
+
+export const POST_CHECKOUT_WARN_LABEL = 'taskwright post-checkout warn';
+
+/**
+ * The command for the advisory post-checkout warn hook. Only fires on branch
+ * checkouts (post-checkout flag `$3 == 1`). Exits 0 always (advisory; never
+ * blocks). Existence-guarded so a linked worktree — whose cwd has no
+ * `.taskwright/hooks/` script — skips it entirely.
+ */
+export function warnGuardBlock(guardScriptRelPath: string): string {
+  const rel = guardScriptRelPath.replace(/\\/g, '/');
+  return [
+    `if [ "$3" -ne 1 ]; then exit 0; fi`,
+    `if [ -f "${rel}" ]; then node "${rel}" || true; fi`,
+  ].join('\n');
+}
+
+/**
+ * Idempotently install the advisory post-checkout warn fence. Uses the same
+ * husky-aware resolver as the other labeled hooks.
+ */
+export function installPostCheckoutWarn(
+  repoRoot: string,
+  guardScriptRelPath: string,
+  deps: HookFsDeps
+): 'husky' | 'plain' {
+  return installLabeledHook(
+    repoRoot,
+    'post-checkout',
+    POST_CHECKOUT_WARN_LABEL,
+    warnGuardBlock(guardScriptRelPath),
+    deps
+  );
+}
+
+/** Remove the advisory post-checkout warn fence. */
+export function uninstallPostCheckoutWarn(repoRoot: string, deps: HookFsDeps): void {
+  uninstallLabeledHook(repoRoot, 'post-checkout', POST_CHECKOUT_WARN_LABEL, deps);
+}

@@ -116,6 +116,7 @@ export class TaskDetailProvider {
   }
 
   private backlogPath: string | undefined;
+  private commonDir: string | undefined;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -128,6 +129,12 @@ export class TaskDetailProvider {
 
   setParser(parser: BacklogParser): void {
     this.parser = parser;
+  }
+
+  /** Cache the git common dir so resolveMergeState reuses it instead of spawning
+   *  `git rev-parse --git-common-dir` per panel open. */
+  setCommonDir(commonDir: string): void {
+    this.commonDir = commonDir;
   }
 
   /**
@@ -342,20 +349,27 @@ export class TaskDetailProvider {
 
   /**
    * Best-effort resolution of this task's place in the shared merge queue.
-   * Resolves the git common dir (identical from every worktree) and reads the
-   * queue file directly; any failure (not a git repo, queue unreadable) yields
-   * `undefined` rather than breaking the rest of the task-detail payload.
+   * Prefers the cached `commonDir` (set via `setCommonDir`) over spawning
+   * `git rev-parse --git-common-dir` every panel open. Falls back to spawning
+   * git when no cache is available. Any failure yields `undefined` rather than
+   * breaking the rest of the task-detail payload.
    */
   private async resolveMergeState(
     taskId: string,
     repoRoot: string
   ): Promise<MergeTaskState | undefined> {
     try {
-      const { stdout } = await execFileAsyncDetail('git', ['rev-parse', '--git-common-dir'], {
-        cwd: repoRoot,
-        timeout: 15_000,
-      });
-      const commonDir = path.resolve(repoRoot, stdout.trim());
+      const commonDir =
+        this.commonDir ??
+        path.resolve(
+          repoRoot,
+          (
+            await execFileAsyncDetail('git', ['rev-parse', '--git-common-dir'], {
+              cwd: repoRoot,
+              timeout: 15_000,
+            })
+          ).stdout.trim()
+        );
       const store = new MergeQueueStore(mergeQueuePath(commonDir), nodeQueueFs);
       return mergeStateForTask(store.read(), taskId);
     } catch {

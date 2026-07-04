@@ -3,6 +3,7 @@ import {
   MERGE_MODES,
   isMergeMode,
   intermediateStatusForMode,
+  IN_PROGRESS,
   DEFAULT_MERGE_CONFIG,
   DEFAULT_VERIFY_COMMANDS,
   mergeConfigPath,
@@ -10,6 +11,12 @@ import {
   writeMergeConfig,
   resolveMergeConfigFromSettings,
 } from '../../core/mergeConfig';
+
+describe('IN_PROGRESS', () => {
+  it('is the expected board status string', () => {
+    expect(IN_PROGRESS).toBe('In Progress');
+  });
+});
 
 describe('mode helpers', () => {
   it('exposes the three modes and validates them', () => {

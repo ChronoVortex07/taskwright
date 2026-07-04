@@ -6,10 +6,9 @@ import {
   nodeQueueFs,
   type QueueFsDeps,
 } from '../core/mergeQueue';
+import { IN_PROGRESS } from '../core/mergeConfig';
 import type { BacklogParser } from '../core/BacklogParser';
 import type { BacklogWriter } from '../core/BacklogWriter';
-
-const IN_PROGRESS = 'In Progress';
 
 function storeFor(commonDir: string, fsDeps: QueueFsDeps): MergeQueueStore {
   return new MergeQueueStore(mergeQueuePath(commonDir), fsDeps);

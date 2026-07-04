@@ -8,7 +8,7 @@ import {
   positionOf,
   type QueueEntry,
 } from './mergeQueue';
-import { intermediateStatusForMode, type MergeConfig } from './mergeConfig';
+import { intermediateStatusForMode, IN_PROGRESS, type MergeConfig } from './mergeConfig';
 
 /** Runs a git subcommand in `cwd`, resolving with its captured output. */
 export type GitExecFn = (
@@ -270,8 +270,6 @@ export type RequestMergeResult =
   | { status: 'pr_opened'; taskId: string; url: string }
   | { status: 'sent_back'; taskId: string; reason: string }
   | { status: 'aborted'; reason: string; detail?: string };
-
-const IN_PROGRESS = 'In Progress';
 
 /**
  * The full `request_merge` lifecycle. One blocking call: it suspends on the
