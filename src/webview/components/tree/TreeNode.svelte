@@ -140,6 +140,7 @@
   {#if lod === 'far'}
     <span class="tree-node-pill" data-testid="tree-node-pill-{task.id}" title={task.title}>
       {@render statusGlyph()}
+      <span class="tree-node-far-title">{task.title}</span>
     </span>
   {:else if lod === 'mid'}
     <div class="tree-node-mid">
@@ -429,6 +430,16 @@
   .tree-node-pill {
     display: inline-flex;
     align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+  .tree-node-far-title {
+    font-size: 11px;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 140px;
   }
   .tree-node-mid {
     display: flex;

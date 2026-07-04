@@ -177,6 +177,39 @@ test.describe('Tech tree canvas', () => {
     expect(afterTransform).not.toBe(beforeTransform);
   });
 
+  test('far LOD nodes show title text alongside the status icon', async ({ page }) => {
+    // Zoom out hard with ctrl-wheel → far LOD.
+    await page.locator('[data-testid="tree-viewport"]').evaluate((el) => {
+      for (let i = 0; i < 20; i++) {
+        el.dispatchEvent(
+          new WheelEvent('wheel', {
+            deltaY: 120,
+            ctrlKey: true,
+            clientX: 400,
+            clientY: 300,
+            bubbles: true,
+            cancelable: true,
+          })
+        );
+      }
+    });
+    await page.waitForTimeout(50);
+
+    // Confirm we're at far LOD.
+    await expect(page.locator('[data-testid="tree-node-TASK-1"]')).toHaveAttribute(
+      'data-lod',
+      'far'
+    );
+
+    // Every far-LOD node pill should contain readable text (not just an SVG icon).
+    for (const id of ['TASK-1', 'TASK-2', 'TASK-3', 'TASK-4', 'TASK-5']) {
+      const pill = page.locator(`[data-testid="tree-node-pill-${id}"]`);
+      await expect(pill).toBeVisible();
+      const text = (await pill.textContent())?.trim() ?? '';
+      expect(text.length, `Pill for ${id} should show title text`).toBeGreaterThan(0);
+    }
+  });
+
   test('plain wheel pans (updates the surface transform)', async ({ page }) => {
     // Zoom in so the surface overflows the viewport; when content fits entirely
     // within the viewport, clampViewport centres it and small pans are a no-op.
