@@ -1,4 +1,4 @@
-# Devcontainer for vscode-backlog.md development
+# Devcontainer for Taskwright development
 # amd64 required for vscode-extension-tester support (set in devcontainer.json)
 # https://github.com/redhat-developer/vscode-extension-tester/issues/506
 FROM mcr.microsoft.com/devcontainers/javascript-node:22

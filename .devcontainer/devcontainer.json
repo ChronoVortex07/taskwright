@@ -1,5 +1,5 @@
 {
-  "name": "vscode-backlog.md",
+  "name": "Taskwright",
   "build": {
     "dockerfile": "Dockerfile",
     // amd64 required for vscode-extension-tester support
@@ -39,10 +39,10 @@
   },
   "remoteUser": "node",
   "mounts": [
-    "source=vscode-backlog-md-bashhistory-${devcontainerId},target=/commandhistory,type=volume",
-    "source=vscode-backlog-md-claude-config-${devcontainerId},target=/home/node/.claude,type=volume",
-    "source=vscode-backlog-md-codex-config-${devcontainerId},target=/home/node/.codex,type=volume",
-    "source=vscode-backlog-md-node-modules-cache-${devcontainerId},target=${containerWorkspaceFolder}/node_modules,type=volume"
+    "source=taskwright-bashhistory-${devcontainerId},target=/commandhistory,type=volume",
+    "source=taskwright-claude-config-${devcontainerId},target=/home/node/.claude,type=volume",
+    "source=taskwright-codex-config-${devcontainerId},target=/home/node/.codex,type=volume",
+    "source=taskwright-node-modules-cache-${devcontainerId},target=${containerWorkspaceFolder}/node_modules,type=volume"
   ],
   "containerEnv": {
     "NODE_OPTIONS": "--max-old-space-size=4096",

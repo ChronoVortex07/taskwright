@@ -4,7 +4,7 @@ description: Produce verifiable visual/behavioral proof-of-work for changes to t
 allowed-tools: Bash(bun:*), Bash(uvx:*), Bash(agent-browser:*), Bash(xvfb-run:*), Bash(git:*), Bash(mkdir:*), Read, Write, Edit
 ---
 
-# Visual Proof (vscode-backlog-md)
+# Visual Proof (Taskwright)
 
 Capture and document visual/behavioral changes with a verifiable showboat doc. Three paths, each with a clear "when":
 

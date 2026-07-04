@@ -49,9 +49,9 @@ operation.
 
 **Default: 1 PR = 1 task.** Mid-PR scope growth (reviewer feedback, edge cases, follow-on polish, small bugfixes) belongs in the task already in flight — re-open it via `edit_task` if it's Done, append ACs for the new scope, keep shipping under the same ID. Larger scope changes might need a separate additional PR and task.
 
-## Project: vscode-backlog-md
+## Project: Taskwright
 
-VS Code extension providing a beautiful UI for browsing and managing Backlog.md tasks.
+Agentic task board for VS Code — triage work and dispatch isolated Claude Code sessions per task, on a git-native Backlog.md backbone.
 
 ### Development Workflow
 

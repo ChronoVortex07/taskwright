@@ -2,7 +2,7 @@
 
 ## Context: What We're Building
 
-**Project**: `vscode-backlog-md` - A VS Code extension providing Kanban board and task list views for managing Backlog.md tasks.
+**Project**: `taskwright` — an agentic task board for VS Code, forked from `vscode-backlog-md`.
 
 **Current Tech Stack**:
 

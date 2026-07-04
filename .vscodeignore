@@ -7,7 +7,7 @@ node_modules/**
 .gitignore
 .prettierignore
 .prettierrc
-.mocharc.json
+
 tsconfig.json
 tsconfig.e2e.json
 tsconfig.e2e-playwright.json
