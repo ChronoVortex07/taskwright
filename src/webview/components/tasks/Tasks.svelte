@@ -8,6 +8,7 @@
   import DecisionsList from '../decisions/DecisionsList.svelte';
   import TechTreeCanvas from '../tree/TechTreeCanvas.svelte';
   import CreateTaskForm, { type CreateTaskPayload } from '../tree/CreateTaskForm.svelte';
+  import ConfigEditor from './ConfigEditor.svelte';
   import TabBar from '../shared/TabBar.svelte';
   import AgentSetupBanner from '../shared/AgentSetupBanner.svelte';
   import Toast from '../shared/Toast.svelte';
@@ -119,6 +120,10 @@
   // Draft count for tab badge
   let draftCount = $state(0);
   let taskIdDisplay = $state<TaskIdDisplayMode>('full');
+
+  // Config editor state
+  let showConfigEditor = $state(false);
+  let configData = $state<Extract<ExtensionMessage, { type: 'configData' }>['config'] | null>(null);
 
   // Keyboard shortcuts popup state
   let showShortcuts = $state(false);
@@ -301,6 +306,26 @@
 
       case 'configUpdated':
         projectName = message.config?.projectName;
+        break;
+
+      case 'configData':
+        configData = message.config;
+        break;
+
+      case 'configEditResult':
+        showConfigEditor = false;
+        showToast(
+          message.success
+            ? message.warnings?.length
+              ? `Config saved. ${message.warnings.length} warning(s).`
+              : 'Config saved.'
+            : `Config error: ${message.error ?? 'Unknown error'}`
+        );
+        break;
+
+      case 'openConfigEditor':
+        showConfigEditor = true;
+        vscode.postMessage({ type: 'requestConfigData' });
         break;
 
       case 'integrationBannerState':
@@ -585,6 +610,20 @@
   onRefresh={() => vscode.postMessage({ type: 'refresh' })}
 />
 
+<div class="toolbar-actions">
+  <button
+    class="config-button"
+    onclick={() => {
+      showConfigEditor = true;
+      vscode.postMessage({ type: 'requestConfigData' });
+    }}
+    title="Edit Board Config"
+    data-testid="config-button"
+  >
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
+</div>
+
 {#if showIntegrationBanner && !noBacklog}
   <AgentSetupBanner cliAvailable={integrationCliAvailable} />
 {/if}
@@ -809,6 +848,14 @@
     {tasks}
     onSubmit={handleCreateSubmit}
     onClose={() => (createForm = null)}
+  />
+{/if}
+
+{#if showConfigEditor && configData}
+  <ConfigEditor
+    config={configData}
+    onClose={() => (showConfigEditor = false)}
+    onSave={(edits) => vscode.postMessage({ type: 'saveConfigEdits', edits })}
   />
 {/if}
 

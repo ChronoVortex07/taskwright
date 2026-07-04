@@ -228,6 +228,22 @@ export interface BacklogConfig {
 }
 
 /**
+ * Partial config edits sent from webview to extension for surgical config.yml updates.
+ */
+export interface ConfigEdit {
+  statuses?: string[];
+  labels?: string[];
+  priorities?: string[];
+  definition_of_done?: string[];
+  default_status?: string;
+  auto_commit?: boolean;
+  check_active_branches?: boolean;
+  active_branch_days?: number;
+  remote_operations?: boolean;
+  bypass_git_hooks?: boolean;
+}
+
+/**
  * Message types for webview communication
  */
 export type WebviewMessage =
@@ -330,7 +346,10 @@ export type WebviewMessage =
   | { type: 'addDependency'; taskId: string; dependsOn: string }
   | { type: 'removeDependency'; taskId: string; dependsOn: string }
   | { type: 'navigatorMinimapPan'; x: number; y: number }
-  | { type: 'navigatorJumpToTask'; taskId: string };
+  | { type: 'navigatorJumpToTask'; taskId: string }
+  | { type: 'openConfigEditor' }
+  | { type: 'requestConfigData' }
+  | { type: 'saveConfigEdits'; edits: ConfigEdit };
 
 /**
  * Data source mode for task viewing
@@ -432,7 +451,25 @@ export type ExtensionMessage =
   | { type: 'documentData'; document: BacklogDocument; contentHtml: string }
   | { type: 'decisionData'; decision: BacklogDecision; sections: Record<string, string> }
   | { type: 'activeEditedTaskChanged'; taskId: string | null }
-  | { type: 'integrationBannerState'; show: boolean; cliAvailable: boolean };
+  | { type: 'integrationBannerState'; show: boolean; cliAvailable: boolean }
+  | { type: 'openConfigEditor' }
+  | {
+      type: 'configData';
+      config: BacklogConfig & {
+        statuses: string[];
+        priorities: string[];
+        milestones: Milestone[];
+        labels: string[];
+        definition_of_done: string[];
+        categories: string[];
+      };
+    }
+  | {
+      type: 'configEditResult';
+      success: boolean;
+      warnings?: Array<{ type: string; message: string; tasks?: string[] }>;
+      error?: string;
+    };
 
 /** Re-exported so webview/provider code has one import site for the merge-board state shape. */
 export type { MergeTaskState } from './mergeBoard';

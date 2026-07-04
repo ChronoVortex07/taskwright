@@ -332,6 +332,12 @@
       {
         "command": "taskwright.setupClaudeIntegration",
         "title": "Taskwright: Set Up Claude Code Integration (MCP + CLAUDE.md)"
+      },
+      {
+        "command": "taskwright.editBoardConfig",
+        "title": "Taskwright: Edit Board Config",
+        "icon": "$(gear)",
+        "category": "Taskwright"
       }
     ],
     "keybindings": [
@@ -371,6 +377,10 @@
         },
         {
           "command": "taskwright.uninstallBoardHooks",
+          "when": "taskwright.hasBacklog"
+        },
+        {
+          "command": "taskwright.editBoardConfig",
           "when": "taskwright.hasBacklog"
         }
       ]

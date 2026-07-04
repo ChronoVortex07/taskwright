@@ -1846,6 +1846,13 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('taskwright.setupClaudeIntegration', setUpClaudeIntegration)
   );
 
+  // Edit Board Config — opens the config editor modal in the tasks webview
+  context.subscriptions.push(
+    vscode.commands.registerCommand('taskwright.editBoardConfig', () => {
+      tasksHosts.forEach((host) => host.relayNavigator({ type: 'openConfigEditor' }));
+    })
+  );
+
   // Once the user has opted into MCP integration, refresh the registration on
   // every activation. This (a) re-points it at the current build after an
   // extension update moves the install directory, and (b) restores it after a

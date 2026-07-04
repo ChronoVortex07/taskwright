@@ -33,6 +33,8 @@ import { loadPlanProgress } from '../core/loadPlanProgress';
 import { dispatchBranchName } from '../core/dispatchPrompt';
 import { worktreePathFor } from '../core/WorktreeService';
 import { resolvePriorities } from '../core/priorityOrder';
+import { applyConfigEdits } from '../core/ConfigWriter';
+import { atomicWriteFileSync } from '../core/atomicWrite';
 import { laneOf } from '../core/treeLayout';
 import { readReleaseChecklist, toggleReleaseChecklist } from '../core/milestoneReleaseChecklist';
 
@@ -1202,7 +1204,95 @@ export class TasksController {
         });
         break;
       }
+
+      case 'requestConfigData': {
+        await this.sendConfigData();
+        break;
+      }
+
+      case 'saveConfigEdits': {
+        if (!this.parser) break;
+        try {
+          const configPath = path.join(this.parser.getBacklogPath(), 'config.yml');
+          if (!fs.existsSync(configPath)) {
+            this.host.postMessage({
+              type: 'configEditResult',
+              success: false,
+              error: 'config.yml not found',
+            });
+            break;
+          }
+
+          const configText = fs.readFileSync(configPath, 'utf-8');
+          const { text: newText, changed } = applyConfigEdits(configText, message.edits);
+
+          if (changed) {
+            // Write atomically
+            atomicWriteFileSync(configPath, newText);
+
+            // Invalidate caches so next refresh re-reads config
+            this.parser.invalidateConfigCache();
+          }
+
+          // Apply status migration if statuses were renamed
+          if (message.edits.statuses) {
+            const oldConfig = await this.parser.getConfig();
+            // Re-read config to get fresh values
+            const oldStatuses = oldConfig.statuses ?? [];
+            const newStatuses = message.edits.statuses;
+
+            for (let i = 0; i < Math.min(oldStatuses.length, newStatuses.length); i++) {
+              if (oldStatuses[i] !== newStatuses[i]) {
+                // Status was renamed at position i
+                const oldName = oldStatuses[i];
+                const newName = newStatuses[i];
+                const tasks = await this.parser.getTasks();
+                for (const task of tasks) {
+                  if (task.status === oldName) {
+                    await this.writer.updateTask(task.id, { status: newName }, this.parser);
+                  }
+                }
+              }
+            }
+          }
+
+          this.host.postMessage({ type: 'configEditResult', success: true });
+
+          // Refresh so kanban columns / status pickers pick up the new statuses immediately
+          await this.refresh();
+        } catch (error) {
+          this.host.postMessage({
+            type: 'configEditResult',
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+        break;
+      }
     }
+  }
+
+  /**
+   * Send full config data to the webview for the config editor.
+   */
+  private async sendConfigData(): Promise<void> {
+    if (!this.parser) return;
+    const config = await this.parser.getConfig();
+    const statuses = await this.parser.getStatuses();
+    const milestones = await this.parser.getMilestones();
+    const categories = await this.parser.getCategories();
+    this.host.postMessage({
+      type: 'configData',
+      config: {
+        ...config,
+        statuses,
+        priorities: resolvePriorities(config),
+        labels: config.labels ?? [],
+        milestones,
+        definition_of_done: config.definition_of_done ?? [],
+        categories,
+      },
+    });
   }
 
   /**
