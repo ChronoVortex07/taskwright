@@ -38,6 +38,7 @@ import {
   unregisterTaskwrightMcp,
 } from './core/claudeMcp';
 import { injectConvention } from './core/agentConvention';
+import { installTaskwrightSkills, type SkillInstallResult } from './core/skillInstaller';
 import { affectsTaskwrightConfig, getTaskwrightConfig } from './config';
 import {
   installGuard,
@@ -1710,24 +1711,52 @@ export async function activate(context: vscode.ExtensionContext) {
       if (existed) {
         vscode.window.showInformationMessage('CLAUDE.md already has the Taskwright instructions.');
       }
-      return;
-    }
-    const choice = await vscode.window.showInformationMessage(
-      existed
-        ? 'Add Taskwright agent instructions to your CLAUDE.md? Only a marked block is added — your existing content is preserved.'
-        : 'Create a CLAUDE.md with Taskwright agent instructions so Claude Code uses the MCP server?',
-      { modal: true },
-      'Add'
-    );
-    if (choice === 'Add') {
-      try {
-        fs.writeFileSync(claudeMdPath, updated, 'utf-8');
-        vscode.window.showInformationMessage(
-          `${existed ? 'Updated' : 'Created'} CLAUDE.md with Taskwright agent instructions.`
-        );
-      } catch (error) {
-        vscode.window.showErrorMessage(`Failed to update CLAUDE.md: ${error}`);
+      // fall through — skills install still needs to run below
+    } else {
+      const choice = await vscode.window.showInformationMessage(
+        existed
+          ? 'Add Taskwright agent instructions to your CLAUDE.md? Only a marked block is added — your existing content is preserved.'
+          : 'Create a CLAUDE.md with Taskwright agent instructions so Claude Code uses the MCP server?',
+        { modal: true },
+        'Add'
+      );
+      if (choice === 'Add') {
+        try {
+          fs.writeFileSync(claudeMdPath, updated, 'utf-8');
+          vscode.window.showInformationMessage(
+            `${existed ? 'Updated' : 'Created'} CLAUDE.md with Taskwright agent instructions.`
+          );
+        } catch (error) {
+          vscode.window.showErrorMessage(`Failed to update CLAUDE.md: ${error}`);
+        }
       }
+    }
+
+    // 3) Install the three Taskwright skills (create-task, execute-task,
+    // index-codebase) into the project's .claude/skills/ — idempotent: already-
+    // installed skills are skipped, so re-running setup is safe.
+    const extSkillsDir = path.join(context.extensionPath, '.claude', 'skills');
+    const projectSkillsDir = path.join(root, '.claude', 'skills');
+    try {
+      const skillResults = installTaskwrightSkills(extSkillsDir, projectSkillsDir, false);
+      const created = skillResults.filter((r: SkillInstallResult) => r.action === 'created');
+      const skipped = skillResults.filter((r: SkillInstallResult) => r.action === 'skipped');
+      if (created.length > 0 || skipped.length > 0) {
+        const parts: string[] = [];
+        if (created.length > 0) {
+          parts.push(
+            `installed ${created.map((r: SkillInstallResult) => `/${r.name}`).join(', ')}`
+          );
+        }
+        if (skipped.length > 0) {
+          parts.push(
+            `${skipped.map((r: SkillInstallResult) => `/${r.name}`).join(', ')} already present`
+          );
+        }
+        vscode.window.showInformationMessage(`Taskwright skills: ${parts.join('; ')}.`);
+      }
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to install Taskwright skills: ${error}`);
     }
   };
   context.subscriptions.push(
