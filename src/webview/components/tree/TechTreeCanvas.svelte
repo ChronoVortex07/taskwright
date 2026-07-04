@@ -371,6 +371,7 @@
     if (pending.kind === 'pan') {
       if (!panning && dist < DRAG_THRESHOLD) return;
       panning = true;
+      e.preventDefault(); // suppress native text-selection during pan
       setViewport({
         scale: vp.scale,
         tx: panStart.tx + (e.clientX - panStart.x),
@@ -608,11 +609,13 @@
     e.preventDefault();
     if (!viewportEl) return;
     if (e.ctrlKey || e.metaKey) {
+      // Ctrl/meta + wheel → pan.
+      setViewport({ scale: vp.scale, tx: vp.tx - e.deltaX, ty: vp.ty - e.deltaY });
+    } else {
+      // Plain wheel → zoom centered on cursor.
       const rect = viewportEl.getBoundingClientRect();
       const factor = Math.exp(-e.deltaY * 0.0015);
       setViewport(zoomAt(vp, e.clientX - rect.left, e.clientY - rect.top, factor));
-    } else {
-      setViewport({ scale: vp.scale, tx: vp.tx - e.deltaX, ty: vp.ty - e.deltaY });
     }
   }
 
@@ -898,6 +901,7 @@
     background: var(--vscode-editor-background);
     cursor: grab;
     touch-action: none;
+    user-select: none;
   }
   .tree-viewport.panning {
     cursor: grabbing;

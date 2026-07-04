@@ -149,42 +149,37 @@ test.describe('Tech tree canvas', () => {
     await expect(page.locator('[data-testid="tree-edge-TASK-2-TASK-3"]')).toHaveClass(/incident/);
   });
 
-  test('ctrl-wheel zooms and switches LOD tiers', async ({ page }) => {
-    const surface = page.locator('[data-testid="tree-surface"]');
-    const beforeTransform = await surface.getAttribute('style');
-
-    // Zoom out hard with ctrl-wheel → far LOD.
+  test('plain wheel (no modifier) zooms centered on cursor instead of panning', async ({ page }) => {
+    // Dispatch a plain wheel event (no ctrl/meta) — should ZOOM, not pan.
+    const beforeZoom = await page.locator('[data-testid="tree-zoom-label"]').textContent();
     await page.locator('[data-testid="tree-viewport"]').evaluate((el) => {
-      for (let i = 0; i < 20; i++) {
-        el.dispatchEvent(
-          new WheelEvent('wheel', {
-            deltaY: 120,
-            ctrlKey: true,
-            clientX: 400,
-            clientY: 300,
-            bubbles: true,
-            cancelable: true,
-          })
-        );
-      }
+      el.dispatchEvent(
+        new WheelEvent('wheel', {
+          deltaY: 120,
+          ctrlKey: false,
+          metaKey: false,
+          clientX: 400,
+          clientY: 300,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
     });
     await page.waitForTimeout(50);
-    await expect(page.locator('[data-testid="tree-node-TASK-1"]')).toHaveAttribute(
-      'data-lod',
-      'far'
-    );
-    const afterTransform = await surface.getAttribute('style');
-    expect(afterTransform).not.toBe(beforeTransform);
+    const afterZoom = await page.locator('[data-testid="tree-zoom-label"]').textContent();
+    // Plain wheel should zoom → label percentage should change.
+    expect(afterZoom).not.toBe(beforeZoom);
   });
 
   test('far LOD nodes show title text alongside the status icon', async ({ page }) => {
-    // Zoom out hard with ctrl-wheel → far LOD.
+    // Zoom out to far LOD using plain wheel (no modifier — the new zoom default).
     await page.locator('[data-testid="tree-viewport"]').evaluate((el) => {
       for (let i = 0; i < 20; i++) {
         el.dispatchEvent(
           new WheelEvent('wheel', {
             deltaY: 120,
-            ctrlKey: true,
+            ctrlKey: false,
+            metaKey: false,
             clientX: 400,
             clientY: 300,
             bubbles: true,
@@ -210,27 +205,89 @@ test.describe('Tech tree canvas', () => {
     }
   });
 
-  test('plain wheel pans (updates the surface transform)', async ({ page }) => {
+  test('ctrl-wheel pans the surface without changing zoom', async ({ page }) => {
     // Zoom in so the surface overflows the viewport; when content fits entirely
     // within the viewport, clampViewport centres it and small pans are a no-op.
     await page.locator('[data-testid="tree-zoom-in"]').click();
     await page.locator('[data-testid="tree-zoom-in"]').click();
     await page.waitForTimeout(50);
     const surface = page.locator('[data-testid="tree-surface"]');
-    const before = await surface.getAttribute('style');
+    const beforeTransform = await surface.getAttribute('style');
+    const beforeZoom = await page.locator('[data-testid="tree-zoom-label"]').textContent();
     await page.locator('[data-testid="tree-viewport"]').evaluate((el) => {
       el.dispatchEvent(
         new WheelEvent('wheel', {
           deltaX: 120,
           deltaY: 80,
-          ctrlKey: false,
+          ctrlKey: true,
           bubbles: true,
           cancelable: true,
         })
       );
     });
     await page.waitForTimeout(50);
-    expect(await surface.getAttribute('style')).not.toBe(before);
+    const afterTransform = await surface.getAttribute('style');
+    const afterZoom = await page.locator('[data-testid="tree-zoom-label"]').textContent();
+    // Ctrl+wheel should pan → surface transform should change.
+    expect(afterTransform).not.toBe(beforeTransform);
+    // Ctrl+wheel should NOT zoom → zoom label should stay the same.
+    expect(afterZoom).toBe(beforeZoom);
+  });
+
+  test('drag-to-pan does not create text selection', async ({ page }) => {
+    // Click-drag on empty canvas area (viewport center is typically canvas, not a node).
+    const viewport = page.locator('[data-testid="tree-viewport"]');
+    const box = await viewport.boundingBox();
+    expect(box).not.toBeNull();
+
+    // Start drag from bottom-right area of viewport (empty canvas, away from nodes/headers).
+    const startX = box!.x + box!.width - 60;
+    const startY = box!.y + box!.height - 60;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    // Move enough to exceed DRAG_THRESHOLD and trigger panning.
+    await page.mouse.move(startX + 80, startY + 40, { steps: 5 });
+    await page.mouse.up();
+
+    // Verify no text was selected during the pan drag.
+    const selection = await page.evaluate(() => window.getSelection()?.toString() ?? '');
+    expect(selection).toBe('');
+  });
+
+  test('repeated drag-to-pan works multiple times without text-selection interference', async ({ page }) => {
+    const viewport = page.locator('[data-testid="tree-viewport"]');
+    const box = await viewport.boundingBox();
+    expect(box).not.toBeNull();
+
+    // First pan.
+    let startX = box!.x + box!.width - 60;
+    let startY = box!.y + box!.height - 60;
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + 60, startY + 30, { steps: 5 });
+    await page.mouse.up();
+
+    // Second pan starting nearby — must still work (no stale selection to hijack the drag).
+    startX = box!.x + box!.width - 80;
+    startY = box!.y + box!.height - 80;
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + 50, startY + 20, { steps: 5 });
+    await page.mouse.up();
+
+    // Third pan — still working.
+    startX = box!.x + box!.width - 100;
+    startY = box!.y + box!.height - 100;
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + 40, startY + 25, { steps: 5 });
+    await page.mouse.up();
+
+    // If we got here without the browser hijacking a drag, the test passes.
+    // Also verify no text selection accumulated.
+    const selection = await page.evaluate(() => window.getSelection()?.toString() ?? '');
+    expect(selection).toBe('');
   });
 
   test('fit-to-view resets the zoom toward 100% or below', async ({ page }) => {
