@@ -275,7 +275,7 @@ _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <
   (lock-dir + `wx` write, retry on `EEXIST`); regression tests added directly against `BacklogWriter`
   in `mcpWriteHandlers.test.ts` (handler-level concurrency tests don't reliably reproduce the race —
   see Handoff Notes). Full suite/lint/typecheck green.
-- 2026-07-04 · Task A · (pending commit) · `resolveBoardRoot()` pure core added
+- 2026-07-04 · Task A · `ff2d805` · `resolveBoardRoot()` pure core added
   (`src/core/boardRoot.ts` + 10 unit tests, no wiring yet). Full suite/lint/typecheck green.
 
 ---
