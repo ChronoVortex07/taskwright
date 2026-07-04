@@ -103,6 +103,8 @@ export interface TaskSummary {
   priority?: string;
   description?: string;
   acceptanceCriteria: ChecklistItem[];
+  /** Definition of Done checklist items (echoed so clients can verify writes). */
+  definitionOfDone?: ChecklistItem[];
   implementationPlan?: string;
   labels: string[];
   assignee: string[];
@@ -373,6 +375,7 @@ export function toSummary(task: Task, root: string, derived?: TreeDerivedState):
     priority: task.priority,
     description: task.description,
     acceptanceCriteria: task.acceptanceCriteria,
+    definitionOfDone: task.definitionOfDone,
     implementationPlan: task.implementationPlan,
     labels: task.labels,
     assignee: task.assignee,

@@ -28,6 +28,29 @@ describe('toSummary — subtasks + parentTaskId (GAP-5)', () => {
     expect(s.parentTaskId).toBe('TASK-5');
   });
 
+  it('surfaces definitionOfDone when present', () => {
+    const s = toSummary(
+      makeTask({
+        definitionOfDone: [
+          { id: 1, text: 'lint passes', checked: true },
+          { id: 2, text: 'tests pass', checked: false },
+        ],
+      }),
+      '/b'
+    );
+    expect(s.definitionOfDone).toBeDefined();
+    expect(s.definitionOfDone!.map((c) => c.text)).toEqual(['lint passes', 'tests pass']);
+    expect(s.definitionOfDone![0].checked).toBe(true);
+    expect(s.definitionOfDone![1].checked).toBe(false);
+  });
+
+  it('leaves definitionOfDone undefined on an empty checklist (negative control)', () => {
+    const s = toSummary(makeTask({ definitionOfDone: [] }), '/b');
+    // Empty arrays are falsy for toSummary purposes — definitionOfDone is omitted when empty
+    // because it's typed as ChecklistItem[] | undefined; an empty array is still defined.
+    expect(s.definitionOfDone).toEqual([]);
+  });
+
   it('leaves both undefined on a plain task (negative control)', () => {
     const s = toSummary(makeTask(), '/b');
     expect(s.subtasks).toBeUndefined();

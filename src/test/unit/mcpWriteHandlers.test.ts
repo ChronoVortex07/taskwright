@@ -200,6 +200,21 @@ describe('editTaskHandler', () => {
     expect(summary.acceptanceCriteria[1].checked).toBe(true);
   });
 
+  it('round-trips definitionOfDone through the write → re-read → summary echo', async () => {
+    await createTaskHandler(deps(), { title: 'DoD test' });
+    const summary = await editTaskHandler(deps(), {
+      taskId: 'TASK-1',
+      definitionOfDone: [{ text: 'lint' }, { text: 'tests pass', checked: true }],
+    });
+    expect(summary.definitionOfDone).toBeDefined();
+    expect(summary.definitionOfDone!.map((c) => c.text)).toEqual(['lint', 'tests pass']);
+    expect(summary.definitionOfDone![1].checked).toBe(true);
+    // Confirm it was actually written to disk.
+    const file = fs.readFileSync(path.join(backlogPath, 'tasks', 'task-1 - DoD-test.md'), 'utf-8');
+    expect(file).toMatch(/- \[ \] #1 lint/);
+    expect(file).toMatch(/- \[x] #2 tests pass/);
+  });
+
   it('rejects an invalid status', async () => {
     await createTaskHandler(deps(), { title: 'Edit me' });
     await expect(editTaskHandler(deps(), { taskId: 'TASK-1', status: 'Nope' })).rejects.toThrow(
@@ -239,7 +254,16 @@ describe('lifecycle moves', () => {
     const restored = await restoreTaskHandler(deps(), { taskId: 'TASK-1' });
     expect(restored.outcome).toBe('restored');
     expect(restored.path.replace(/\\/g, '/')).toContain('/tasks/');
+    expect(restored.path.replace(/\\/g, '/')).not.toMatch(/\/archive\//);
     expect(fs.existsSync(restored.path)).toBe(true);
+  });
+
+  it('throws on archive of a missing task', async () => {
+    await expect(archiveTaskHandler(deps(), { taskId: 'TASK-404' })).rejects.toThrow('TASK-404');
+  });
+
+  it('throws on restore of a missing task', async () => {
+    await expect(restoreTaskHandler(deps(), { taskId: 'TASK-404' })).rejects.toThrow('TASK-404');
   });
 
   it('throws completing a missing task', async () => {
@@ -327,6 +351,13 @@ describe('createSubtaskHandler', () => {
     });
     expect(sub.id).toBe('TASK-1.1');
     expect(sub.title).toBe('Child step');
+  });
+
+  it('defaults to Untitled when no title or opts are provided', async () => {
+    await createTaskHandler(deps(), { title: 'Parent' });
+    const sub = await createSubtaskHandler(deps(), { parentTaskId: 'TASK-1' });
+    expect(sub.id).toBe('TASK-1.1');
+    expect(sub.title).toBe('Untitled');
   });
 });
 

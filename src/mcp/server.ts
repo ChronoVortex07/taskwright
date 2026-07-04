@@ -102,7 +102,7 @@ async function main(): Promise<void> {
       description:
         'Return the task this session should work on, as recorded on the Taskwright board / by a dispatch. Call this first to learn your task ID and context.',
     },
-    async () => jsonContent(await getActiveTask(deps))
+    async () => runTool(() => getActiveTask(deps))
   );
 
   server.registerTool(
@@ -120,7 +120,7 @@ async function main(): Promise<void> {
         worktree: z.string().optional().describe('Branch or worktree being worked in.'),
       },
     },
-    async (args) => jsonContent(await claimTaskHandler(deps, args))
+    async (args) => runTool(() => claimTaskHandler(deps, args))
   );
 
   server.registerTool(
@@ -132,7 +132,7 @@ async function main(): Promise<void> {
         taskId: z.string().describe('Task ID to release, e.g. TASK-7.'),
       },
     },
-    async (args) => jsonContent(await releaseTaskHandler(deps, args))
+    async (args) => runTool(() => releaseTaskHandler(deps, args))
   );
 
   server.registerTool(
@@ -148,7 +148,7 @@ async function main(): Promise<void> {
           .describe('Repo-root-relative path to the plan file, e.g. docs/superpowers/plans/x.md.'),
       },
     },
-    async (args) => jsonContent(await attachPlanHandler(deps, args))
+    async (args) => runTool(() => attachPlanHandler(deps, args))
   );
 
   server.registerTool(
@@ -322,7 +322,8 @@ async function main(): Promise<void> {
     'promote_draft',
     {
       title: 'Promote draft',
-      description: 'Promote a draft (DRAFT-N) into a task with a new TASK-N id.',
+      description:
+        'Promote a draft (DRAFT-N) into a task with a new TASK-N id. Returns the promoted task summary.',
       inputSchema: { taskId: z.string().describe('Draft ID to promote, e.g. DRAFT-3.') },
     },
     async (args) => runTool(() => promoteDraftHandler(deps, args))
@@ -348,7 +349,7 @@ async function main(): Promise<void> {
     {
       title: 'Demote task',
       description:
-        "Demote a task into a draft (new DRAFT-N id; the task's status is preserved — a Done task becomes a Done draft, P6/D2e).",
+        "Demote a task into a draft (new DRAFT-N id; the task's status is preserved — a Done task becomes a Done draft, P6/D2e). Returns the demoted task summary.",
       inputSchema: { taskId: z.string().describe('Task ID to demote, e.g. TASK-7.') },
     },
     async (args) => runTool(() => demoteTaskHandler(deps, args))
