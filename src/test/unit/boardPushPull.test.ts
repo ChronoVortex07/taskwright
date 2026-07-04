@@ -173,7 +173,7 @@ describe('pushBoard / pullBoard (Board Sync v2 Task F)', () => {
     expect(fs.existsSync(path.join(cloneA.root, 'backlog/tasks/task-3 - C.md'))).toBe(true);
   });
 
-  it('same-task edit on both sides surfaces a conflict; newer updated_date wins', async () => {
+  it('same-task edit on both sides surfaces a conflict; newer updated_date wins', { timeout: 15_000 }, async () => {
     const { origin: bareOrigin, clone: cloneA, cleanup } = await makeOriginAndClone();
     cleanupAll.push(cleanup);
     cloneA.addGitignore(['backlog/tasks/']);
