@@ -22,14 +22,14 @@ const builds: esbuild.BuildOptions[] = [
   {
     // Pre-commit worktree-isolation guard — a tiny standalone Node script the
     // git hook runs. Reuses the vscode-free worktreeGuard core.
-    entryPoints: ['src/hooks/worktree-guard.ts'],
+    entryPoints: ['scripts/hooks/worktree-guard.ts'],
     outfile: 'dist/hooks/worktree-guard.js',
     external: ['vscode'],
   },
   {
     // Opt-in board-sync pre-push/post-merge hook payload — required (not run
     // directly) by the committed `scripts/board-sync-hook.cjs` launcher.
-    entryPoints: ['src/hooks/board-sync-hook.ts'],
+    entryPoints: ['scripts/hooks/board-sync-hook.ts'],
     outfile: 'dist/hooks/board-sync-hook.js',
     external: ['vscode'],
   },
@@ -37,7 +37,7 @@ const builds: esbuild.BuildOptions[] = [
     // Advisory post-checkout worktree-isolation warn hook — a tiny standalone
     // Node script the git hook runs. Reuses the vscode-free worktreeGuard core.
     // Always exits 0 (advisory only; never blocks the checkout).
-    entryPoints: ['src/hooks/worktree-warn.ts'],
+    entryPoints: ['scripts/hooks/worktree-warn.ts'],
     outfile: 'dist/hooks/worktree-warn.js',
     external: ['vscode'],
   },

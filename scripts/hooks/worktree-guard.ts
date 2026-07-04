@@ -1,7 +1,7 @@
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { isPrimaryTree, collectDispatchedBranches } from '../core/worktreeGuard';
+import { shouldBlockCommit, collectDispatchedBranches } from '../../src/core/worktreeGuard';
 
 function git(args: string[]): string {
   return execFileSync('git', args, { encoding: 'utf8' }).trim();
@@ -31,19 +31,15 @@ function main(): void {
       branch = null; // detached HEAD
     }
   } catch {
-    process.exit(0); // not a git repo — nothing to warn about
+    process.exit(0); // not a git repo — never block
   }
   const primaryRoot = path.dirname(commonDir);
   const dispatchedBranches = collectDispatchedBranches(primaryRoot, { listDirs });
-
-  // Warn only when a dispatched task branch is checked out in the primary tree.
-  if (branch !== null && isPrimaryTree(gitDir) && dispatchedBranches.includes(branch)) {
-    process.stderr.write(
-      `\n⚠ Taskwright: branch "${branch}" is dispatched to .worktrees/${branch}.\n` +
-        `  Work inside that worktree, not the primary tree, to avoid cross-agent git conflicts.\n\n`
-    );
+  const decision = shouldBlockCommit({ gitDir, branch, dispatchedBranches });
+  if (decision.block) {
+    process.stderr.write(`\n${decision.message}\n\n`);
+    process.exit(1);
   }
-  // Always exit 0 — advisory only, never blocks.
   process.exit(0);
 }
 

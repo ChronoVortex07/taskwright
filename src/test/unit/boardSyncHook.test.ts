@@ -11,7 +11,7 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { runBoardSyncHook } from '../../hooks/board-sync-hook';
+import { runBoardSyncHook } from '../../../scripts/hooks/board-sync-hook';
 import { writeSyncConfig, syncConfigPath, DEFAULT_SYNC_CONFIG } from '../../core/syncConfig';
 import { nodeQueueFs } from '../../core/mergeQueue';
 import { makeTempGitRepo, TempRepo } from './helpers/tempGitRepo';

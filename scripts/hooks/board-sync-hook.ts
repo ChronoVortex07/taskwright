@@ -5,9 +5,9 @@ import {
   pullBoard,
   type PushBoardResult,
   type PullBoardResult,
-} from '../core/boardPushPull';
-import { readSyncConfig, syncConfigPath } from '../core/syncConfig';
-import type { BoardGitExec } from '../core/boardRef';
+} from '../../src/core/boardPushPull';
+import { readSyncConfig, syncConfigPath } from '../../src/core/syncConfig';
+import type { BoardGitExec } from '../../src/core/boardRef';
 
 /**
  * Board Sync v2 Task H — the opt-in `pre-push`/`post-merge` git hook payload.
