@@ -150,7 +150,7 @@ non-existent location` trailing line) — so no cwd-based branching was needed f
   **Scope note:** this task is helper + tests only, per the runbook — nothing calls `resolveBoardRoot()`
   yet; wiring every MCP/extension board read-write through it is Task B.
 
-### [ ] Task B — Route all board I/O through the single board root (DRAFT-16)
+### [x] Task B — Route all board I/O through the single board root (DRAFT-16)
 
 - **Deps:** A. **The heart of the live layer.**
 - **Do:** make every board read/write — MCP (`src/mcp/handlers.ts`, `BacklogParser`/`BacklogWriter`)
@@ -161,7 +161,72 @@ non-existent location` trailing line) — so no cwd-based branching was needed f
 - **Accept:** a write from a `.worktrees/<branch>` worktree is immediately visible in the primary
   (integration test, two worktrees, no materialize); TasksController create/edit/drag survive (no
   rollback); a board write leaves every code tree's `git status` clean.
-- **Handoff Notes:** _(…)_
+- **Handoff Notes:** Two independent fixes were needed, not one — `resolveBoardRoot()` (Task A)
+  alone wasn't enough because the extension-host side gates on "does this folder have a local
+  `backlog/` dir at all," which is false by construction in a fresh `.worktrees/<branch>` (git-ignored,
+  never copied by `git worktree add`).
+  **MCP side:** `src/mcp/server.ts` `main()` now computes `backlogPath` via a new
+  `resolveWorkspaceBacklogRoot(root)` (added to `src/core/boardRoot.ts`, extending Task A's file)
+  instead of `resolveBacklogDirectory(root)`; `deps.root` is untouched (stays worktree-local — it's
+  session identity for `.taskwright/active-task.json` and merge-queue lookups, a different concern
+  from the board path). Every MCP handler already consumed `deps.parser`/`deps.backlogPath` uniformly
+  (confirmed via a full inventory pass), so this one call site fixes all of them — no handler-level
+  changes needed. Left `makePrimaryBoard`/`gitFacts()` in `handlers.ts` (used only by
+  `requestMergeHandler`) alone: it already resolves the real primary root via a _different_ but
+  independently-correct mechanism (`git rev-parse --git-common-dir`), and touching the merge-queue
+  path was out of scope.
+  **Extension-host side:** the real fix is one level up from `BacklogParser`/`TasksController` (which
+  already correctly target whatever `backlogPath` their injected parser has — no code in either needed
+  to change). `BacklogWorkspaceManager.discover()`/`initialize()` are now `async` and call
+  `resolveWorkspaceBacklogRoot(folder.uri.fsPath)` per workspace folder instead of
+  `resolveBacklogDirectory(folder.uri.fsPath)` — this is the single choke point every provider's parser
+  flows through (`extension.ts` `activate()`/`switchActiveBacklog`), so fixing it here means
+  `switchActiveBacklog` needed **no changes at all**, it already just forwards `root.backlogPath`.
+  `extension.ts`'s `activate()` is now `async` (VS Code supports this) to `await manager.initialize()`;
+  `startWatching()`'s folder-change handler is now `async` too (tests capture and `await` it directly;
+  VS Code itself still treats it as fire-and-forget, matching this codebase's existing tolerance for
+  eventual-consistency background rescans like `syncMergeConfig`/`publishSyncConfig`).
+  **`resolveWorkspaceBacklogRoot` design:** tries the primary via git first (`resolvePrimaryWorktreeRoot`,
+  a new raw-path sibling to Task A's `boardRootFromPorcelain`/`resolveBoardRoot`, which now build on it —
+  behavior-preserving refactor, same tests), then calls `resolveBacklogDirectory(primaryRoot)` for full
+  fidelity (custom `backlog_directory` naming, `.backlog` fallback) rather than hardcoding `'backlog'`;
+  falls back to local `resolveBacklogDirectory(workspaceFolderPath)` when git is unavailable or the
+  primary itself has no backlog dir — so a plain non-git folder with a manually created `backlog/` still
+  works. Covered by 8 new unit tests + `BacklogWorkspaceManager.test.ts` updated to mock this function
+  (was mocking `resolveBacklogDirectory` directly) with all `discover()`/`initialize()` calls now
+  `await`ed (21 tests, all updated).
+  **Atomic writes:** added `atomicWriteFileSync()` (`src/core/atomicWrite.ts`, write-temp-then-rename,
+  PID+random temp suffix so concurrent writers to the same destination never clobber each other's
+  in-flight temp file — the final rename is still last-writer-wins, which is accepted; claims guard
+  same-task concurrent edits, not this helper). Applied to all 12 content-rewrite `fs.writeFileSync`
+  call sites in `BacklogWriter.ts` (tasks, milestones, docs, decisions) plus the four sibling
+  "surgical" services that share its read-transform-write pattern: `ClaimService.ts`, `PlanService.ts`,
+  `TreeFieldService.ts`, `milestoneReleaseChecklist.ts`. Deliberately did **not** touch the one
+  `wx`-flagged exclusive-create write in `BacklogWriter.allocateAndWrite` (Task 0's ID-collision guard —
+  converting it to write-temp-then-rename would silently overwrite via rename instead of failing
+  `EEXIST` on an exact-filename collision, defeating that guard) or anything in `boardSyncEngine.ts`
+  (dead code path with sync off, wholesale deletion is Task C).
+  **Test fallout from the atomic-write change:** unit tests across `ClaimService.test.ts`,
+  `PlanService.test.ts`, `TreeFieldService.test.ts`, and `mcpHandlers.test.ts` mock `fs.writeFileSync`
+  as a no-op but didn't mock `fs.renameSync` — the real `renameSync` then threw `ENOENT` looking for a
+  temp file that was never actually written to disk. Fixed by adding `renameSync: vi.fn()` to each
+  file's `vi.mock('fs', ...)` block. Separately, two `BacklogWriter.test.ts` assertions
+  (`createMilestone`) asserted `fs.writeFileSync` was called with the **exact final path** as arg 1 —
+  broken because that arg is now the temp path. Fixed by splitting the assertion: content is still
+  checked via the `writeFileSync` call, and the exact destination is now asserted via
+  `expect(fs.renameSync).toHaveBeenCalledWith(expect.any(String), <exact path>)`. The other ~90
+  `BacklogWriter.test.ts` assertions only read `mock.calls[0][1]` (content, not path) and needed no
+  changes.
+  **Two-worktree integration test:** added `src/test/unit/boardRootIntegration.test.ts` — a real git
+  repo + real `git worktree add` linked worktree with **no local `backlog/` dir at all** (mirrors
+  production exactly); resolves the board root from the worktree's cwd, writes through it, then
+  independently re-resolves from the primary's cwd with a fresh, uncached `BacklogParser` and confirms
+  the write is visible — directly exercises this task's first Accept bullet.
+  **Scope note (matches Task 0's precedent):** `taskwright.init`'s "does a backlog already exist"
+  check and `initializeBacklog()` still resolve against the literal opened folder, not the primary —
+  initializing a _new_ board from a linked worktree is a pre-existing, separate gap (not board I/O for
+  an existing board) and wasn't touched. Full suite (1527 tests), lint, typecheck, and `bun run build`
+  (including the standalone `dist/mcp/server.js` worktrees actually run) all green.
 
 ### [ ] Task D — Board-ref snapshot/materialize against the single board root (DRAFT-19)
 
@@ -277,6 +342,11 @@ _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <
   see Handoff Notes). Full suite/lint/typecheck green.
 - 2026-07-04 · Task A · `ff2d805` · `resolveBoardRoot()` pure core added
   (`src/core/boardRoot.ts` + 10 unit tests, no wiring yet). Full suite/lint/typecheck green.
+- 2026-07-04 · Task B · `(pending commit)` · Wired MCP server + extension host (via
+  `BacklogWorkspaceManager`) through a new `resolveWorkspaceBacklogRoot()`; added
+  `atomicWriteFileSync()` write-temp-then-rename and applied it across `BacklogWriter`/`ClaimService`/
+  `PlanService`/`TreeFieldService`/`milestoneReleaseChecklist`; added a real two-worktree
+  write-visibility integration test. Full suite (1527 tests)/lint/typecheck/build green.
 
 ---
 

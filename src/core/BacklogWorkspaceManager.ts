@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { resolveBacklogDirectory } from './resolveBacklogDirectory';
+import { resolveWorkspaceBacklogRoot } from './boardRoot';
 
 export interface BacklogRoot {
   backlogPath: string;
@@ -26,14 +26,24 @@ export class BacklogWorkspaceManager implements vscode.Disposable {
 
   constructor(private workspaceState: vscode.Memento) {}
 
-  /** Scan all workspace folders for backlog/ subdirectories. */
-  discover(): BacklogRoot[] {
+  /**
+   * Scan all workspace folders for their backlog directory, preferring each
+   * folder's *primary* worktree board (Board Sync v2 §2.1) over a local one —
+   * a linked `.worktrees/<branch>` folder has no local `backlog/` at all (it's
+   * git-ignored), so resolving locally-only would report "no backlog" even
+   * when the primary has one.
+   */
+  async discover(): Promise<BacklogRoot[]> {
     const folders = vscode.workspace.workspaceFolders;
     this.roots = [];
     if (!folders) return this.roots;
 
-    for (const folder of folders) {
-      const resolution = resolveBacklogDirectory(folder.uri.fsPath);
+    const resolutions = await Promise.all(
+      folders.map((folder) => resolveWorkspaceBacklogRoot(folder.uri.fsPath))
+    );
+
+    folders.forEach((folder, i) => {
+      const resolution = resolutions[i];
       if (resolution.backlogPath) {
         this.roots.push({
           backlogPath: resolution.backlogPath,
@@ -43,13 +53,13 @@ export class BacklogWorkspaceManager implements vscode.Disposable {
           label: folder.name,
         });
       }
-    }
+    });
     return this.roots;
   }
 
   /** Discover roots and restore or auto-select the active root. */
-  initialize(): BacklogRoot | undefined {
-    this.discover();
+  async initialize(): Promise<BacklogRoot | undefined> {
+    await this.discover();
 
     // Restore persisted selection
     const persistedPath = this.workspaceState.get<string>(PERSISTENCE_KEY);
@@ -69,10 +79,15 @@ export class BacklogWorkspaceManager implements vscode.Disposable {
     return this.activeRoot;
   }
 
-  /** Listen for workspace folder changes to re-discover roots. */
+  /**
+   * Listen for workspace folder changes to re-discover roots. The handler is
+   * `async` (awaited directly by tests that capture it; VS Code itself treats
+   * event handlers as fire-and-forget, matching this codebase's existing
+   * tolerance for eventual-consistency background re-scans).
+   */
   startWatching(): void {
-    const disposable = vscode.workspace.onDidChangeWorkspaceFolders(() => {
-      this.discover();
+    const disposable = vscode.workspace.onDidChangeWorkspaceFolders(async () => {
+      await this.discover();
       // Validate active root still exists
       if (
         this.activeRoot &&

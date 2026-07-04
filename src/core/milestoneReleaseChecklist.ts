@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { detectCRLF, normalizeToLF, restoreLineEndings } from './BacklogWriter';
 import { parseReleaseChecklist, toggleReleaseChecklistItem } from './releaseChecklist';
+import { atomicWriteFileSync } from './atomicWrite';
 import type { ChecklistItem } from './types';
 
 /** Resolve the milestone file for a milestone id ("m-1") or display name. */
@@ -47,7 +48,7 @@ export function toggleReleaseChecklist(
     const raw = fs.readFileSync(file, 'utf-8');
     const hasCRLF = detectCRLF(raw);
     const updated = toggleReleaseChecklistItem(normalizeToLF(raw), itemId);
-    fs.writeFileSync(file, restoreLineEndings(updated, hasCRLF), 'utf-8');
+    atomicWriteFileSync(file, restoreLineEndings(updated, hasCRLF));
     return parseReleaseChecklist(updated);
   } catch {
     return [];

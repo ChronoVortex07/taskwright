@@ -19,7 +19,7 @@ import { BacklogWriter } from '../core/BacklogWriter';
 import { ClaimService } from '../core/ClaimService';
 import { PlanService } from '../core/PlanService';
 import { TreeFieldService } from '../core/TreeFieldService';
-import { resolveBacklogDirectory } from '../core/resolveBacklogDirectory';
+import { resolveWorkspaceBacklogRoot } from '../core/boardRoot';
 import {
   getActiveTask,
   claimTaskHandler,
@@ -71,8 +71,15 @@ async function main(): Promise<void> {
   // unaffected by this reassignment.
   console.log = (...args: unknown[]): void => console.error(...args);
 
+  // `root` stays worktree-local (session identity: `.taskwright/active-task.json`,
+  // merge-queue lookups). `backlogPath` is the ONE physical board (Board Sync v2
+  // §2.1) — the primary worktree's `backlog/` — so an agent working from a
+  // `.worktrees/<branch>` checkout (which has no local `backlog/` at all; it's
+  // git-ignored and `git worktree add` never populates it) still reads/writes
+  // the real board instead of a nonexistent local one.
   const root = process.env.TASKWRIGHT_ROOT?.trim() || process.cwd();
-  const backlogPath = resolveBacklogDirectory(root).backlogPath || path.join(root, 'backlog');
+  const backlogPath =
+    (await resolveWorkspaceBacklogRoot(root)).backlogPath || path.join(root, 'backlog');
 
   const deps: McpHandlerDeps = {
     root,
@@ -207,10 +214,7 @@ async function main(): Promise<void> {
         milestone: z.string().optional(),
         category: z.string().optional().describe('Tech-tree lane. Absent/empty ⇒ Misc.'),
         type: z.string().optional().describe('Set to "bug" to file a bug node.'),
-        causedBy: z
-          .string()
-          .optional()
-          .describe('For bugs: the task ID that introduced the bug.'),
+        causedBy: z.string().optional().describe('For bugs: the task ID that introduced the bug.'),
         dependencies: z
           .array(z.string())
           .optional()

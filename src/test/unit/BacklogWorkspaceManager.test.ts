@@ -3,13 +3,13 @@ import * as vscode from 'vscode';
 import { BacklogWorkspaceManager } from '../../core/BacklogWorkspaceManager';
 import type { BacklogDirectoryResolution } from '../../core/resolveBacklogDirectory';
 
-vi.mock('../../core/resolveBacklogDirectory', () => ({
-  resolveBacklogDirectory: vi.fn(),
+vi.mock('../../core/boardRoot', () => ({
+  resolveWorkspaceBacklogRoot: vi.fn(),
 }));
 
-import { resolveBacklogDirectory } from '../../core/resolveBacklogDirectory';
+import { resolveWorkspaceBacklogRoot } from '../../core/boardRoot';
 
-const mockResolve = resolveBacklogDirectory as Mock;
+const mockResolve = resolveWorkspaceBacklogRoot as Mock;
 
 // The vscode mock has a mutable workspaceFolders, but TS types it as readonly.
 // Cast to allow assignment in tests.
@@ -79,48 +79,48 @@ describe('BacklogWorkspaceManager', () => {
   });
 
   describe('discover()', () => {
-    it('returns empty when no workspace folders', () => {
+    it('returns empty when no workspace folders', async () => {
       mockWorkspace.workspaceFolders = undefined;
       const manager = new BacklogWorkspaceManager(memento);
-      const roots = manager.discover();
+      const roots = await manager.discover();
       expect(roots).toEqual([]);
     });
 
-    it('returns empty when no folder has backlog', () => {
+    it('returns empty when no folder has backlog', async () => {
       mockWorkspace.workspaceFolders = [makeFolder('projectA', '/home/user/projectA')];
-      mockResolve.mockReturnValue(notFoundResolution('/home/user/projectA'));
+      mockResolve.mockResolvedValue(notFoundResolution('/home/user/projectA'));
 
       const manager = new BacklogWorkspaceManager(memento);
-      const roots = manager.discover();
+      const roots = await manager.discover();
       expect(roots).toEqual([]);
     });
 
-    it('discovers single root with backlog/', () => {
+    it('discovers single root with backlog/', async () => {
       mockWorkspace.workspaceFolders = [makeFolder('projectA', '/home/user/projectA')];
-      mockResolve.mockReturnValue(foundResolution('/home/user/projectA'));
+      mockResolve.mockResolvedValue(foundResolution('/home/user/projectA'));
 
       const manager = new BacklogWorkspaceManager(memento);
-      const roots = manager.discover();
+      const roots = await manager.discover();
       expect(roots).toHaveLength(1);
       expect(roots[0].label).toBe('projectA');
       expect(roots[0].backlogPath).toBe('/home/user/projectA/backlog');
       expect(roots[0].backlogDir).toBe('backlog');
     });
 
-    it('discovers .backlog/ directory', () => {
+    it('discovers .backlog/ directory', async () => {
       mockWorkspace.workspaceFolders = [makeFolder('projectA', '/home/user/projectA')];
-      mockResolve.mockReturnValue(foundResolution('/home/user/projectA', '.backlog'));
+      mockResolve.mockResolvedValue(foundResolution('/home/user/projectA', '.backlog'));
 
       const manager = new BacklogWorkspaceManager(memento);
-      const roots = manager.discover();
+      const roots = await manager.discover();
       expect(roots).toHaveLength(1);
       expect(roots[0].backlogPath).toBe('/home/user/projectA/.backlog');
       expect(roots[0].backlogDir).toBe('.backlog');
     });
 
-    it('discovers custom backlog directory', () => {
+    it('discovers custom backlog directory', async () => {
       mockWorkspace.workspaceFolders = [makeFolder('projectA', '/home/user/projectA')];
-      mockResolve.mockReturnValue(
+      mockResolve.mockResolvedValue(
         foundResolution(
           '/home/user/projectA',
           'planning/data',
@@ -129,26 +129,26 @@ describe('BacklogWorkspaceManager', () => {
       );
 
       const manager = new BacklogWorkspaceManager(memento);
-      const roots = manager.discover();
+      const roots = await manager.discover();
       expect(roots).toHaveLength(1);
       expect(roots[0].backlogPath).toBe('/home/user/projectA/planning/data');
       expect(roots[0].backlogDir).toBe('planning/data');
       expect(roots[0].configPath).toBe('/home/user/projectA/backlog.config.yml');
     });
 
-    it('discovers multiple roots', () => {
+    it('discovers multiple roots', async () => {
       mockWorkspace.workspaceFolders = [
         makeFolder('projectA', '/home/user/projectA'),
         makeFolder('projectB', '/home/user/projectB'),
         makeFolder('projectC', '/home/user/projectC'),
       ];
-      mockResolve.mockImplementation((root: string) => {
+      mockResolve.mockImplementation(async (root: string) => {
         if (root.includes('projectB')) return notFoundResolution(root);
         return foundResolution(root);
       });
 
       const manager = new BacklogWorkspaceManager(memento);
-      const roots = manager.discover();
+      const roots = await manager.discover();
       expect(roots).toHaveLength(2);
       expect(roots[0].label).toBe('projectA');
       expect(roots[1].label).toBe('projectC');
@@ -156,33 +156,33 @@ describe('BacklogWorkspaceManager', () => {
   });
 
   describe('initialize()', () => {
-    it('returns undefined when no roots found', () => {
+    it('returns undefined when no roots found', async () => {
       mockWorkspace.workspaceFolders = undefined;
       const manager = new BacklogWorkspaceManager(memento);
-      const result = manager.initialize();
+      const result = await manager.initialize();
       expect(result).toBeUndefined();
     });
 
-    it('auto-selects single root', () => {
+    it('auto-selects single root', async () => {
       mockWorkspace.workspaceFolders = [makeFolder('projectA', '/home/user/projectA')];
-      mockResolve.mockReturnValue(foundResolution('/home/user/projectA'));
+      mockResolve.mockResolvedValue(foundResolution('/home/user/projectA'));
 
       const manager = new BacklogWorkspaceManager(memento);
-      const result = manager.initialize();
+      const result = await manager.initialize();
       expect(result).toBeDefined();
       expect(result!.label).toBe('projectA');
       expect(manager.getActiveRoot()).toBe(result);
     });
 
-    it('auto-selects first root when multiple exist', () => {
+    it('auto-selects first root when multiple exist', async () => {
       mockWorkspace.workspaceFolders = [
         makeFolder('projectA', '/home/user/projectA'),
         makeFolder('projectB', '/home/user/projectB'),
       ];
-      mockResolve.mockImplementation((root: string) => foundResolution(root));
+      mockResolve.mockImplementation(async (root: string) => foundResolution(root));
 
       const manager = new BacklogWorkspaceManager(memento);
-      const result = manager.initialize();
+      const result = await manager.initialize();
       expect(result!.label).toBe('projectA');
     });
 
@@ -191,39 +191,39 @@ describe('BacklogWorkspaceManager', () => {
         makeFolder('projectA', '/home/user/projectA'),
         makeFolder('projectB', '/home/user/projectB'),
       ];
-      mockResolve.mockImplementation((root: string) => foundResolution(root));
+      mockResolve.mockImplementation(async (root: string) => foundResolution(root));
 
       // Pre-persist projectB
       await memento.update('backlog.activeBacklogPath', '/home/user/projectB/backlog');
 
       const manager = new BacklogWorkspaceManager(memento);
-      const result = manager.initialize();
+      const result = await manager.initialize();
       expect(result!.label).toBe('projectB');
     });
 
     it('falls back to first when persisted path is gone', async () => {
       mockWorkspace.workspaceFolders = [makeFolder('projectA', '/home/user/projectA')];
-      mockResolve.mockReturnValue(foundResolution('/home/user/projectA'));
+      mockResolve.mockResolvedValue(foundResolution('/home/user/projectA'));
 
       // Persist a path that no longer exists
       await memento.update('backlog.activeBacklogPath', '/home/user/removed/backlog');
 
       const manager = new BacklogWorkspaceManager(memento);
-      const result = manager.initialize();
+      const result = await manager.initialize();
       expect(result!.label).toBe('projectA');
     });
   });
 
   describe('setActiveRoot()', () => {
-    it('fires onDidChangeActiveRoot event', () => {
+    it('fires onDidChangeActiveRoot event', async () => {
       mockWorkspace.workspaceFolders = [
         makeFolder('projectA', '/home/user/projectA'),
         makeFolder('projectB', '/home/user/projectB'),
       ];
-      mockResolve.mockImplementation((root: string) => foundResolution(root));
+      mockResolve.mockImplementation(async (root: string) => foundResolution(root));
 
       const manager = new BacklogWorkspaceManager(memento);
-      manager.discover();
+      await manager.discover();
 
       const handler = vi.fn();
       manager.onDidChangeActiveRoot(handler);
@@ -237,10 +237,10 @@ describe('BacklogWorkspaceManager', () => {
 
     it('persists active path', async () => {
       mockWorkspace.workspaceFolders = [makeFolder('projectA', '/home/user/projectA')];
-      mockResolve.mockReturnValue(foundResolution('/home/user/projectA'));
+      mockResolve.mockResolvedValue(foundResolution('/home/user/projectA'));
 
       const manager = new BacklogWorkspaceManager(memento);
-      manager.discover();
+      await manager.discover();
 
       manager.setActiveRoot(manager.getRoots()[0]);
       expect(memento.get('backlog.activeBacklogPath')).toBe('/home/user/projectA/backlog');
@@ -248,10 +248,10 @@ describe('BacklogWorkspaceManager', () => {
   });
 
   describe('addRoot()', () => {
-    it('adds root and fires event', () => {
+    it('adds root and fires event', async () => {
       mockWorkspace.workspaceFolders = [];
       const manager = new BacklogWorkspaceManager(memento);
-      manager.discover();
+      await manager.discover();
 
       const handler = vi.fn();
       manager.onDidChangeActiveRoot(handler);
@@ -271,12 +271,12 @@ describe('BacklogWorkspaceManager', () => {
       expect(handler).toHaveBeenCalledWith(root);
     });
 
-    it('does not duplicate existing root', () => {
+    it('does not duplicate existing root', async () => {
       mockWorkspace.workspaceFolders = [makeFolder('projectA', '/home/user/projectA')];
-      mockResolve.mockReturnValue(foundResolution('/home/user/projectA'));
+      mockResolve.mockResolvedValue(foundResolution('/home/user/projectA'));
 
       const manager = new BacklogWorkspaceManager(memento);
-      manager.discover();
+      await manager.discover();
       expect(manager.getRoots()).toHaveLength(1);
 
       const folder = makeFolder('projectA', '/home/user/projectA');
@@ -295,7 +295,7 @@ describe('BacklogWorkspaceManager', () => {
     it('returns undefined when no roots', async () => {
       mockWorkspace.workspaceFolders = undefined;
       const manager = new BacklogWorkspaceManager(memento);
-      manager.discover();
+      await manager.discover();
 
       const result = await manager.selectBacklog();
       expect(result).toBeUndefined();
@@ -303,10 +303,10 @@ describe('BacklogWorkspaceManager', () => {
 
     it('auto-returns single root without Quick Pick', async () => {
       mockWorkspace.workspaceFolders = [makeFolder('projectA', '/home/user/projectA')];
-      mockResolve.mockReturnValue(foundResolution('/home/user/projectA'));
+      mockResolve.mockResolvedValue(foundResolution('/home/user/projectA'));
 
       const manager = new BacklogWorkspaceManager(memento);
-      manager.discover();
+      await manager.discover();
 
       const result = await manager.selectBacklog();
       expect(result!.label).toBe('projectA');
@@ -318,10 +318,10 @@ describe('BacklogWorkspaceManager', () => {
         makeFolder('projectA', '/home/user/projectA'),
         makeFolder('projectB', '/home/user/projectB'),
       ];
-      mockResolve.mockImplementation((root: string) => foundResolution(root));
+      mockResolve.mockImplementation(async (root: string) => foundResolution(root));
 
       const manager = new BacklogWorkspaceManager(memento);
-      manager.discover();
+      await manager.discover();
 
       // Mock user picking projectB
       (vscode.window.showQuickPick as Mock).mockResolvedValue({
@@ -344,10 +344,10 @@ describe('BacklogWorkspaceManager', () => {
         makeFolder('projectA', '/home/user/projectA'),
         makeFolder('projectB', '/home/user/projectB'),
       ];
-      mockResolve.mockImplementation((root: string) => foundResolution(root));
+      mockResolve.mockImplementation(async (root: string) => foundResolution(root));
 
       const manager = new BacklogWorkspaceManager(memento);
-      manager.initialize();
+      await manager.initialize();
 
       (vscode.window.showQuickPick as Mock).mockResolvedValue(undefined);
 
@@ -357,10 +357,10 @@ describe('BacklogWorkspaceManager', () => {
   });
 
   describe('workspace folder changes', () => {
-    it('re-discovers on workspace folder change and handles removed root', () => {
-      let folderChangeHandler: (() => void) | undefined;
+    it('re-discovers on workspace folder change and handles removed root', async () => {
+      let folderChangeHandler: (() => Promise<void>) | undefined;
       (vscode.workspace.onDidChangeWorkspaceFolders as Mock).mockImplementation(
-        (handler: () => void) => {
+        (handler: () => Promise<void>) => {
           folderChangeHandler = handler;
           return { dispose: vi.fn() };
         }
@@ -370,10 +370,10 @@ describe('BacklogWorkspaceManager', () => {
         makeFolder('projectA', '/home/user/projectA'),
         makeFolder('projectB', '/home/user/projectB'),
       ];
-      mockResolve.mockImplementation((root: string) => foundResolution(root));
+      mockResolve.mockImplementation(async (root: string) => foundResolution(root));
 
       const manager = new BacklogWorkspaceManager(memento);
-      manager.initialize();
+      await manager.initialize();
       manager.startWatching();
 
       // Simulate removing projectA (the active root)
@@ -382,7 +382,7 @@ describe('BacklogWorkspaceManager', () => {
 
       mockWorkspace.workspaceFolders = [makeFolder('projectB', '/home/user/projectB')];
 
-      folderChangeHandler!();
+      await folderChangeHandler!();
 
       // Should have fallen back to projectB
       expect(manager.getActiveRoot()!.label).toBe('projectB');

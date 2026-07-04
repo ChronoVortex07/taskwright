@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import { BacklogParser } from './BacklogParser';
 import { detectCRLF, normalizeToLF, restoreLineEndings } from './BacklogWriter';
 import { applyClaim, clearClaim, claimTimestamp, Claim } from './claims';
+import { atomicWriteFileSync } from './atomicWrite';
 
 /** Options for placing a claim. */
 export interface ClaimTaskOptions {
@@ -64,7 +65,7 @@ export class ClaimService {
     const raw = fs.readFileSync(filePath, 'utf-8');
     const hasCRLF = detectCRLF(raw);
     const updated = transform(normalizeToLF(raw));
-    fs.writeFileSync(filePath, restoreLineEndings(updated, hasCRLF), 'utf-8');
+    atomicWriteFileSync(filePath, restoreLineEndings(updated, hasCRLF));
     parser.invalidateTaskCache(filePath);
   }
 }

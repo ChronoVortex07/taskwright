@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import { BacklogParser } from './BacklogParser';
 import { detectCRLF, normalizeToLF, restoreLineEndings } from './BacklogWriter';
 import { removeField, upsertScalarField } from './frontmatterEdit';
+import { atomicWriteFileSync } from './atomicWrite';
 
 /**
  * File-backed read/write of the Taskwright-only tech-tree fields `category` and
@@ -60,7 +61,7 @@ export class TreeFieldService {
     const raw = fs.readFileSync(filePath, 'utf-8');
     const hasCRLF = detectCRLF(raw);
     const updated = transform(normalizeToLF(raw));
-    fs.writeFileSync(filePath, restoreLineEndings(updated, hasCRLF), 'utf-8');
+    atomicWriteFileSync(filePath, restoreLineEndings(updated, hasCRLF));
     parser.invalidateTaskCache(filePath);
   }
 }

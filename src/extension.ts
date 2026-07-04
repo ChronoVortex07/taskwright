@@ -279,7 +279,7 @@ interface TasksBoardSurface {
   relayNavigator(message: ExtensionMessage): void;
 }
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
   console.log('[Taskwright] Extension activating...');
   console.log('[Taskwright] Extension URI:', context.extensionUri.toString());
   console.log(
@@ -287,10 +287,13 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.workspace.workspaceFolders?.map((f) => f.uri.fsPath)
   );
 
-  // Initialize workspace manager
+  // Initialize workspace manager. `initialize()` prefers each folder's
+  // *primary* worktree board (Board Sync v2 §2.1) over a local one, so a
+  // linked `.worktrees/<branch>` workspace folder (which has no local
+  // `backlog/` at all) still resolves to the real board.
   const manager = new BacklogWorkspaceManager(context.workspaceState);
   context.subscriptions.push(manager);
-  const activeRoot = manager.initialize();
+  const activeRoot = await manager.initialize();
   manager.startWatching();
 
   const backlogFolder = activeRoot?.backlogPath;
@@ -451,10 +454,8 @@ export function activate(context: vscode.ExtensionContext) {
   tasksProvider.setTaskSelectionHandler((taskRef) => taskPreviewProvider.selectTask(taskRef));
   console.log('[Taskwright] Task preview view provider registered');
 
-  const treeNavigatorProvider = new TreeNavigatorProvider(
-    context.extensionUri,
-    parser,
-    (message) => tasksHosts.forEach((host) => host.relayNavigator(message))
+  const treeNavigatorProvider = new TreeNavigatorProvider(context.extensionUri, parser, (message) =>
+    tasksHosts.forEach((host) => host.relayNavigator(message))
   );
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('taskwright.treeNavigator', treeNavigatorProvider, {

@@ -5,6 +5,7 @@ import * as yaml from 'js-yaml';
 import matter from 'gray-matter';
 import { Milestone, Task, TaskStatus } from './types';
 import { BacklogParser } from './BacklogParser';
+import { atomicWriteFileSync } from './atomicWrite';
 
 /**
  * Compute an MD5 hash of file content for conflict detection
@@ -149,7 +150,7 @@ export class BacklogWriter {
     const frontmatter: FrontmatterData = { id, title: normalizedTitle };
     const body = `\n## Description\n\n${milestoneDescription}\n`;
     const content = this.reconstructFile(frontmatter, body);
-    fs.writeFileSync(filePath, content, 'utf-8');
+    atomicWriteFileSync(filePath, content);
 
     return { id, name: normalizedTitle, description: milestoneDescription };
   }
@@ -240,7 +241,7 @@ export class BacklogWriter {
     const safeTitle = this.sanitizeMilestoneTitle(newName.trim());
     const newFileName = `${milestone.id} - ${safeTitle}.md`;
     const newFilePath = path.join(milestonesDir, newFileName);
-    fs.writeFileSync(newFilePath, updatedContent, 'utf-8');
+    atomicWriteFileSync(newFilePath, updatedContent);
     if (newFilePath !== filePath) {
       fs.unlinkSync(filePath);
     }
@@ -308,7 +309,7 @@ export class BacklogWriter {
       this.reconstructFile(frontmatter, updatedBody),
       hasCRLF
     );
-    fs.writeFileSync(filePath, updatedContent, 'utf-8');
+    atomicWriteFileSync(filePath, updatedContent);
     parser.invalidateMilestoneCache();
   }
 
@@ -408,7 +409,7 @@ export class BacklogWriter {
     }
     frontmatter.updated_date = nowTimestamp();
     const updatedContent = restoreLineEndings(this.reconstructFile(frontmatter, body), hasCRLF);
-    fs.writeFileSync(destPath, updatedContent, 'utf-8');
+    atomicWriteFileSync(destPath, updatedContent);
     parser.invalidateTaskCache(destPath);
 
     return newTaskId;
@@ -459,7 +460,7 @@ export class BacklogWriter {
     // synthetic 'Draft' (which would silently lose e.g. a Done task's status).
     frontmatter.updated_date = nowTimestamp();
     const updatedContent = restoreLineEndings(this.reconstructFile(frontmatter, body), hasCRLF);
-    fs.writeFileSync(destPath, updatedContent, 'utf-8');
+    atomicWriteFileSync(destPath, updatedContent);
     parser.invalidateTaskCache(destPath);
 
     return newDraftId;
@@ -674,7 +675,7 @@ export class BacklogWriter {
       this.reconstructFile(frontmatter, updatedBody),
       hasCRLF
     );
-    fs.writeFileSync(task.filePath, updatedContent, 'utf-8');
+    atomicWriteFileSync(task.filePath, updatedContent);
     parser.invalidateTaskCache(task.filePath);
   }
 
@@ -982,7 +983,7 @@ export class BacklogWriter {
     const body = `\n## Description\n\n${descBlock}\n\n## Acceptance Criteria\n<!-- AC:BEGIN -->\n<!-- AC:END -->\n`;
 
     const content = this.reconstructFile(frontmatter, body);
-    fs.writeFileSync(filePath, content, 'utf-8');
+    atomicWriteFileSync(filePath, content);
 
     return { id: taskId, filePath };
   }
@@ -1303,7 +1304,7 @@ export class BacklogWriter {
       content = content.replace(regex, toggle);
     }
 
-    fs.writeFileSync(task.filePath, restoreLineEndings(content, hasCRLF), 'utf-8');
+    atomicWriteFileSync(task.filePath, restoreLineEndings(content, hasCRLF));
     parser.invalidateTaskCache(task.filePath);
   }
 
@@ -1575,7 +1576,7 @@ export class BacklogWriter {
 
     const body = `\n${options?.content || ''}\n`;
     const content = this.reconstructFile(frontmatter, body, { blankLineAfterFrontmatter: false });
-    fs.writeFileSync(filePath, content, 'utf-8');
+    atomicWriteFileSync(filePath, content);
 
     return { id: docId.toUpperCase(), filePath };
   }
@@ -1608,7 +1609,7 @@ export class BacklogWriter {
       this.reconstructFile(frontmatter, updatedBody, { blankLineAfterFrontmatter: false }),
       hasCRLF
     );
-    fs.writeFileSync(doc.filePath, updatedContent, 'utf-8');
+    atomicWriteFileSync(doc.filePath, updatedContent);
   }
 
   /**
@@ -1667,7 +1668,7 @@ export class BacklogWriter {
     body += `\n## Alternatives\n\n${options?.alternatives || ''}\n`;
 
     const content = this.reconstructFile(frontmatter, body, { blankLineAfterFrontmatter: false });
-    fs.writeFileSync(filePath, content, 'utf-8');
+    atomicWriteFileSync(filePath, content);
 
     return { id: decisionId.toUpperCase(), filePath };
   }
@@ -1726,7 +1727,7 @@ export class BacklogWriter {
       this.reconstructFile(frontmatter, updatedBody, { blankLineAfterFrontmatter: false }),
       hasCRLF
     );
-    fs.writeFileSync(dec.filePath, updatedContent, 'utf-8');
+    atomicWriteFileSync(dec.filePath, updatedContent);
   }
 
   /**

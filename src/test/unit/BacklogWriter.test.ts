@@ -1734,16 +1734,28 @@ status: Draft
       vi.mocked(fs.existsSync).mockReturnValue(true);
       mockReaddirSync([]);
       vi.spyOn(mockParser, 'getTask').mockResolvedValue({
-        id: 'DRAFT-1', title: 'Baseline', status: 'Done', folder: 'drafts',
+        id: 'DRAFT-1',
+        title: 'Baseline',
+        status: 'Done',
+        folder: 'drafts',
         filePath: '/fake/backlog/drafts/draft-1 - Baseline.md',
-        description: '', labels: [], assignee: [], dependencies: [],
-        acceptanceCriteria: [], definitionOfDone: [],
+        description: '',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
       } as never);
       vi.spyOn(mockParser, 'getConfig').mockResolvedValue({});
-      vi.mocked(fs.readFileSync).mockReturnValue('---\nid: DRAFT-1\ntitle: Baseline\nstatus: Done\n---\n');
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        '---\nid: DRAFT-1\ntitle: Baseline\nstatus: Done\n---\n'
+      );
       await writer.promoteDraft('DRAFT-1', mockParser);
       const writtenContent = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
-      const frontmatter = yaml.load(writtenContent.match(/^---\n([\s\S]*?)\n---/)![1]) as Record<string, unknown>;
+      const frontmatter = yaml.load(writtenContent.match(/^---\n([\s\S]*?)\n---/)![1]) as Record<
+        string,
+        unknown
+      >;
       expect(frontmatter.status).toBe('Done');
       expect(frontmatter.id).toBe('TASK-1');
     });
@@ -1876,9 +1888,13 @@ status: Draft
         description: 'Milestone: Launch',
       });
       expect(fs.writeFileSync).toHaveBeenCalledWith(
-        posixPath('/fake/backlog/milestones/m-0 - launch.md'),
+        expect.any(String),
         expect.stringContaining('id: m-0'),
         'utf-8'
+      );
+      expect(fs.renameSync).toHaveBeenCalledWith(
+        expect.any(String),
+        posixPath('/fake/backlog/milestones/m-0 - launch.md')
       );
     });
 
@@ -1909,9 +1925,13 @@ status: Draft
 
       expect(result.id).toBe('m-11');
       expect(fs.writeFileSync).toHaveBeenCalledWith(
-        posixPath('/fake/backlog/milestones/m-11 - release.md'),
+        expect.any(String),
         expect.stringContaining('id: m-11'),
         'utf-8'
+      );
+      expect(fs.renameSync).toHaveBeenCalledWith(
+        expect.any(String),
+        posixPath('/fake/backlog/milestones/m-11 - release.md')
       );
     });
 
