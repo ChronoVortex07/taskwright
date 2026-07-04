@@ -414,7 +414,7 @@ integration)` describe blocks from `mcpWriteHandlers.test.ts` (plus a stale comm
   suite (1467 tests, up from 1454 — this task only adds, nothing removed), lint, typecheck, and
   `bun run build` all green.
 
-### [ ] Task I — Config remap (`off | git`) + repurposed `enableSync` migration (DRAFT-21)
+### [x] Task I — Config remap (`off | git`) + repurposed `enableSync` migration (DRAFT-21)
 
 - **Deps:** B, D.
 - **Do:** replace `taskwright.sync.mode` trichotomy with `off` (local git-ignored files, no
@@ -425,7 +425,55 @@ integration)` describe blocks from `mcpWriteHandlers.test.ts` (plus a stale comm
   `snapshotBoardRoot` (Task D). Treat `check_active_branches` as effectively off.
 - **Accept:** legacy `github` reads as `git`, `local` as `off` (unit-tested coercion); `enableSync`
   idempotent; `sync-config.json` round-trips and is MCP-readable.
-- **Handoff Notes:** _(…)_
+- **Handoff Notes:** `src/core/syncConfig.ts`: `SyncMode` is now `'off' | 'git'`; `resolveSyncConfigFromSettings`
+  gained a `coerceMode()` that remaps legacy persisted/settings values (`local → off`, `github → git`)
+  as well as accepting the new values directly, so a stale `<commonDir>/taskwright/sync-config.json`
+  or workspace setting from before this task migrates transparently on next read — no separate
+  one-time migration step needed. `SyncConfig` dropped `pollSeconds` (dead: `BoardSyncController`'s poll
+  loop, its only reader, was deleted in Task C) and gained `installHooks: boolean` (default `false`) for
+  Task H to wire up later. `taskwright.sync.pollIntervalSeconds` removed from `package.json`; added
+  `taskwright.sync.installHooks` (boolean, default `false`) alongside the existing `sync.ref`/`sync.remote`.
+  `taskwright.sync.mode`'s manifest enum is now `["off","git"]`.
+  **`enableSync` repurposed, not just remapped:** the old command asked the user to pick "GitHub
+  sharing" vs "local only" (`SyncMode` had two "on" states pre-v2); v2 only has one "on" state, so the
+  modal collapsed to a single "Enable" button — no more mode picker. Steps 1–2 (idempotent gitignore
+  block + `rm --cached --ignore-unmatch` + commit) are unchanged. Step 3 sets `sync.mode` to `'git'`
+  unconditionally and publishes the shared config as before. Step 4 (seeding the ref) is repointed from
+  `boardLifecycle.ts`'s `reconcileBoardRef` (a fetch/adopt/push state machine built for the old
+  always-on poll model, and which would attempt a network fetch/push against `sync.remote` — wrong for
+  this step, since v2 deliberately separates "enable versioning locally" from "share it," per spec §8)
+  to a direct `resolvePrimaryWorktreeRoot` + `refTip` + `snapshotBoardToRef` call: resolves the primary
+  (works whether the command runs from the primary or a worktree, same as Task A/D), reads the ref's
+  current tip as `parent` if it exists, then snapshots — so re-running the command chains a new commit
+  onto the existing ref instead of creating a duplicate orphan root each time (idempotent in the sense
+  that matters: safe to re-run, no errors, no history clobber). Deliberately does **not** push to
+  `sync.remote` here — spec §8 only asks `enableSync` to "seed" the ref from the current board; pushing
+  it to share is the future `push_board` action (Task F), kept as a separate explicit step so enabling
+  sync never silently touches a remote or requires credentials.
+  **`boardLifecycle.ts` deleted, not just orphaned:** repointing `enableSync` away from
+  `reconcileBoardRef` left it with zero production callers (confirmed via a full-repo grep before
+  deleting). Rather than leave dead code with Task C's "kept, trimmed" caveat now fully expired, deleted
+  `src/core/boardLifecycle.ts` and its test outright. Its `SyncTarget` interface (which Task C had
+  relocated into `boardRef.ts` specifically so `boardLifecycle.ts` could keep using it) also lost its
+  last consumer, so it's deleted from `boardRef.ts` too — the one internal comment in `boardRef.ts` that
+  named `reconcileBoardRef` as a use case for its snapshotted-listing-then-prune behavior now names
+  `materializeToBoardRoot` instead (the real remaining caller with the same shape).
+  **`BOARD_SUBDIRS` parity fix (flagged by Task D):** `boardMigration.ts`'s own `SUBDIRS` constant
+  (separate from `boardRef.ts`'s `BOARD_SUBDIRS`, used only for the `.gitignore` block + `rm --cached`
+  paths) was still `['tasks','drafts','completed','archive']` — missing `milestones`, which Task D's
+  handoff notes explicitly flagged as this task's territory. Added `'milestones'`; this repo's own
+  `backlog/milestones/*.md` files were confirmed still git-tracked (`git ls-files`) before this task, so
+  a future `enableSync` re-run (or a fresh repo's first run) now actually untracks/ignores them too.
+  **`check_active_branches`:** no code change needed — Task C already made
+  `getTasksWithCrossBranch()` unconditionally local-only and removed the `dataSourceMode` gating that
+  read this setting, so it was already "effectively off" structurally; this task's Do bullet is
+  satisfied by that prior work, not new changes here.
+  **Not touched (Task J's territory):** `CLAUDE.md`/`AGENTS.md`'s "Synced board" prose still describes
+  the `off`/`local`/`github` trichotomy and the CAS engine — the runbook explicitly assigns the doc
+  rewrite to Task J ("do last so docs match shipped behavior," deps C, F, I), so left as-is.
+  Full suite (1463 tests — down from 1467: +6 new/updated `syncConfig.test.ts` cases, −7 deleted
+  `boardLifecycle.test.ts` cases, ±1 renamed `boardMigration.test.ts`/`configDefaults.test.ts` cases),
+  lint, typecheck, and `bun run build` all green.
 
 ### [ ] Task F — Board push & pull: `push_board`/`pull_board` MCP tools + commands (DRAFT-20)
 
@@ -511,6 +559,13 @@ _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <
   → "theirs"), delete-vs-edit keeps the edit — every conflicting case records a `MergeConflict` with
   a filename-derived task/draft id. 13 new unit tests. Full suite (1467 tests)/lint/typecheck/build
   green.
+- 2026-07-04 · Task I · `de76e4b` · `taskwright.sync.mode` collapsed to `off | git` with
+  legacy `local → off` / `github → git` migration on read; `SyncConfig` dropped dead `pollSeconds`,
+  gained `installHooks`; `enableSync` repointed its ref-seeding from `boardLifecycle`'s
+  `reconcileBoardRef` to a direct `snapshotBoardToRef`/`refTip` call (idempotent, local-only — no
+  remote push); deleted the now-dead `boardLifecycle.ts` + `SyncTarget`; added `milestones` to
+  `boardMigration.ts`'s tracked-dirs list (Task D's flagged gap). Full suite (1463 tests)/lint/
+  typecheck/build green.
 
 ---
 
