@@ -342,7 +342,7 @@ _(Append one line per completed task: `YYYY-MM-DD · Task X · <commit sha> · <
   see Handoff Notes). Full suite/lint/typecheck green.
 - 2026-07-04 · Task A · `ff2d805` · `resolveBoardRoot()` pure core added
   (`src/core/boardRoot.ts` + 10 unit tests, no wiring yet). Full suite/lint/typecheck green.
-- 2026-07-04 · Task B · `(pending commit)` · Wired MCP server + extension host (via
+- 2026-07-04 · Task B · `8184f0a` · Wired MCP server + extension host (via
   `BacklogWorkspaceManager`) through a new `resolveWorkspaceBacklogRoot()`; added
   `atomicWriteFileSync()` write-temp-then-rename and applied it across `BacklogWriter`/`ClaimService`/
   `PlanService`/`TreeFieldService`/`milestoneReleaseChecklist`; added a real two-worktree
