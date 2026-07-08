@@ -375,8 +375,16 @@ async function main(): Promise<void> {
     {
       title: 'Request merge',
       description:
-        'Submit your finished task for integration and wait. From inside your .worktrees/<branch>, this rebases onto the base branch, runs the verify commands, then enqueues you in the shared merge queue. It blocks until you reach the head and (in manual-review mode) a human approves, then fast-forward-merges to the base branch (or opens a PR), completes the task, and removes your worktree. Call this once when the task is committed and clean; do not merge or commit to the repo root yourself.',
-      inputSchema: { taskId: z.string().describe('Task ID to integrate, e.g. TASK-7.') },
+        'Submit a finished task for integration and wait. Normally called from INSIDE your .worktrees/<branch>: it rebases onto the base branch, runs the verify commands, then enqueues you in the shared merge queue. It blocks until you reach the head and (in manual-review mode) a human approves, then fast-forward-merges to the base branch (or opens a PR), completes the task, and removes your worktree. Optionally, a primary-rooted session may pass `worktree` (a branch name or a repo-root-relative .worktrees/<branch> path) to drive the close against THAT worktree instead of the caller\'s cwd; the target must be a clean, non-detached linked worktree of this repo under .worktrees/. Call this once when the task is committed and clean; do not merge or commit to the repo root yourself.',
+      inputSchema: {
+        taskId: z.string().describe('Task ID to integrate, e.g. TASK-7.'),
+        worktree: z
+          .string()
+          .optional()
+          .describe(
+            'Optional explicit target: a branch name or repo-root-relative .worktrees/<branch> path. When set, a primary-rooted session closes THIS worktree (must be a clean, non-detached linked worktree under .worktrees/). Omit to use the calling worktree.'
+          ),
+      },
     },
     async (args) => runTool(() => requestMergeHandler(deps, args))
   );
