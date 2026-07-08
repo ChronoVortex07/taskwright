@@ -90,6 +90,14 @@ describe('mcp handlers', () => {
       expect(result.message).toBeTruthy();
     });
 
+    it('no-active-task message names the from-any-session bootstrap path (DRAFT-7)', async () => {
+      routeReads(null);
+      const result = await getActiveTask(makeDeps());
+      expect(result.active).toBe(false);
+      expect(result.message).toContain('/execute-task');
+      expect(result.message?.toLowerCase()).toContain('bootstrap');
+    });
+
     it('returns the active task summary when set and present', async () => {
       routeReads(JSON.stringify({ taskId: 'TASK-7', setAt: '2026-06-30T14:00:00.000Z' }));
       const result = await getActiveTask(makeDeps());

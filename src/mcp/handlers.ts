@@ -577,7 +577,8 @@ export async function getActiveTask(deps: McpHandlerDeps): Promise<ActiveTaskRes
     return {
       active: false,
       message:
-        'No active task is set. Pick a task on the Taskwright board (or dispatch one) before starting.',
+        'No active task is set. Pick a task on the Taskwright board (or dispatch one), or run ' +
+        '/execute-task naming a task (e.g. /execute-task TASK-7) to bootstrap its worktree from here.',
     };
   }
   const task = await deps.parser.getTask(active.taskId);
