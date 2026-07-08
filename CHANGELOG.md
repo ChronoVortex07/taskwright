@@ -4,6 +4,18 @@ All notable changes to Taskwright are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] — 2026-07-08
+
+### Fixed
+
+- **`request_merge { worktree }` on Windows (drive-letter case).** The worktree-target validation
+  compared paths with a strict `===` after `path.resolve`, which normalizes separators but NOT the
+  Windows drive-letter case. `git worktree list` reports `C:\…` while the session-derived
+  `primaryRoot` can be `c:\…`, so a primary-rooted close aborted with "not a linked worktree." Path
+  comparison is now case-insensitive on Windows (`isSamePath`). This is the second half of the 1.2.0
+  primary-tree fix — together they make `request_merge { worktree }` actually work from a
+  primary-rooted session on Windows.
+
 ## [1.2.0] — 2026-07-08
 
 Conflict-safe orchestration, plus a fix to the from-any-session merge close.

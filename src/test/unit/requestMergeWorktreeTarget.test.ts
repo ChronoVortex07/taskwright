@@ -8,7 +8,12 @@ import { BacklogWriter } from '../../core/BacklogWriter';
 import { ClaimService } from '../../core/ClaimService';
 import { PlanService } from '../../core/PlanService';
 import { TreeFieldService } from '../../core/TreeFieldService';
-import { parseWorktreeEntries, requestMergeHandler, type McpHandlerDeps } from '../../mcp/handlers';
+import {
+  parseWorktreeEntries,
+  isSamePath,
+  requestMergeHandler,
+  type McpHandlerDeps,
+} from '../../mcp/handlers';
 import type { GitExecFn, RunFn, BoardOps } from '../../core/finishTask';
 import type { QueueFsDeps } from '../../core/mergeQueue';
 
@@ -61,6 +66,21 @@ describe('parseWorktreeEntries', () => {
   it('returns [] for empty output and ignores leading noise before the first `worktree` line', () => {
     expect(parseWorktreeEntries('')).toEqual([]);
     expect(parseWorktreeEntries('garbage\nbranch refs/heads/x\n')).toEqual([]);
+  });
+});
+
+describe('isSamePath', () => {
+  it('is case-insensitive on Windows-like platforms (drive-letter case must not matter)', () => {
+    // Regression: git worktree list reports `C:\…` while primaryRoot may be derived as `c:\…`.
+    expect(isSamePath('C:/repo/.worktrees/x', 'c:/repo/.worktrees/x', true)).toBe(true);
+    expect(isSamePath('C:/Repo/A', 'c:/repo/a', true)).toBe(true);
+  });
+  it('is case-sensitive on POSIX-like platforms', () => {
+    expect(isSamePath('/repo/a', '/repo/a', false)).toBe(true);
+    expect(isSamePath('/repo/A', '/repo/a', false)).toBe(false);
+  });
+  it('normalizes separators/segments before comparing', () => {
+    expect(isSamePath('/repo/a/b', '/repo/./a/b', false)).toBe(true);
   });
 });
 

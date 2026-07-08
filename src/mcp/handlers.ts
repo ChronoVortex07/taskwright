@@ -302,6 +302,21 @@ interface ResolvedWorktreeTarget {
   worktreeRel: string; // primaryRoot-relative, forward-slashed (FinishDeps.worktreeRel)
 }
 
+const IS_WINDOWS = process.platform === 'win32';
+
+/**
+ * Compare two filesystem paths for equality after resolving them. On Windows the drive letter and
+ * the path are case-insensitive (as is the FS), so `git worktree list` reporting `C:\…` must still
+ * match a `primaryRoot` derived as `c:\…`. `path.resolve` normalizes separators but NOT case, so a
+ * strict `===` would wrongly miss it. `winLike` is injectable so the behavior is testable on both
+ * platforms.
+ */
+export function isSamePath(a: string, b: string, winLike: boolean = IS_WINDOWS): boolean {
+  const na = path.resolve(a);
+  const nb = path.resolve(b);
+  return winLike ? na.toLowerCase() === nb.toLowerCase() : na === nb;
+}
+
 /**
  * Resolve + validate an explicit `worktree` target for request_merge (DRAFT-4).
  * Accepts a bare branch name (=> <primaryRoot>/.worktrees/<name>) or a repo-root-
@@ -335,7 +350,7 @@ async function resolveWorktreeTarget(
 
   // Gate 2: it must be a REAL linked worktree of this repo (and not bare).
   const { stdout } = await exec(cwd, ['worktree', 'list', '--porcelain']);
-  const entry = parseWorktreeEntries(stdout).find((e) => path.resolve(e.path) === abs && !e.bare);
+  const entry = parseWorktreeEntries(stdout).find((e) => isSamePath(e.path, abs) && !e.bare);
   if (!entry) {
     return {
       ok: false,
