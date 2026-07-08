@@ -203,8 +203,11 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   > frontmatter (`dispatched_at` deliberately **not** added). `DEFAULT_DISPATCH_TEMPLATE` now says **launch
   > inside `.worktrees/<branch>` and run `/execute-task`** (guardrails kept; the inline workflow prose moved
   > into the skill) — users with a custom `taskwright.dispatchTemplate` keep their own and won't pick up the
-  > repoint. The MCP root is fixed at launch (`server.ts`), so `/execute-task` **verifies** it is
-  > worktree-rooted rather than self-creating a worktree (spec §5 direct-run descoped to launch-in-worktree).
+  > repoint. The MCP root is fixed at launch (`server.ts`) and cannot re-root mid-session, so
+  > `/execute-task` runs from **any** session: dispatched (already worktree-rooted) it proceeds
+  > directly; primary-rooted it bootstraps the task's worktree via `start_task` and either relaunches
+  > into it or continues single-session and closes with `request_merge { worktree }`
+  > (DRAFT-7 — `docs/superpowers/plans/2026-07-08-execute-task-from-any-session.md`).
   > Coverage: `src/test/unit/{cancellationMarker,cancelDispatch,dispatchActions,dispatchPrompt,toSummary,TasksController}.test.ts`,
   > `e2e/tree-popover.spec.ts`. Design:
   > `docs/superpowers/specs/2026-07-02-tech-tree-p5-execute-task-skill-design.md`; plan:
