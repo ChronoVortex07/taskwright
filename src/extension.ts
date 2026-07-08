@@ -37,8 +37,9 @@ import {
   registerTaskwrightMcp,
   unregisterTaskwrightMcp,
 } from './core/claudeMcp';
-import { injectConvention } from './core/agentConvention';
+import { injectConvention, injectAgentsConvention } from './core/agentConvention';
 import { installTaskwrightSkills, type SkillInstallResult } from './core/skillInstaller';
+import { extractTaskwrightServer, upsertTaskwrightMcpServer } from './core/mcpProjectConfig';
 import { affectsTaskwrightConfig, getTaskwrightConfig } from './config';
 import {
   installGuard,
@@ -1815,9 +1816,43 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     }
 
-    // 3) Install the three Taskwright skills (create-task, execute-task,
-    // index-codebase) into the project's .claude/skills/ — idempotent: already-
-    // installed skills are skipped, so re-running setup is safe. The source is the
+    // 2b) Offer the same convention for AGENTS.md so non-Claude agents (Codex,
+    // etc.) also reach for the Taskwright MCP. Idempotent — only a marked block
+    // is written; existing content is preserved. Creation is consent-gated with a
+    // modal, mirroring the CLAUDE.md step above.
+    const agentsMdPath = path.join(root, 'AGENTS.md');
+    const agentsExisted = fs.existsSync(agentsMdPath);
+    const agentsExisting = agentsExisted ? fs.readFileSync(agentsMdPath, 'utf-8') : '';
+    const agentsUpdated = injectAgentsConvention(agentsExisting);
+    if (agentsUpdated === agentsExisting) {
+      if (agentsExisted) {
+        vscode.window.showInformationMessage('AGENTS.md already has the Taskwright instructions.');
+      }
+      // fall through — skills install still needs to run below
+    } else {
+      const agentsChoice = await vscode.window.showInformationMessage(
+        agentsExisted
+          ? 'Add Taskwright agent instructions to your AGENTS.md? Only a marked block is added — your existing content is preserved.'
+          : 'Create an AGENTS.md with Taskwright agent instructions so any agent uses the MCP server?',
+        { modal: true },
+        'Add'
+      );
+      if (agentsChoice === 'Add') {
+        try {
+          fs.writeFileSync(agentsMdPath, agentsUpdated, 'utf-8');
+          vscode.window.showInformationMessage(
+            `${agentsExisted ? 'Updated' : 'Created'} AGENTS.md with Taskwright agent instructions.`
+          );
+        } catch (error) {
+          vscode.window.showErrorMessage(`Failed to update AGENTS.md: ${error}`);
+        }
+      }
+    }
+
+    // 3) Install the four user-facing Taskwright skills (create-task,
+    // execute-task, index-codebase, orchestrate-board) into the project's
+    // .claude/skills/ — idempotent: already-installed skills are skipped, so
+    // re-running setup is safe. (visual-proof/agent-browser stay internal.) The source is the
     // BUNDLED copy under dist/skills/ (scripts/build.ts bundles them there) so a
     // published .vsix ships them — .claude/** is excluded from the package.
     const extSkillsDir = path.join(context.extensionPath, 'dist', 'skills');
@@ -1842,6 +1877,40 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to install Taskwright skills: ${error}`);
+    }
+
+    // 4) Optionally wire a project-local .mcp.json so a session opened in this
+    // repo gets the Taskwright MCP without the user-scope CLI registration.
+    // Opt-in (taskwright.setupWritesProjectMcpJson, default false): upsert the
+    // taskwright server into .mcp.json (preserving other servers) and copy the
+    // committed, dependency-free launcher it references.
+    if (getTaskwrightConfig<boolean>('setupWritesProjectMcpJson', false)) {
+      try {
+        const templatePath = path.join(context.extensionPath, '.mcp.json');
+        const taskwrightServer = extractTaskwrightServer(fs.readFileSync(templatePath, 'utf-8'));
+
+        const projectMcpPath = path.join(root, '.mcp.json');
+        const existingMcp = fs.existsSync(projectMcpPath)
+          ? fs.readFileSync(projectMcpPath, 'utf-8')
+          : '';
+        fs.writeFileSync(
+          projectMcpPath,
+          upsertTaskwrightMcpServer(existingMcp, taskwrightServer),
+          'utf-8'
+        );
+
+        // Copy the launcher the .mcp.json references into <root>/scripts/.
+        const launcherSrc = path.join(context.extensionPath, 'scripts', 'taskwright-mcp.cjs');
+        const launcherDestDir = path.join(root, 'scripts');
+        fs.mkdirSync(launcherDestDir, { recursive: true });
+        fs.copyFileSync(launcherSrc, path.join(launcherDestDir, 'taskwright-mcp.cjs'));
+
+        vscode.window.showInformationMessage(
+          'Wrote project-local .mcp.json and scripts/taskwright-mcp.cjs for the Taskwright MCP server.'
+        );
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to write project-local .mcp.json: ${error}`);
+      }
     }
   };
   context.subscriptions.push(

@@ -248,6 +248,24 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   (`next_ready_tasks`), DRAFT-3 (`start_task`), DRAFT-7 (`/execute-task` from any session), and
   DRAFT-4 (`request_merge { worktree }`). Plan:
   `docs/superpowers/plans/2026-07-08-orchestrate-board-skill.md`.
+- **Broadened Claude-integration scaffolding (5b)** ✅: `setUpClaudeIntegration`
+  (`src/extension.ts`) now wires a fresh repo end-to-end. It injects the Taskwright
+  convention into **AGENTS.md** too (`injectAgentsConvention` +
+  `TASKWRIGHT_AGENTS_CONVENTION` in `src/core/agentConvention.ts`, same marked-block
+  pattern as the CLAUDE.md block), installs **four** user-facing skills
+  (`TASKWRIGHT_SKILL_NAMES` in `src/core/skillInstaller.ts`: create-task,
+  execute-task, index-codebase, orchestrate-board — visual-proof/agent-browser stay
+  internal), and — **opt-in** via `taskwright.setupWritesProjectMcpJson` (default
+  off) — writes a project-local `.mcp.json` (pure `src/core/mcpProjectConfig.ts`:
+  `extractTaskwrightServer` from the shipped template + idempotent
+  `upsertTaskwrightMcpServer` preserving other servers) and copies the committed
+  `scripts/taskwright-mcp.cjs` launcher into the repo. Both assets ship in the VSIX
+  (`.vscodeignore` un-ignores `scripts/taskwright-mcp.cjs` and `.mcp.json`). The
+  launcher resolves the primary checkout's built `dist/mcp/server.js` via
+  `git rev-parse --git-common-dir`, so the project-local path targets Taskwright
+  checkouts and their worktrees; user-scope registration remains the general path.
+  Coverage: `src/test/unit/{agentConvention,skillInstaller,mcpProjectConfig}.test.ts`.
+  Plan: `docs/superpowers/plans/2026-07-08-broaden-claude-integration-scaffolding.md`.
 
 ## Conventions
 

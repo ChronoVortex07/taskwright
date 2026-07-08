@@ -2,12 +2,19 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * The three Taskwright skills installed into the project's `.claude/skills/`
- * as part of Claude Code integration setup. These skills are tightly coupled to
- * the Taskwright MCP tools which are also registered per-project via `.mcp.json`,
- * so per-project installation is the right default.
+ * The four user-facing Taskwright skills installed into the project's
+ * `.claude/skills/` as part of Claude Code integration setup: create-task,
+ * execute-task, index-codebase, and orchestrate-board. These are tightly coupled
+ * to the Taskwright MCP tools (also registered per-project via `.mcp.json`), so
+ * per-project installation is the right default. The internal proof/testing
+ * skills (visual-proof, agent-browser) are deliberately NOT shipped to users.
  */
-export const TASKWRIGHT_SKILL_NAMES = ['create-task', 'execute-task', 'index-codebase'] as const;
+export const TASKWRIGHT_SKILL_NAMES = [
+  'create-task',
+  'execute-task',
+  'index-codebase',
+  'orchestrate-board',
+] as const;
 
 /** What happened for a single skill during installation. */
 export interface SkillInstallResult {

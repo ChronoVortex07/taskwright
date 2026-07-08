@@ -32,8 +32,18 @@ describe('skillInstaller', () => {
   }
 
   describe('TASKWRIGHT_SKILL_NAMES', () => {
-    it('lists the three Taskwright skills', () => {
-      expect(TASKWRIGHT_SKILL_NAMES).toEqual(['create-task', 'execute-task', 'index-codebase']);
+    it('lists the four user-facing Taskwright skills incl orchestrate-board', () => {
+      expect(TASKWRIGHT_SKILL_NAMES).toEqual([
+        'create-task',
+        'execute-task',
+        'index-codebase',
+        'orchestrate-board',
+      ]);
+    });
+
+    it('excludes the internal proof/testing skills', () => {
+      expect(TASKWRIGHT_SKILL_NAMES).not.toContain('visual-proof');
+      expect(TASKWRIGHT_SKILL_NAMES).not.toContain('agent-browser');
     });
   });
 
@@ -101,18 +111,20 @@ describe('skillInstaller', () => {
   });
 
   describe('installTaskwrightSkills', () => {
-    it('installs all three skills into the project skills directory', () => {
+    it('installs all four skills into the project skills directory', () => {
       const extSkills = tmpDir();
       makeSkillDir(extSkills, 'create-task', 'create content');
       makeSkillDir(extSkills, 'execute-task', 'execute content');
       makeSkillDir(extSkills, 'index-codebase', 'index content');
+      makeSkillDir(extSkills, 'orchestrate-board', 'orchestrate content');
 
       const projectSkills = tmpDir();
 
       const results = installTaskwrightSkills(extSkills, projectSkills, false);
 
-      expect(results).toHaveLength(3);
+      expect(results).toHaveLength(4);
       expect(results.map((r: SkillInstallResult) => r.action)).toEqual([
+        'created',
         'created',
         'created',
         'created',
@@ -129,6 +141,7 @@ describe('skillInstaller', () => {
       makeSkillDir(extSkills, 'create-task', 'create content');
       makeSkillDir(extSkills, 'execute-task', 'execute content');
       makeSkillDir(extSkills, 'index-codebase', 'index content');
+      makeSkillDir(extSkills, 'orchestrate-board', 'orchestrate content');
 
       const projectSkills = tmpDir();
       // Pre-install one skill.
@@ -142,6 +155,7 @@ describe('skillInstaller', () => {
       expect(byName['create-task'].action).toBe('skipped');
       expect(byName['execute-task'].action).toBe('created');
       expect(byName['index-codebase'].action).toBe('created');
+      expect(byName['orchestrate-board'].action).toBe('created');
     });
 
     it('overwrites all skills when overwrite is true', () => {
@@ -149,6 +163,7 @@ describe('skillInstaller', () => {
       makeSkillDir(extSkills, 'create-task', 'new create');
       makeSkillDir(extSkills, 'execute-task', 'new execute');
       makeSkillDir(extSkills, 'index-codebase', 'new index');
+      makeSkillDir(extSkills, 'orchestrate-board', 'new orchestrate');
 
       const projectSkills = tmpDir();
       makeSkillDir(projectSkills, 'create-task', 'old create');
@@ -160,6 +175,7 @@ describe('skillInstaller', () => {
         'overwritten',
         'overwritten',
         'created',
+        'created',
       ]);
     });
 
@@ -168,6 +184,7 @@ describe('skillInstaller', () => {
       makeSkillDir(extSkills, 'create-task', 'create content');
       makeSkillDir(extSkills, 'execute-task', 'execute content');
       makeSkillDir(extSkills, 'index-codebase', 'index content');
+      makeSkillDir(extSkills, 'orchestrate-board', 'orchestrate content');
 
       const projectSkills = tmpDir();
 
@@ -176,6 +193,7 @@ describe('skillInstaller', () => {
       // Second run should skip everything.
       const secondResults = installTaskwrightSkills(extSkills, projectSkills, false);
 
+      expect(secondResults).toHaveLength(4);
       expect(secondResults.every((r: SkillInstallResult) => r.action === 'skipped')).toBe(true);
     });
   });
@@ -183,7 +201,7 @@ describe('skillInstaller', () => {
   describe('installTaskwrightSkills — missing source is logged, not silent', () => {
     it('logs a missing source skill and skips it; present skills still install (no-op holds)', () => {
       const extSkills = tmpDir();
-      // Only two of the three sources exist — index-codebase is missing.
+      // Only two of the four sources exist — index-codebase and orchestrate-board are missing.
       makeSkillDir(extSkills, 'create-task', 'create content');
       makeSkillDir(extSkills, 'execute-task', 'execute content');
 
@@ -192,18 +210,23 @@ describe('skillInstaller', () => {
 
       const results = installTaskwrightSkills(extSkills, projectSkills, false, onMissing);
 
-      // No-op still holds for the missing skill: no result entry, no dir written.
+      // No-op still holds for the missing skills: no result entry, no dir written.
       expect(results.map((r: SkillInstallResult) => r.name)).toEqual([
         'create-task',
         'execute-task',
       ]);
       expect(fs.existsSync(path.join(projectSkills, 'index-codebase'))).toBe(false);
+      expect(fs.existsSync(path.join(projectSkills, 'orchestrate-board'))).toBe(false);
 
       // ...but the miss is now SURFACED (logged) instead of silently swallowed.
-      expect(onMissing).toHaveBeenCalledTimes(1);
+      expect(onMissing).toHaveBeenCalledTimes(2);
       expect(onMissing).toHaveBeenCalledWith(
         'index-codebase',
         path.join(extSkills, 'index-codebase')
+      );
+      expect(onMissing).toHaveBeenCalledWith(
+        'orchestrate-board',
+        path.join(extSkills, 'orchestrate-board')
       );
     });
 
@@ -212,6 +235,7 @@ describe('skillInstaller', () => {
       makeSkillDir(extSkills, 'create-task', 'c');
       makeSkillDir(extSkills, 'execute-task', 'e');
       makeSkillDir(extSkills, 'index-codebase', 'i');
+      makeSkillDir(extSkills, 'orchestrate-board', 'o');
       const onMissing = vi.fn();
 
       installTaskwrightSkills(extSkills, tmpDir(), false, onMissing);
@@ -225,18 +249,18 @@ describe('skillInstaller', () => {
     const repoRoot = path.resolve(__dirname, '..', '..', '..');
     const realSkillsDir = path.join(repoRoot, '.claude', 'skills');
 
-    it('the committed .claude/skills/ source contains all three shipped skills', () => {
+    it('the committed .claude/skills/ source contains all four shipped skills', () => {
       for (const name of TASKWRIGHT_SKILL_NAMES) {
         expect(fs.existsSync(path.join(realSkillsDir, name, 'SKILL.md'))).toBe(true);
       }
     });
 
-    it('bundling the real source copies EXACTLY the three skills and NOT visual-proof/agent-browser', () => {
+    it('bundling the real source copies EXACTLY the four skills and NOT visual-proof/agent-browser', () => {
       const dest = tmpDir();
 
       const results = installTaskwrightSkills(realSkillsDir, dest, true);
 
-      // Exactly the three Taskwright skills, each with its SKILL.md.
+      // Exactly the four Taskwright skills, each with its SKILL.md.
       expect(results.map((r: SkillInstallResult) => r.name).sort()).toEqual(
         [...TASKWRIGHT_SKILL_NAMES].sort()
       );

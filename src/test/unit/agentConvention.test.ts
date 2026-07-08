@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { injectConvention, TASKWRIGHT_CONVENTION } from '../../core/agentConvention';
+import {
+  injectConvention,
+  injectAgentsConvention,
+  TASKWRIGHT_CONVENTION,
+  TASKWRIGHT_AGENTS_CONVENTION,
+} from '../../core/agentConvention';
 import { TASKWRIGHT_MARKERS } from '../../core/markerBlock';
 
 describe('injectConvention', () => {
@@ -21,5 +26,36 @@ describe('injectConvention', () => {
   it('is idempotent', () => {
     const once = injectConvention('# Doc\n');
     expect(injectConvention(once)).toBe(once);
+  });
+});
+
+describe('injectAgentsConvention', () => {
+  it('wraps the AGENTS convention in Taskwright markers for a new file', () => {
+    const out = injectAgentsConvention('');
+    expect(out).toContain(TASKWRIGHT_MARKERS.begin);
+    expect(out).toContain(TASKWRIGHT_MARKERS.end);
+    expect(out).toContain('get_active_task');
+    expect(out).toContain('request_merge');
+    expect(out).toContain(TASKWRIGHT_AGENTS_CONVENTION);
+  });
+
+  it('preserves existing AGENTS.md content and appends the block once', () => {
+    const existing = '# Contributor guide\n\nRun the tests.\n';
+    const out = injectAgentsConvention(existing);
+    expect(out.startsWith(existing)).toBe(true);
+    expect((out.match(/TASKWRIGHT:BEGIN/g) ?? []).length).toBe(1);
+  });
+
+  it('is idempotent', () => {
+    const once = injectAgentsConvention('# Doc\n');
+    expect(injectAgentsConvention(once)).toBe(once);
+  });
+
+  it('is a distinct body from the CLAUDE.md convention', () => {
+    // The AGENTS.md block leads with the MCP-server framing and the merge close;
+    // the CLAUDE.md block does not mention request_merge.
+    expect(TASKWRIGHT_AGENTS_CONVENTION).not.toBe(TASKWRIGHT_CONVENTION);
+    expect(TASKWRIGHT_AGENTS_CONVENTION).toContain('request_merge');
+    expect(TASKWRIGHT_CONVENTION).not.toContain('request_merge');
   });
 });

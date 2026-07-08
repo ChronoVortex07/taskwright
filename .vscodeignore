@@ -15,6 +15,7 @@ tsconfig.eslint.json
 tsconfig.webview.json
 eslint.config.mjs
 scripts/**
+!scripts/taskwright-mcp.cjs
 vitest.config.ts
 vite.webview.config.ts
 svelte.config.mjs
@@ -43,6 +44,7 @@ test-results/**
 # E2E test artifacts
 core
 .mcp.json
+!.mcp.json
 
 # Playwright / webview tests
 e2e/**

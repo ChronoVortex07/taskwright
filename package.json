@@ -93,6 +93,11 @@
           "default": false,
           "markdownDescription": "Opt-in: install Windows-safe `pre-push`/`post-merge` git hooks that automatically push/pull the board ref alongside your normal code push/pull. Off by default — the explicit Push/Pull Board commands always work without this."
         },
+        "taskwright.setupWritesProjectMcpJson": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Opt-in: when running \"Set Up Claude Code Integration\", also write a project-local `.mcp.json` and copy `scripts/taskwright-mcp.cjs` into the repo, so a Claude Code session opened in this repo gets the Taskwright MCP without the user-scope CLI registration. Off by default. The launcher resolves the primary Taskwright checkout's built server, so this is intended for Taskwright checkouts and their worktrees."
+        },
         "taskwright.dispatchTemplate": {
           "type": "string",
           "editPresentation": "multilineText",
