@@ -1,4 +1,7 @@
 import * as esbuild from 'esbuild';
+import * as fs from 'fs';
+import * as path from 'path';
+import { installTaskwrightSkills } from '../src/core/skillInstaller';
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
@@ -65,7 +68,30 @@ const common: esbuild.BuildOptions = {
   ],
 };
 
+/**
+ * Bundle the shipped Taskwright skills into `dist/skills/` so a PUBLISHED .vsix
+ * carries them. `.claude/**` is excluded from the package by .vscodeignore, and
+ * `dist/**` ships — so the skills must live under dist to reach an installed
+ * extension. Reuses installTaskwrightSkills, which copies EXACTLY the dirs named
+ * in TASKWRIGHT_SKILL_NAMES, so the dev-only `visual-proof`/`agent-browser` skills
+ * are never bundled. overwrite:true keeps dist/skills in sync on every rebuild.
+ * The extension installs FROM this dir at runtime (setUpClaudeIntegration).
+ */
+function bundleSkills(): void {
+  const srcSkillsDir = path.join('.claude', 'skills');
+  const destSkillsDir = path.join('dist', 'skills');
+  fs.mkdirSync(destSkillsDir, { recursive: true });
+  const results = installTaskwrightSkills(srcSkillsDir, destSkillsDir, true);
+  for (const r of results) {
+    console.log(`[skills] ${r.action}: ${r.name} -> ${path.join(destSkillsDir, r.name)}`);
+  }
+}
+
 async function main(): Promise<void> {
+  // Bundle the shipped skills into dist/skills/ before building the JS bundles,
+  // so a published .vsix carries them (runs in both one-shot and --watch builds).
+  bundleSkills();
+
   const contexts = await Promise.all(
     builds.map((options) => esbuild.context({ ...common, ...options }))
   );
