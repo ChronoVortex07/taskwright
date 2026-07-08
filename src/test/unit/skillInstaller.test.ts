@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -177,6 +177,76 @@ describe('skillInstaller', () => {
       const secondResults = installTaskwrightSkills(extSkills, projectSkills, false);
 
       expect(secondResults.every((r: SkillInstallResult) => r.action === 'skipped')).toBe(true);
+    });
+  });
+
+  describe('installTaskwrightSkills — missing source is logged, not silent', () => {
+    it('logs a missing source skill and skips it; present skills still install (no-op holds)', () => {
+      const extSkills = tmpDir();
+      // Only two of the three sources exist — index-codebase is missing.
+      makeSkillDir(extSkills, 'create-task', 'create content');
+      makeSkillDir(extSkills, 'execute-task', 'execute content');
+
+      const projectSkills = tmpDir();
+      const onMissing = vi.fn();
+
+      const results = installTaskwrightSkills(extSkills, projectSkills, false, onMissing);
+
+      // No-op still holds for the missing skill: no result entry, no dir written.
+      expect(results.map((r: SkillInstallResult) => r.name)).toEqual([
+        'create-task',
+        'execute-task',
+      ]);
+      expect(fs.existsSync(path.join(projectSkills, 'index-codebase'))).toBe(false);
+
+      // ...but the miss is now SURFACED (logged) instead of silently swallowed.
+      expect(onMissing).toHaveBeenCalledTimes(1);
+      expect(onMissing).toHaveBeenCalledWith(
+        'index-codebase',
+        path.join(extSkills, 'index-codebase')
+      );
+    });
+
+    it('does not invoke the missing-source handler when every source is present', () => {
+      const extSkills = tmpDir();
+      makeSkillDir(extSkills, 'create-task', 'c');
+      makeSkillDir(extSkills, 'execute-task', 'e');
+      makeSkillDir(extSkills, 'index-codebase', 'i');
+      const onMissing = vi.fn();
+
+      installTaskwrightSkills(extSkills, tmpDir(), false, onMissing);
+
+      expect(onMissing).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('packaged skill bundle — resolves the real source, excludes dev skills', () => {
+    // src/test/unit -> repo root is three levels up.
+    const repoRoot = path.resolve(__dirname, '..', '..', '..');
+    const realSkillsDir = path.join(repoRoot, '.claude', 'skills');
+
+    it('the committed .claude/skills/ source contains all three shipped skills', () => {
+      for (const name of TASKWRIGHT_SKILL_NAMES) {
+        expect(fs.existsSync(path.join(realSkillsDir, name, 'SKILL.md'))).toBe(true);
+      }
+    });
+
+    it('bundling the real source copies EXACTLY the three skills and NOT visual-proof/agent-browser', () => {
+      const dest = tmpDir();
+
+      const results = installTaskwrightSkills(realSkillsDir, dest, true);
+
+      // Exactly the three Taskwright skills, each with its SKILL.md.
+      expect(results.map((r: SkillInstallResult) => r.name).sort()).toEqual(
+        [...TASKWRIGHT_SKILL_NAMES].sort()
+      );
+      for (const name of TASKWRIGHT_SKILL_NAMES) {
+        expect(fs.existsSync(path.join(dest, name, 'SKILL.md'))).toBe(true);
+      }
+
+      // The dev-only skills are never bundled (they are not in TASKWRIGHT_SKILL_NAMES).
+      expect(fs.existsSync(path.join(dest, 'visual-proof'))).toBe(false);
+      expect(fs.existsSync(path.join(dest, 'agent-browser'))).toBe(false);
     });
   });
 });

@@ -52,18 +52,34 @@ export function installSkill(
 }
 
 /**
+ * Invoked when a source skill directory named in {@link TASKWRIGHT_SKILL_NAMES}
+ * is absent. Default: warn to the console so a BROKEN PACKAGE (a skill that failed
+ * to bundle into `dist/skills/`) is visible rather than silently missing.
+ */
+export type MissingSkillSourceHandler = (name: string, srcDir: string) => void;
+
+function defaultMissingSkillSource(name: string, srcDir: string): void {
+  console.warn(
+    `[taskwright] Skill source missing, skipping "${name}" (expected at ${srcDir}). ` +
+      `A packaged install ships these under dist/skills/ — rebuild (bun run build) or reinstall the extension.`
+  );
+}
+
+/**
  * Install all Taskwright skills from the extension's `.claude/skills/` into
  * the project's `.claude/skills/`.
  *
  * @param extSkillsDir - Path to the extension's `.claude/skills/` directory.
  * @param projectSkillsDir - Path to the project's `.claude/skills/` directory.
  * @param overwrite - Whether to replace existing skill directories.
+ * @param onMissingSource - Optional handler invoked when a source skill is missing.
  * @returns An array of results, one per skill name in {@link TASKWRIGHT_SKILL_NAMES}.
  */
 export function installTaskwrightSkills(
   extSkillsDir: string,
   projectSkillsDir: string,
-  overwrite: boolean
+  overwrite: boolean,
+  onMissingSource: MissingSkillSourceHandler = defaultMissingSkillSource
 ): SkillInstallResult[] {
   const results: SkillInstallResult[] = [];
 
@@ -72,9 +88,10 @@ export function installTaskwrightSkills(
     const destDir = path.join(projectSkillsDir, name);
 
     if (!fs.existsSync(srcDir)) {
-      // Source skill missing — skip silently rather than failing the whole
-      // setup. The extension ships these, but a dev checkout without them
-      // shouldn't break the integration command.
+      // Source skill missing — skip this one rather than failing the whole setup,
+      // but SURFACE it: a packaged install always ships these under dist/skills/,
+      // so a miss means a broken package, not a normal dev checkout.
+      onMissingSource(name, srcDir);
       continue;
     }
 
