@@ -53,11 +53,13 @@ import {
 import type { BoardGitExec } from '../core/boardRef';
 import {
   requestMerge,
+  isWorktreeClean,
   type BoardOps,
   type GitExecFn,
   type RunFn,
   type RequestMergeResult,
 } from '../core/finishTask';
+import { worktreePathFor } from '../core/WorktreeService';
 
 /**
  * Pure-ish implementations of the Taskwright MCP tools, decoupled from the MCP
@@ -200,6 +202,45 @@ interface GitFacts {
   branch: string | null;
 }
 
+/** One entry from `git worktree list --porcelain`, grouped by its `worktree ` stanza. */
+export interface WorktreeEntry {
+  /** Absolute worktree path (the `worktree ` line). */
+  path: string;
+  /** Short branch name (refs/heads/ stripped), or null when detached/bare. */
+  branch: string | null;
+  detached: boolean;
+  bare: boolean;
+}
+
+/**
+ * Parse `git worktree list --porcelain` into per-worktree records. Each stanza
+ * starts with a `worktree <path>` line, followed by `HEAD <sha>` and either
+ * `branch refs/heads/<name>`, `detached`, or `bare`; stanzas are blank-line
+ * separated (a trailing stanza may omit the blank line). Unlike
+ * boardRoot.parseWorktreeListPorcelain (paths only) this keeps branch/detached/
+ * bare so request_merge can validate an explicit target.
+ */
+export function parseWorktreeEntries(porcelain: string): WorktreeEntry[] {
+  const entries: WorktreeEntry[] = [];
+  let cur: WorktreeEntry | null = null;
+  for (const line of porcelain.split(/\r?\n/)) {
+    if (line.startsWith('worktree ')) {
+      if (cur) entries.push(cur);
+      cur = { path: line.slice('worktree '.length).trim(), branch: null, detached: false, bare: false };
+    } else if (!cur) {
+      continue; // ignore noise before the first `worktree` line
+    } else if (line.startsWith('branch ')) {
+      cur.branch = line.slice('branch '.length).trim().replace(/^refs\/heads\//, '');
+    } else if (line.trim() === 'detached') {
+      cur.detached = true;
+    } else if (line.trim() === 'bare') {
+      cur.bare = true;
+    }
+  }
+  if (cur) entries.push(cur);
+  return entries;
+}
+
 async function gitFacts(exec: GitExecFn, cwd: string): Promise<GitFacts> {
   const gitDir = path.resolve((await exec(cwd, ['rev-parse', '--git-dir'])).stdout.trim());
   const commonDir = path.resolve(
@@ -244,6 +285,80 @@ function queueStoreFor(commonDir: string, fsDeps: QueueFsDeps = nodeQueueFs): Me
   return new MergeQueueStore(mergeQueuePath(commonDir), fsDeps);
 }
 
+/** A validated explicit merge target, ready to become FinishDeps.root/branch/worktreeRel. */
+interface ResolvedWorktreeTarget {
+  root: string; // absolute worktree path (FinishDeps.root)
+  branch: string; // the worktree's short branch (FinishDeps.branch)
+  worktreeRel: string; // primaryRoot-relative, forward-slashed (FinishDeps.worktreeRel)
+}
+
+/**
+ * Resolve + validate an explicit `worktree` target for request_merge (DRAFT-4).
+ * Accepts a bare branch name (=> <primaryRoot>/.worktrees/<name>) or a repo-root-
+ * relative path (contains a separator). Returns the resolved target, or an abort
+ * reason. The four gates (containment / real linked worktree / non-detached /
+ * clean) prevent merging the wrong tree; see the plan's Design rationale.
+ */
+async function resolveWorktreeTarget(
+  exec: GitExecFn,
+  cwd: string,
+  primaryRoot: string,
+  worktreeArg: string
+): Promise<{ ok: true; target: ResolvedWorktreeTarget } | { ok: false; reason: string }> {
+  const arg = worktreeArg.trim();
+  if (!arg) return { ok: false, reason: 'The `worktree` target is empty.' };
+
+  const abs =
+    arg.includes('/') || arg.includes('\\')
+      ? path.resolve(primaryRoot, arg)
+      : worktreePathFor(primaryRoot, arg);
+
+  // Gate 1: containment under <primaryRoot>/.worktrees/ (before any git call).
+  const worktreesDir = path.resolve(primaryRoot, '.worktrees');
+  const rel = path.relative(worktreesDir, abs);
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
+    return {
+      ok: false,
+      reason: `worktree "${arg}" does not resolve under ${primaryRoot}/.worktrees/; refusing to merge a tree outside the dispatch area.`,
+    };
+  }
+
+  // Gate 2: it must be a REAL linked worktree of this repo (and not bare).
+  const { stdout } = await exec(cwd, ['worktree', 'list', '--porcelain']);
+  const entry = parseWorktreeEntries(stdout).find((e) => path.resolve(e.path) === abs && !e.bare);
+  if (!entry) {
+    return {
+      ok: false,
+      reason: `worktree "${arg}" is not a linked worktree of this repository (not in \`git worktree list\`).`,
+    };
+  }
+
+  // Gate 3: non-detached (must have a branch to merge).
+  if (entry.detached || !entry.branch) {
+    return {
+      ok: false,
+      reason: `worktree "${arg}" has a detached HEAD; check out its task branch before merging.`,
+    };
+  }
+
+  // Gate 4: clean (never silently drop the target's uncommitted WIP).
+  if (!(await isWorktreeClean(exec, abs))) {
+    return {
+      ok: false,
+      reason: `worktree "${arg}" has uncommitted changes; commit or discard them inside it first.`,
+    };
+  }
+
+  return {
+    ok: true,
+    target: {
+      root: abs,
+      branch: entry.branch,
+      worktreeRel: path.relative(primaryRoot, abs).replace(/\\/g, '/'),
+    },
+  };
+}
+
 /**
  * `request_merge`: submit the active task for integration and block until it is
  * merged / a PR is opened / it is sent back — the single closing call an agent
@@ -251,24 +366,50 @@ function queueStoreFor(commonDir: string, fsDeps: QueueFsDeps = nodeQueueFs): Me
  */
 export async function requestMergeHandler(
   deps: McpHandlerDeps,
-  args: { taskId: string }
+  args: { taskId: string; worktree?: string }
 ): Promise<RequestMergeResult> {
   const exec = deps.gitExec ?? defaultGitExec;
   const run = deps.shellRun ?? defaultShellRun;
   const facts = await gitFacts(exec, deps.root);
 
-  if (isPrimaryTree(facts.gitDir)) {
-    return {
-      status: 'aborted',
-      reason:
-        'request_merge must be called from inside your .worktrees/<branch>, not the primary tree. cd into the worktree and try again.',
-    };
-  }
-  if (!facts.branch) {
-    return {
-      status: 'aborted',
-      reason: 'Your worktree has a detached HEAD; check out your task branch first.',
-    };
+  // Decide the tree we rebase/verify/merge/clean. Two modes:
+  //  - explicit target (root-override): a primary-rooted session names a worktree;
+  //  - implicit (default): the session's own cwd is the worktree.
+  let root: string;
+  let branch: string;
+  let worktreeRel: string;
+
+  if (args.worktree !== undefined) {
+    // Explicit target: validate it, then override ONLY root/branch/worktreeRel.
+    // primaryRoot stays the primary tree (the ff-merge target). The isPrimaryTree
+    // guard is intentionally SKIPPED here — it exists only to catch an accidental
+    // bare call from the primary, and a validated target lives under
+    // <primaryRoot>/.worktrees/, so root != primaryRoot by construction.
+    const resolved = await resolveWorktreeTarget(exec, deps.root, facts.primaryRoot, args.worktree);
+    if (!resolved.ok) {
+      return { status: 'aborted', reason: resolved.reason };
+    }
+    root = resolved.target.root;
+    branch = resolved.target.branch;
+    worktreeRel = resolved.target.worktreeRel;
+  } else {
+    // Default: the calling session must itself be inside its worktree.
+    if (isPrimaryTree(facts.gitDir)) {
+      return {
+        status: 'aborted',
+        reason:
+          'request_merge must be called from inside your .worktrees/<branch>, not the primary tree. cd into the worktree and try again (or pass a `worktree` target from a primary-rooted session).',
+      };
+    }
+    if (!facts.branch) {
+      return {
+        status: 'aborted',
+        reason: 'Your worktree has a detached HEAD; check out your task branch first.',
+      };
+    }
+    root = deps.root;
+    branch = facts.branch;
+    worktreeRel = `.worktrees/${facts.branch}`;
   }
 
   const fsDeps = deps.fsDeps ?? nodeQueueFs;
@@ -278,10 +419,10 @@ export async function requestMergeHandler(
 
   return requestMerge(
     {
-      root: deps.root,
+      root,
       primaryRoot: facts.primaryRoot,
-      branch: facts.branch,
-      worktreeRel: `.worktrees/${facts.branch}`,
+      branch,
+      worktreeRel,
       config,
       queue: queueStoreFor(facts.commonDir, fsDeps),
       board,
