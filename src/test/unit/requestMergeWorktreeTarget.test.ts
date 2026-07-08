@@ -87,6 +87,9 @@ interface ExecOpts {
   dirtyWorktree?: boolean;
   detachedTarget?: boolean;
   omitTargetFromList?: boolean;
+  /** Return a RELATIVE `.git` for rev-parse --git-dir/--git-common-dir, as git does from the
+   *  primary tree — the case that broke the worktree target when path.resolve dropped the cwd. */
+  relativeGitDir?: boolean;
   onArgs?: (args: string[]) => void;
 }
 
@@ -99,8 +102,10 @@ function targetGitExec(primaryRoot: string, worktreeAbs: string, opts: ExecOpts 
   return async (cwd, args) => {
     opts.onArgs?.(args);
     const joined = args.join(' ');
-    if (joined === 'rev-parse --git-dir') return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
-    if (joined === 'rev-parse --git-common-dir') return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
+    if (joined === 'rev-parse --git-dir')
+      return { stdout: opts.relativeGitDir ? '.git' : path.join(primaryRoot, '.git'), stderr: '' };
+    if (joined === 'rev-parse --git-common-dir')
+      return { stdout: opts.relativeGitDir ? '.git' : path.join(primaryRoot, '.git'), stderr: '' };
     if (args[0] === 'worktree' && args[1] === 'list') {
       const branchLine = opts.detachedTarget ? 'detached' : 'branch refs/heads/task-7-x';
       const targetStanza = opts.omitTargetFromList
@@ -214,6 +219,28 @@ describe('requestMergeHandler — explicit worktree target (root-override, DRAFT
       { taskId: 'TASK-7', worktree: '.worktrees/task-7-x' }
     );
     expect(r.status).toBe('merged');
+  });
+
+  it('resolves a RELATIVE --git-dir/--git-common-dir (primary tree) against deps.root, not the process cwd', async () => {
+    // Regression: from the primary tree git returns ".git" (relative). A bare path.resolve()
+    // resolved it against the MCP process cwd, so primaryRoot — and thus the worktree target —
+    // came out wrong and Gate 2 wrongly reported "not a linked worktree". Resolving against
+    // deps.root fixes it. Without the fix this call aborts instead of merging.
+    const primaryRoot = path.join(tmpDir, 'primary');
+    const worktreeAbs = path.join(primaryRoot, '.worktrees', 'task-7-x');
+    fs.mkdirSync(worktreeAbs, { recursive: true });
+    const board = recordingBoard();
+
+    const r = await requestMergeHandler(
+      makeHandlerDeps(primaryRoot, {
+        gitExec: targetGitExec(primaryRoot, worktreeAbs, { relativeGitDir: true }),
+        board,
+        fsDeps: autoMergeFsDeps(primaryRoot),
+      }),
+      { taskId: 'TASK-7', worktree: 'task-7-x' }
+    );
+    expect(r.status).toBe('merged');
+    expect(board.statuses.at(-1)).toBe('Done');
   });
 
   it('bare primary-tree call (no worktree arg) still aborts with the isPrimaryTree message', async () => {

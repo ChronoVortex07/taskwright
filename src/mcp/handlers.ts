@@ -245,8 +245,15 @@ export function parseWorktreeEntries(porcelain: string): WorktreeEntry[] {
 }
 
 async function gitFacts(exec: GitExecFn, cwd: string): Promise<GitFacts> {
-  const gitDir = path.resolve((await exec(cwd, ['rev-parse', '--git-dir'])).stdout.trim());
+  // Resolve git's output against `cwd` (the tree we ran in). `git rev-parse --git-dir` /
+  // `--git-common-dir` return a RELATIVE path (".git") from the primary tree; a bare
+  // path.resolve() would then resolve it against the MCP *process* cwd instead of `cwd`,
+  // producing the wrong primaryRoot whenever the server did not launch in the primary — this
+  // broke request_merge's worktree target on the primary tree. From a linked worktree git
+  // returns an absolute path, which path.resolve(cwd, abs) leaves untouched — safe for both.
+  const gitDir = path.resolve(cwd, (await exec(cwd, ['rev-parse', '--git-dir'])).stdout.trim());
   const commonDir = path.resolve(
+    cwd,
     (await exec(cwd, ['rev-parse', '--git-common-dir'])).stdout.trim()
   );
   let branch: string | null;
@@ -609,6 +616,7 @@ export async function getActiveTask(deps: McpHandlerDeps): Promise<ActiveTaskRes
     const exec = deps.gitExec ?? defaultGitExec;
     const fsDeps = deps.fsDeps ?? nodeQueueFs;
     const commonDir = path.resolve(
+      deps.root,
       (await exec(deps.root, ['rev-parse', '--git-common-dir'])).stdout.trim()
     );
     const pos = positionOf(queueStoreFor(commonDir, fsDeps).read(), active.taskId);
@@ -957,6 +965,7 @@ export async function nextReadyTasksHandler(
     const exec = deps.gitExec ?? defaultGitExec;
     const fsDeps = deps.fsDeps ?? nodeQueueFs;
     const commonDir = path.resolve(
+      deps.root,
       (await exec(deps.root, ['rev-parse', '--git-common-dir'])).stdout.trim()
     );
     inMergeQueue = queueStoreFor(commonDir, fsDeps)
