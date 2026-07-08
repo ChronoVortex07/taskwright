@@ -926,7 +926,20 @@ body.tasks-page .view-content {
 }
 
 /* List View */
+
+/* List/archived view hosts: flex columns so .task-list-container owns a bounded, scrollable
+   area (mirrors the kanban #kanban-view/#kanban-app treatment). ID selectors beat
+   .view-content { display: block }. */
+#list-view,
+#archived-view {
+  display: flex;
+  flex-direction: column;
+}
+
 .task-list-container {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   padding: 12px;
 }
 

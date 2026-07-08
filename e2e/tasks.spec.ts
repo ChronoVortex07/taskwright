@@ -2288,3 +2288,41 @@ test.describe('Tasks View — both-axes scrolling (kanban)', () => {
     expect(await scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
   });
 });
+
+test.describe('Tasks View — both-axes scrolling (list)', () => {
+  test('list view scrolls vertically when the table exceeds the viewport', async ({ page }) => {
+    await installVsCodeMock(page);
+    await page.goto('/tasks.html');
+    await page.waitForTimeout(100);
+    await page.setViewportSize({ width: 400, height: 600 });
+
+    await postMessageToWebview(page, { type: 'viewModeChanged', viewMode: 'list' });
+    await postMessageToWebview(page, {
+      type: 'statusesUpdated',
+      statuses: ['To Do', 'In Progress', 'Done'],
+    });
+    await postMessageToWebview(page, { type: 'milestonesUpdated', milestones: [] });
+    await postMessageToWebview(page, { type: 'tasksUpdated', tasks: manyTasks });
+    await page.waitForTimeout(100);
+
+    // Precondition: all 40 rows rendered (default "Not Done" filter shows To Do tasks).
+    await expect(page.locator('.task-table tr[data-task-id]')).toHaveCount(40);
+
+    const scroller = page.locator('.task-list-container');
+
+    const overflowY = await scroller.evaluate((el) => window.getComputedStyle(el).overflowY);
+    expect(['auto', 'scroll']).toContain(overflowY);
+
+    const metrics = await scroller.evaluate((el) => ({
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+    }));
+    expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
+
+    // The bottom of the list is reachable.
+    await scroller.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+    expect(await scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  });
+});
