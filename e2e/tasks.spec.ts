@@ -2226,3 +2226,65 @@ test.describe('Tasks View', () => {
     });
   });
 });
+
+// 40 same-status tasks: forces a To Do column taller than a 600px viewport (vertical
+// overflow) and, at a narrow width, columns wider than the viewport (horizontal overflow).
+const manyTasks: (Task & { blocksTaskIds?: string[] })[] = Array.from({ length: 40 }, (_, i) => ({
+  id: `TASK-V${i + 1}`,
+  title: `Vertical overflow task ${i + 1}`,
+  status: 'To Do',
+  labels: [],
+  assignee: [],
+  dependencies: [],
+  acceptanceCriteria: [],
+  definitionOfDone: [],
+  filePath: `/test/tasks/task-v${i + 1}.md`,
+}));
+
+test.describe('Tasks View — both-axes scrolling (kanban)', () => {
+  test('kanban board scrolls on both axes at a narrow sidebar width', async ({ page }) => {
+    await installVsCodeMock(page);
+    await page.goto('/tasks.html');
+    await page.waitForTimeout(100);
+    await page.setViewportSize({ width: 400, height: 600 });
+
+    await postMessageToWebview(page, { type: 'viewModeChanged', viewMode: 'kanban' });
+    await postMessageToWebview(page, {
+      type: 'statusesUpdated',
+      statuses: ['To Do', 'In Progress', 'Done'],
+    });
+    await postMessageToWebview(page, { type: 'milestonesUpdated', milestones: [] });
+    await postMessageToWebview(page, { type: 'tasksUpdated', tasks: manyTasks });
+    await page.waitForTimeout(100);
+
+    // Precondition: the tall column actually rendered all its cards (fails here would mean
+    // the test never reached the CSS assertion — not a false pass).
+    await expect(page.locator('[data-testid="column-To Do"] .task-card')).toHaveCount(40);
+
+    const scroller = page.locator('#kanban-app');
+
+    // The scroll container is configured to scroll on BOTH axes.
+    const overflow = await scroller.evaluate((el) => {
+      const s = window.getComputedStyle(el);
+      return { x: s.overflowX, y: s.overflowY };
+    });
+    expect(['auto', 'scroll']).toContain(overflow.y);
+    expect(['auto', 'scroll']).toContain(overflow.x);
+
+    // Content exceeds the viewport in both directions.
+    const metrics = await scroller.evaluate((el) => ({
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+    }));
+    expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
+    expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth);
+
+    // The bottom of the board is actually reachable (scrollTop can move past 0).
+    await scroller.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+    expect(await scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  });
+});
