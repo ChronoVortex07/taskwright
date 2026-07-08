@@ -30,9 +30,14 @@ plus local Bash/Read/Grep/Glob.
 
 ## Key facts you rely on
 
-- **The ready set is mutually independent.** `next_ready_tasks` returns only tasks whose *every*
-  dependency is Done. Two returned tasks can never depend on each other (a dependency would keep the
-  dependent out of the set), so the whole set is safe to run **concurrently**.
+- **The ready set is dependency-independent — but not necessarily FILE-independent.**
+  `next_ready_tasks` returns only tasks whose *every* dependency is Done, so two returned tasks can
+  never depend on each other and are safe to run **concurrently** as far as *ordering* goes. They can
+  still edit the **same files**, which collides at merge time. So for the parallel batch, pull it with
+  **`next_ready_tasks { parallelSafe: true, limit: cap }`** — it returns only tasks whose attached-plan
+  file footprints are pairwise disjoint (a task with no plan / unknown footprint comes back solo). The
+  orchestrator thereby AVOIDS most conflicts; any that still slip through (an under-declared footprint)
+  are the dispatched agent's to resolve during `request_merge`'s rebase.
 - **The merge queue serializes merges for you.** Each task's `/execute-task` closes with
   `request_merge`, which waits its turn in the shared merge queue and merges under right-of-way. You
   never order merges yourself — parallel workers do their *work* concurrently and their *merges*
@@ -54,8 +59,11 @@ plus local Bash/Read/Grep/Glob.
 
 Repeat rounds until a stop condition fires:
 
-1. **Pull ready tasks.** Call `next_ready_tasks` (pass `limit` from the budget if set). Each row is a
-   ready, unclaimed, unblocked, not-in-queue task, ordered by priority then ordinal.
+1. **Pull ready tasks.** In **sequential** mode call `next_ready_tasks` (the full ordered ready set;
+   pass `limit` from the budget if set). In **parallel** mode call
+   `next_ready_tasks { parallelSafe: true, limit: cap }` — it returns a conflict-safe batch (tasks with
+   pairwise-disjoint file footprints), already sized to the fan-out cap. Each row is a ready,
+   unclaimed, unblocked, not-in-queue task, ordered by priority then ordinal.
 
 2. **Check stop conditions.** If the ready set is **empty**, decide which stop applies:
    - Call `get_board`. If it shows **no** non-Done tasks → **Drained**: report Done and stop.
@@ -63,8 +71,10 @@ Repeat rounds until a stop condition fires:
      in flight → **All-blocked**: report the blocked frontier (which tasks, blocked by what) and stop.
    Otherwise (ready set non-empty) continue.
 
-3. **Choose the batch.** Take the top `min(readyCount, cap)` tasks — parallel `cap` (default 3), or 1
-   in sequential mode. The rest wait for the next round (they refresh back into `next_ready_tasks`).
+3. **Choose the batch.** In **parallel** mode, the `parallelSafe` call in step 1 already returned a
+   conflict-safe, cap-sized batch — dispatch exactly those. In **sequential** mode take the single top
+   task. Tasks left out of this round (overlapping footprints, or beyond the cap) refresh back into
+   `next_ready_tasks` next round — once a batch member merges, the files it held are free.
 
 4. **Run the batch.**
    - **Parallel:** issue one `Task` subagent per batch task **in a single response** (concurrent),
@@ -136,8 +146,9 @@ of handing them to a subagent.
 ## Rules of thumb
 
 - One round = pull ready → run a batch → reconcile → refresh; loop until a stop condition.
-- The ready set is mutually independent — the whole batch is safe to parallelize; cap the fan-out
-  (default 3), don't swarm.
+- The ready set is dependency-independent; for the parallel batch use `next_ready_tasks { parallelSafe:
+  true, limit: cap }` so co-dispatched tasks are also FILE-disjoint (avoid merge conflicts). Cap the
+  fan-out (default 3), don't swarm. Any conflict that still slips through is the agent's to rebase away.
 - Claim before work; a surrendered claim means skip, never double-execute.
 - Let `request_merge` (inside `/execute-task`) serialize merges — never order merges yourself.
 - Failures: surface + `release_task` + move on; no auto-retry unless the user asks.

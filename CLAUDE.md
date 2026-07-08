@@ -10,8 +10,10 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
 
 - Requires Node **≥ 22** and [Bun](https://bun.sh). `bun install` → `bun run build` → press F5 to launch.
 - `bun run test` (Vitest), `bun run lint`, `bun run typecheck`.
-- **Windows note:** ~22 upstream unit tests assert POSIX paths and fail on Windows; the code is
-  cross-platform-correct (uses `path.*`). They pass on Linux/CI — don't "fix" the code to match them.
+- **Windows note:** the unit suite is path-separator-agnostic (TASK-4) and passes **fully on Windows**,
+  Linux, and CI — the current baseline is **0 failures** on all three. (Historically ~22 upstream tests
+  asserted POSIX paths and failed on Windows; that was fixed — just don't reintroduce POSIX-only path
+  assertions.)
 
 ## Architecture (inherited)
 
@@ -248,6 +250,11 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   (`next_ready_tasks`), DRAFT-3 (`start_task`), DRAFT-7 (`/execute-task` from any session), and
   DRAFT-4 (`request_merge { worktree }`). Plan:
   `docs/superpowers/plans/2026-07-08-orchestrate-board-skill.md`.
+  **Conflict-safe parallel batching (TASK-80):** dependency-independence ≠ file-independence, so the
+  parallel batch is pulled via `next_ready_tasks { parallelSafe: true, limit: cap }` — only tasks whose
+  attached-plan "File Structure" footprints are pairwise disjoint are co-dispatched (unknown-footprint
+  tasks run solo); pure core `src/core/planFiles.ts` (`extractPlanFiles` / `selectDisjointBatch`). The
+  orchestrator AVOIDS conflicts; an unavoidable one is the dispatched agent's to rebase away.
 - **Broadened Claude-integration scaffolding (5b)** ✅: `setUpClaudeIntegration`
   (`src/extension.ts`) now wires a fresh repo end-to-end. It injects the Taskwright
   convention into **AGENTS.md** too (`injectAgentsConvention` +

@@ -12,6 +12,7 @@ import {
   editTaskHandler,
   claimTaskHandler,
   nextReadyTasksHandler,
+  attachPlanHandler,
 } from '../../mcp/handlers';
 import type { McpHandlerDeps } from '../../mcp/handlers';
 import type { GitExecFn } from '../../core/finishTask';
@@ -131,5 +132,45 @@ describe('nextReadyTasksHandler', () => {
     await createTaskHandler(d, { title: 'Idea', draft: true }); // DRAFT-1
     const ready = await nextReadyTasksHandler(d, {});
     expect(ready.map((r) => r.id)).toEqual(['TASK-1']);
+  });
+
+  // Write a plan file under the repo root and link it to a task, so the handler can read its footprint.
+  function attachPlanWithFiles(rel: string, files: string[]): void {
+    const abs = path.join(root, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    const body = files.map((f) => `- \`${f}\``).join('\n');
+    fs.writeFileSync(abs, `# Plan\n\n## File Structure\n\n**Modify:**\n\n${body}\n`, 'utf-8');
+  }
+
+  it('parallelSafe returns a pairwise-file-disjoint batch, deferring file-overlapping tasks', async () => {
+    const d = deps();
+    await createTaskHandler(d, { title: 'A', priority: 'high' }); // TASK-1
+    await createTaskHandler(d, { title: 'B', priority: 'high' }); // TASK-2
+    await createTaskHandler(d, { title: 'C', priority: 'high' }); // TASK-3
+    attachPlanWithFiles('docs/p1.md', ['src/shared.ts']);
+    attachPlanWithFiles('docs/p2.md', ['src/shared.ts', 'src/b.ts']); // overlaps TASK-1
+    attachPlanWithFiles('docs/p3.md', ['src/c.ts']); // disjoint
+    await attachPlanHandler(d, { taskId: 'TASK-1', plan: 'docs/p1.md' });
+    await attachPlanHandler(d, { taskId: 'TASK-2', plan: 'docs/p2.md' });
+    await attachPlanHandler(d, { taskId: 'TASK-3', plan: 'docs/p3.md' });
+
+    // Default (sequential) is unchanged: the full ordered ready set.
+    const all = await nextReadyTasksHandler(d, {});
+    expect(all.map((r) => r.id)).toEqual(['TASK-1', 'TASK-2', 'TASK-3']);
+
+    // parallelSafe: TASK-2 overlaps TASK-1 on src/shared.ts → deferred; TASK-3 disjoint → included.
+    const batch = await nextReadyTasksHandler(d, { parallelSafe: true });
+    expect(batch.map((r) => r.id)).toEqual(['TASK-1', 'TASK-3']);
+  });
+
+  it('parallelSafe returns an unknown-footprint (no-plan) task solo', async () => {
+    const d = deps();
+    await createTaskHandler(d, { title: 'NoPlan', priority: 'high' }); // TASK-1: no plan → unknown
+    await createTaskHandler(d, { title: 'Planned', priority: 'high' }); // TASK-2
+    attachPlanWithFiles('docs/p2.md', ['src/b.ts']);
+    await attachPlanHandler(d, { taskId: 'TASK-2', plan: 'docs/p2.md' });
+
+    const batch = await nextReadyTasksHandler(d, { parallelSafe: true });
+    expect(batch.map((r) => r.id)).toEqual(['TASK-1']); // unknown footprint first ⇒ solo batch
   });
 });

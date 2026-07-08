@@ -207,14 +207,23 @@ async function main(): Promise<void> {
     {
       title: 'Next ready tasks',
       description:
-        'List the tasks that are READY to execute right now — status not Done, every dependency Done (unblocked), no live claim by another session, and not already in the merge queue — sorted by priority then ordinal. Returns the same compact rows as get_board ({ id, title, status, priority?, category?, milestone?, type?, causedBy?, dependencies, blockedBy, locked, draft }). Use this to pull the next unit(s) of work to dispatch. Drafts are excluded (promote first). Filter by category / milestone; cap with limit.',
+        'List the tasks that are READY to execute right now — status not Done, every dependency Done (unblocked), no live claim by another session, and not already in the merge queue — sorted by priority then ordinal. Returns the same compact rows as get_board ({ id, title, status, priority?, category?, milestone?, type?, causedBy?, dependencies, blockedBy, locked, draft }). Use this to pull the next unit(s) of work to dispatch. Drafts are excluded (promote first). Filter by category / milestone; cap with limit. Pass parallelSafe:true to get a CONFLICT-SAFE parallel batch — only tasks whose attached-plan file footprints are pairwise disjoint (unknown-footprint tasks returned solo) so they can be dispatched concurrently without merge collisions; limit caps the fan-out.',
       inputSchema: {
-        limit: z.number().optional().describe('Max ready tasks to return (default: all).'),
+        limit: z
+          .number()
+          .optional()
+          .describe('Max ready tasks to return (default: all; with parallelSafe, caps the batch).'),
         category: z.string().optional().describe('Lane filter (incl. reserved "Bugs"/"Misc").'),
         milestone: z
           .string()
           .optional()
           .describe('Band filter ("Backburner" matches an unset milestone).'),
+        parallelSafe: z
+          .boolean()
+          .optional()
+          .describe(
+            'When true, return a conflict-safe batch of tasks whose attached-plan file footprints are pairwise disjoint (unknown-footprint tasks returned solo), safe to dispatch in parallel. Use limit as the fan-out cap.'
+          ),
       },
     },
     async (args) => jsonContent(await nextReadyTasksHandler(deps, args))

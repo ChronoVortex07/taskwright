@@ -62,6 +62,7 @@ import {
 import { worktreePathFor } from '../core/WorktreeService';
 import { selectReadyTasks, DEFAULT_CLAIM_STALENESS_HOURS } from '../core/readyTasks';
 import { stalenessMsFromHours } from '../core/claimResolution';
+import { extractPlanFiles, selectDisjointBatch } from '../core/planFiles';
 
 /**
  * Pure-ish implementations of the Taskwright MCP tools, decoupled from the MCP
@@ -924,6 +925,10 @@ export interface NextReadyArgs {
   limit?: number;
   category?: string;
   milestone?: string;
+  /** When true, return a CONFLICT-SAFE batch: ready tasks whose attached-plan file footprints
+   *  are pairwise disjoint (unknown-footprint tasks returned solo), so the batch can be
+   *  dispatched in parallel without merge collisions. `limit` caps the batch (fan-out). */
+  parallelSafe?: boolean;
 }
 
 /**
@@ -961,16 +966,47 @@ export async function nextReadyTasksHandler(
     // not a git repo / no queue — nothing to exclude
   }
 
-  const ready = selectReadyTasks(tasks, board, {
+  const orderedReady = selectReadyTasks(tasks, board, {
     doneStatus: resolveDoneStatus(config.statuses),
     priorities: resolvePriorities(config),
     stalenessMs: stalenessMsFromHours(DEFAULT_CLAIM_STALENESS_HOURS),
     inMergeQueue,
     category: args.category,
     milestone: args.milestone,
-    limit: args.limit,
+    // In parallelSafe mode the disjoint-batch step below applies the cap; take the full ordered
+    // ready set here so a high-priority-but-overlapping task can be deferred for a lower-priority
+    // disjoint one rather than truncated away by `limit`.
+    limit: args.parallelSafe ? undefined : args.limit,
   });
-  return ready.map((t) => toBoardSummary(t, board));
+
+  if (!args.parallelSafe) {
+    return orderedReady.map((t) => toBoardSummary(t, board));
+  }
+
+  // Conflict-safe batch: co-dispatch only tasks whose attached-plan "File Structure" footprints
+  // are pairwise disjoint, so their branches won't collide at merge time. A task with no
+  // (readable) plan has an UNKNOWN footprint and is returned only as a solo batch. Any conflict
+  // that still slips through (an under-declared footprint) is the dispatched agent's to resolve
+  // during request_merge's rebase — this MINIMIZES conflicts, it does not replace that.
+  const repoRoot = path.dirname(deps.backlogPath);
+  const filesById = new Map<string, string[]>();
+  for (const t of orderedReady) {
+    if (!t.plan) continue; // no attached plan ⇒ unknown footprint (absent from the map)
+    try {
+      const content = fs.readFileSync(path.join(repoRoot, t.plan), 'utf-8');
+      filesById.set(t.id, extractPlanFiles(content));
+    } catch {
+      // unreadable plan ⇒ leave the footprint unknown
+    }
+  }
+  const cap = args.limit ?? orderedReady.length;
+  const batchIds = selectDisjointBatch(
+    orderedReady.map((t) => t.id),
+    filesById,
+    cap
+  );
+  const byId = new Map(orderedReady.map((t) => [t.id, t]));
+  return batchIds.map((id) => toBoardSummary(byId.get(id)!, board));
 }
 
 /** Re-read a just-written task and shape it for return; throws if it vanished. */
