@@ -29,6 +29,7 @@ import {
   listMilestonesHandler,
   getBoardHandler,
   searchTasksHandler,
+  nextReadyTasksHandler,
   createTaskHandler,
   createCategoryHandler,
   createMilestoneHandler,
@@ -199,6 +200,24 @@ async function main(): Promise<void> {
       },
     },
     async (args) => jsonContent(await searchTasksHandler(deps, args))
+  );
+
+  server.registerTool(
+    'next_ready_tasks',
+    {
+      title: 'Next ready tasks',
+      description:
+        'List the tasks that are READY to execute right now — status not Done, every dependency Done (unblocked), no live claim by another session, and not already in the merge queue — sorted by priority then ordinal. Returns the same compact rows as get_board ({ id, title, status, priority?, category?, milestone?, type?, causedBy?, dependencies, blockedBy, locked, draft }). Use this to pull the next unit(s) of work to dispatch. Drafts are excluded (promote first). Filter by category / milestone; cap with limit.',
+      inputSchema: {
+        limit: z.number().optional().describe('Max ready tasks to return (default: all).'),
+        category: z.string().optional().describe('Lane filter (incl. reserved "Bugs"/"Misc").'),
+        milestone: z
+          .string()
+          .optional()
+          .describe('Band filter ("Backburner" matches an unset milestone).'),
+      },
+    },
+    async (args) => jsonContent(await nextReadyTasksHandler(deps, args))
   );
 
   server.registerTool(
