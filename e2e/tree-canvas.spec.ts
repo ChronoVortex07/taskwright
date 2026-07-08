@@ -205,9 +205,38 @@ test.describe('Tech tree canvas', () => {
     }
   });
 
-  test('ctrl-wheel pans the surface without changing zoom', async ({ page }) => {
-    // Zoom in so the surface overflows the viewport; when content fits entirely
-    // within the viewport, clampViewport centres it and small pans are a no-op.
+  test('ctrl/meta + wheel zooms at the cursor (the pinch-zoom signal)', async ({ page }) => {
+    // ctrlKey is what the browser sets for a trackpad PINCH (and for an explicit
+    // ctrl+scroll). Under the trackpad-aware mapping this ZOOMS — the inverse of the
+    // pre-fix `ctrl-wheel pans` behavior (TASK-57), which broke trackpad users.
+    const beforeZoom = await page.locator('[data-testid="tree-zoom-label"]').textContent();
+    await page.locator('[data-testid="tree-viewport"]').evaluate((el) => {
+      el.dispatchEvent(
+        new WheelEvent('wheel', {
+          deltaY: -100,
+          deltaMode: 0, // DOM_DELTA_PIXEL — how browsers report a pinch
+          ctrlKey: true,
+          clientX: 400,
+          clientY: 300,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+    });
+    await page.waitForTimeout(50);
+    const afterZoom = await page.locator('[data-testid="tree-zoom-label"]').textContent();
+    // ctrl+wheel now ZOOMS → the zoom-label percentage changes.
+    expect(afterZoom).not.toBe(beforeZoom);
+  });
+
+  test('trackpad two-finger scroll (pixel deltas with deltaX) pans without zooming', async ({
+    page,
+  }) => {
+    // Zoom in so the surface overflows the viewport; when content fits entirely within
+    // the viewport, clampViewport (treeGeometry.ts:195-212) re-centres it and a small
+    // pan is a no-op. Three zoom-ins keep the pan well inside the clamp range so it
+    // visibly moves the surface (the existing tests zoom in first for the same reason).
+    await page.locator('[data-testid="tree-zoom-in"]').click();
     await page.locator('[data-testid="tree-zoom-in"]').click();
     await page.locator('[data-testid="tree-zoom-in"]').click();
     await page.waitForTimeout(50);
@@ -217,9 +246,11 @@ test.describe('Tech tree canvas', () => {
     await page.locator('[data-testid="tree-viewport"]').evaluate((el) => {
       el.dispatchEvent(
         new WheelEvent('wheel', {
-          deltaX: 120,
-          deltaY: 80,
-          ctrlKey: true,
+          deltaX: 30,
+          deltaY: 0,
+          deltaMode: 0, // DOM_DELTA_PIXEL, and it carries a horizontal delta → trackpad
+          ctrlKey: false,
+          metaKey: false,
           bubbles: true,
           cancelable: true,
         })
@@ -228,10 +259,35 @@ test.describe('Tech tree canvas', () => {
     await page.waitForTimeout(50);
     const afterTransform = await surface.getAttribute('style');
     const afterZoom = await page.locator('[data-testid="tree-zoom-label"]').textContent();
-    // Ctrl+wheel should pan → surface transform should change.
+    // Trackpad scroll PANS → the surface transform changes...
     expect(afterTransform).not.toBe(beforeTransform);
-    // Ctrl+wheel should NOT zoom → zoom label should stay the same.
+    // ...and does NOT zoom → the zoom label is unchanged.
     expect(afterZoom).toBe(beforeZoom);
+  });
+
+  test('mouse wheel (line deltas, no deltaX) still zooms', async ({ page }) => {
+    // A classic mouse wheel: line-mode deltas, no horizontal component. Must keep the
+    // TASK-57 zoom behavior — a regression guard for the mouse path.
+    const beforeZoom = await page.locator('[data-testid="tree-zoom-label"]').textContent();
+    await page.locator('[data-testid="tree-viewport"]').evaluate((el) => {
+      el.dispatchEvent(
+        new WheelEvent('wheel', {
+          deltaX: 0,
+          deltaY: -100,
+          deltaMode: 1, // DOM_DELTA_LINE — the classic mouse-wheel signal
+          ctrlKey: false,
+          metaKey: false,
+          clientX: 400,
+          clientY: 300,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+    });
+    await page.waitForTimeout(50);
+    const afterZoom = await page.locator('[data-testid="tree-zoom-label"]').textContent();
+    // Mouse wheel still ZOOMS → the zoom label changes.
+    expect(afterZoom).not.toBe(beforeZoom);
   });
 
   test('drag-to-pan does not create text selection', async ({ page }) => {
