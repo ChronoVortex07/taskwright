@@ -4,6 +4,30 @@ All notable changes to Taskwright are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] — 2026-07-08
+
+Conflict-safe orchestration, plus a fix to the from-any-session merge close.
+
+### Added
+
+- **Conflict-safe parallel batching for `/orchestrate-board`.** `next_ready_tasks` gains a
+  `parallelSafe` option that returns only ready tasks whose attached-plan file footprints are
+  pairwise disjoint (a task with no plan / unknown footprint comes back solo), so the orchestrator
+  can dispatch a parallel batch that won't collide at merge time. New pure core `src/core/planFiles.ts`
+  (`extractPlanFiles` / `selectDisjointBatch`); the `/orchestrate-board` skill's parallel mode pulls the
+  batch this way and documents that any conflict which still slips through is the dispatched agent's to
+  resolve during `request_merge`'s rebase.
+
+### Fixed
+
+- **`request_merge { worktree }` from the primary tree.** `gitFacts` resolved git's relative `.git`
+  output (what `git rev-parse --git-dir` / `--git-common-dir` return from the primary tree) against the
+  MCP process cwd instead of the session root, so a primary-rooted close wrongly reported the target
+  "is not a linked worktree." Now resolved against the exec cwd — correct for both the primary tree's
+  relative output and a linked worktree's absolute output; the two merge-queue lookups got the same fix.
+- **Docs:** corrected the CLAUDE.md "~22 Windows unit-test failures" note — the suite is
+  path-separator-agnostic (TASK-4) and the Windows baseline is 0 failures.
+
 ## [1.1.0] — 2026-07-08
 
 The **Orchestration & UX Polish** release: run the full task cycle from any Claude session (not only a board dispatch), drive the whole board autonomously, fix the skill-scaffolding packaging, and repair two board-view UX regressions.
