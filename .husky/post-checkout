@@ -1,0 +1,4 @@
+# >>> taskwright post-checkout warn >>>
+if [ "$3" -ne 1 ]; then exit 0; fi
+if [ -f ".taskwright/hooks/worktree-warn.js" ]; then node ".taskwright/hooks/worktree-warn.js" || true; fi
+# <<< taskwright post-checkout warn <<<

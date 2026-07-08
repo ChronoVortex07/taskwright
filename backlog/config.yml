@@ -1,7 +1,7 @@
 project_name: "taskwright"
 default_status: "To Do"
 statuses: ["To Do", "In Progress", "Awaiting Merge", "Done"]
-categories: ["Core Board", "Sync", "Worktrees & Merge", "Tree"]
+categories: ["Core Board", "Sync", "Worktrees & Merge", "Tree", "Orchestration"]
 labels: []
 date_format: yyyy-mm-dd
 max_column_width: 20
