@@ -58,6 +58,8 @@ import {
   type RunFn,
   type RequestMergeResult,
 } from '../core/finishTask';
+import { selectReadyTasks, DEFAULT_CLAIM_STALENESS_HOURS } from '../core/readyTasks';
+import { stalenessMsFromHours } from '../core/claimResolution';
 
 /**
  * Pure-ish implementations of the Taskwright MCP tools, decoupled from the MCP
@@ -774,6 +776,59 @@ export async function searchTasksHandler(
   ]);
   const ranked = searchTasks([...tasks, ...drafts], args.query, { limit: args.limit });
   return ranked.map((t) => toBoardSummary(t, board));
+}
+
+export interface NextReadyArgs {
+  limit?: number;
+  category?: string;
+  milestone?: string;
+}
+
+/**
+ * `next_ready_tasks`: the subset of the ACTIVE board (tasks/, never drafts) that is ready
+ * to execute right now — status not Done, every dependency Done (not locked), no live
+ * (non-stale) foreign claim, and not currently in the shared merge queue — sorted by
+ * priority then ordinal, returned as the same compact rows as get_board. The heavy lifting
+ * (the READY predicate + sort) is the pure core selectReadyTasks; this handler does the
+ * disk/git I/O and shapes the rows via toBoardSummary. Filter by category / milestone; cap
+ * with limit. Drafts are excluded — a draft must be promoted before it can be dispatched.
+ */
+export async function nextReadyTasksHandler(
+  deps: McpHandlerDeps,
+  args: NextReadyArgs = {}
+): Promise<BoardTaskSummary[]> {
+  const [board, tasks, config] = await Promise.all([
+    loadTreeBoardFromParser(deps.parser),
+    deps.parser.getTasks(),
+    deps.parser.getConfig(),
+  ]);
+
+  // Exclude tasks that are mid-integration in the shared merge queue. Fail-open:
+  // not a git repo / no queue ⇒ exclude nothing (mirrors getActiveTask's queue lookup).
+  let inMergeQueue: string[] = [];
+  try {
+    const exec = deps.gitExec ?? defaultGitExec;
+    const fsDeps = deps.fsDeps ?? nodeQueueFs;
+    const commonDir = path.resolve(
+      (await exec(deps.root, ['rev-parse', '--git-common-dir'])).stdout.trim()
+    );
+    inMergeQueue = queueStoreFor(commonDir, fsDeps)
+      .read()
+      .entries.map((e) => e.taskId);
+  } catch {
+    // not a git repo / no queue — nothing to exclude
+  }
+
+  const ready = selectReadyTasks(tasks, board, {
+    doneStatus: resolveDoneStatus(config.statuses),
+    priorities: resolvePriorities(config),
+    stalenessMs: stalenessMsFromHours(DEFAULT_CLAIM_STALENESS_HOURS),
+    inMergeQueue,
+    category: args.category,
+    milestone: args.milestone,
+    limit: args.limit,
+  });
+  return ready.map((t) => toBoardSummary(t, board));
 }
 
 /** Re-read a just-written task and shape it for return; throws if it vanished. */
