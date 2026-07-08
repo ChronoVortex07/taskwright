@@ -233,6 +233,21 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   `src/test/unit/{mcpWriteHandlers,BacklogParser,BacklogWriter,createTaskCore,treeGate}.test.ts`. Design:
   `docs/superpowers/specs/2026-07-02-tech-tree-p6-codebase-indexing-design.md`; plan:
   `docs/superpowers/plans/2026-07-04-tech-tree-p6-codebase-indexing-skill.md`.
+- **Board orchestration — `/orchestrate-board` skill** ✅: an `/orchestrate-board` **skill**
+  (`.claude/skills/orchestrate-board/SKILL.md`) drives the whole board autonomously — a round loop
+  that pulls `next_ready_tasks`, then runs each ready task to Done either **self-driven sequentially**
+  or by dispatching **parallel in-session `Task` subagents** (one per independent ready task), each
+  bootstrapping its own worktree via `start_task` and running `/execute-task` → `request_merge`. The
+  ready set is **provably mutually independent** (every dependency Done ⇒ no intra-set edge), so the
+  whole batch parallelizes safely; fan-out is capped (default 3) and the shared merge queue
+  (`src/core/mergeQueue.ts`) serializes the actual merges — the orchestrator never orders merges.
+  **Claim-before-work** is the anti-collision guard (a `surrendered` claim ⇒ skip, never
+  double-execute); a **failure** is surfaced + `release_task` + move-on (no auto-retry by default);
+  the loop **stops** on drained / all-blocked / user budget / no-progress. Subscription-safe —
+  parallelism is in-session subagents via the `Task` tool, never `claude -p`. Composes DRAFT-5
+  (`next_ready_tasks`), DRAFT-3 (`start_task`), DRAFT-7 (`/execute-task` from any session), and
+  DRAFT-4 (`request_merge { worktree }`). Plan:
+  `docs/superpowers/plans/2026-07-08-orchestrate-board-skill.md`.
 
 ## Conventions
 
