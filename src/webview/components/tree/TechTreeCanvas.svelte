@@ -648,14 +648,38 @@ import ContextMenu from './ContextMenu.svelte';
     };
   }
 
+  /**
+   * Classify a wheel event as a zoom or a pan gesture, disambiguating a MOUSE WHEEL
+   * from a TRACKPAD two-finger scroll / pinch. All signals are standard browser behavior:
+   *   - ctrlKey / metaKey: the browser sets ctrlKey on a trackpad PINCH (and on an
+   *     explicit ctrl+scroll); metaKey covers the ⌘+scroll convention → ZOOM.
+   *   - Trackpad two-finger PAN: pixel deltas (deltaMode === 0 / DOM_DELTA_PIXEL) that
+   *     either carry a horizontal component (deltaX ≠ 0 — a mouse wheel almost never
+   *     emits deltaX) OR arrive as fine, fractional / sub-notch deltas (momentum
+   *     scrolling) → PAN.
+   *   - Mouse wheel: line/page deltas (deltaMode !== 0) OR a coarse integer vertical-only
+   *     pixel delta (deltaX 0, a full |deltaY| notch) → ZOOM (keeps the TASK-57 behavior).
+   */
+  function classifyWheel(e: WheelEvent): 'zoom' | 'pan' {
+    if (e.ctrlKey || e.metaKey) return 'zoom';
+    if (e.deltaMode === 0) {
+      const dx = Math.abs(e.deltaX);
+      const dy = Math.abs(e.deltaY);
+      const fractional = !Number.isInteger(e.deltaX) || !Number.isInteger(e.deltaY);
+      const smallGlide = dx === 0 && dy > 0 && dy < 40; // sub-notch vertical → trackpad
+      if (dx > 0 || fractional || smallGlide) return 'pan';
+    }
+    return 'zoom';
+  }
+
   function onWheel(e: WheelEvent) {
     e.preventDefault();
     if (!viewportEl) return;
-    if (e.ctrlKey || e.metaKey) {
-      // Ctrl/meta + wheel → pan.
+    if (classifyWheel(e) === 'pan') {
+      // Trackpad two-finger scroll → pan by the raw pixel deltas.
       setViewport({ scale: vp.scale, tx: vp.tx - e.deltaX, ty: vp.ty - e.deltaY });
     } else {
-      // Plain wheel → zoom centered on cursor.
+      // Pinch / ctrl+scroll / mouse wheel → zoom centered on the cursor.
       const rect = viewportEl.getBoundingClientRect();
       const factor = Math.exp(-e.deltaY * 0.0015);
       setViewport(zoomAt(vp, e.clientX - rect.left, e.clientY - rect.top, factor));
