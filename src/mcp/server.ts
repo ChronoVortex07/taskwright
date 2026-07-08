@@ -41,6 +41,7 @@ import {
   demoteTaskHandler,
   createSubtaskHandler,
   requestMergeHandler,
+  startTaskHandler,
   pushBoardHandler,
   pullBoardHandler,
   type McpHandlerDeps,
@@ -378,6 +379,17 @@ async function main(): Promise<void> {
       inputSchema: { taskId: z.string().describe('Task ID to integrate, e.g. TASK-7.') },
     },
     async (args) => runTool(() => requestMergeHandler(deps, args))
+  );
+
+  server.registerTool(
+    'start_task',
+    {
+      title: 'Start task',
+      description:
+        "Create (or reuse) the task's isolated .worktrees/<branch> worktree and seed its active task, from any primary-rooted session — the same bootstrap the board Dispatch action performs. This server cannot re-root itself mid-session, so it returns a relaunchHint: open a NEW session with its working directory set to the returned worktreeAbs, then run /execute-task there. Idempotent — an existing worktree is reused (created:false). Returns { created, taskId, branch, worktree, worktreeAbs, relaunchHint }.",
+      inputSchema: { taskId: z.string().describe('Task ID to start, e.g. TASK-7.') },
+    },
+    async (args) => runTool(() => startTaskHandler(deps, args))
   );
 
   server.registerTool(

@@ -19,6 +19,7 @@ import { createTaskWithTreeFields, normalizeType } from '../core/createTaskCore'
 import { searchTasks } from '../core/searchTasks';
 import { promoteDrafts, type PromoteDraftsResult } from '../core/promoteDrafts';
 import { readActiveTask } from '../core/activeTask';
+import { bootstrapTaskWorktree, type StartTaskResult } from '../core/startTask';
 import { loadPlanProgress } from '../core/loadPlanProgress';
 import { ChecklistItem, Milestone, Task } from '../core/types';
 import {
@@ -288,6 +289,29 @@ export async function requestMergeHandler(
       run,
       now: deps.now ?? (() => new Date()),
       sleep: deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))),
+    },
+    args.taskId
+  );
+}
+
+/**
+ * `start_task`: from any primary-rooted session, create (or reuse) the task's isolated
+ * `.worktrees/<branch>` and seed its active task — the same bootstrap the board Dispatch
+ * action performs, exposed over MCP. It does NOT re-root this server (the root is fixed at
+ * launch, server.ts:82), so the result's `relaunchHint` tells the caller to relaunch a
+ * session with cwd = worktreeAbs to run `/execute-task` there.
+ */
+export async function startTaskHandler(
+  deps: McpHandlerDeps,
+  args: { taskId: string }
+): Promise<StartTaskResult> {
+  return bootstrapTaskWorktree(
+    {
+      // The primary checkout owns `.worktrees/`. Under Board Sync v2 `backlogPath` is the
+      // ONE physical board (the primary worktree's backlog), so its parent is the primary
+      // root even when this session runs from a worktree.
+      repoRoot: path.dirname(deps.backlogPath),
+      getTask: (id) => deps.parser.getTask(id),
     },
     args.taskId
   );
