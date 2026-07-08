@@ -4,6 +4,23 @@ All notable changes to Taskwright are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-07-08
+
+The **Orchestration & UX Polish** release: run the full task cycle from any Claude session (not only a board dispatch), drive the whole board autonomously, fix the skill-scaffolding packaging, and repair two board-view UX regressions.
+
+### Added
+
+- **Run `/execute-task` from any session** — a primary-rooted session (not just a board-dispatched worktree) can now take a task end to end. New MCP tool **`start_task`** bootstraps (or reuses) the task's `.worktrees/<branch>`, seeds its active task, clears any stale cancellation marker, and returns a relaunch hint. **`request_merge`** gains an optional `worktree` target so the close (rebase → verify → merge queue → fast-forward → Done → cleanup) can be driven for an explicit linked worktree from a primary-rooted session, validated by four gates (containment under `.worktrees/`, real linked worktree, non-detached, clean). The `/execute-task` skill now detects linked-vs-primary rooting and either proceeds directly (dispatched), or bootstraps via `start_task` and relaunches into the worktree / continues single-session and closes with `request_merge { worktree }`.
+- **`/orchestrate-board` skill** — an autonomous board runner: pulls the ready set and takes each task to Done, either self-driven sequentially or via parallel in-session `Task` subagents (each bootstrapping its own worktree and running `/execute-task`), with a capped fan-out, claim-before-work anti-collision, merge-queue-serialized merges, and stop conditions (drained / all-blocked / user budget / no-progress). Subscription-safe — parallelism is in-session subagents, never `claude -p`.
+- **`next_ready_tasks` MCP tool** — returns the tasks ready to execute now (every dependency Done, unclaimed / non-stale, unblocked, not already in the merge queue), ordered by priority then ordinal, with `category` / `milestone` / `limit` filters.
+- **Broader "Set Up Claude Code Integration" scaffolding** — installs a fourth skill (`orchestrate-board`), injects an `AGENTS.md` convention block (in addition to `CLAUDE.md`), and can optionally write a project-local `.mcp.json` plus copy the committed `taskwright-mcp.cjs` launcher into the repo (opt-in via `taskwright.setupWritesProjectMcpJson`, default off). `visual-proof` / `agent-browser` remain dev-only and are never installed.
+
+### Fixed
+
+- **Skill install shipped broken in packaged builds** — `.claude/skills/**` was excluded from the VSIX and never bundled, so "Set Up Claude Code Integration" silently no-op'd on a published install (it worked only from a dev checkout). Skills are now bundled to `dist/skills/` at build time and installed from there, and a missing source is logged instead of silently skipped.
+- **Kanban board and list view now scroll on both axes** — a board taller than a narrow sidebar was clipped with no vertical scrollbar (`.kanban-board` had `overflow-x` only, and `body.tasks-page` clipped the overflow). `#kanban-app` is now the single both-axes scroll container; milestone/label-grouped and nested boards keep their own horizontal scroll; the list and archived views scroll too.
+- **Trackpad pan/zoom on the tree canvas** — the earlier mouse-wheel-zoom change had inverted trackpad gestures (a two-finger scroll zoomed, a pinch panned). A wheel classifier now routes correctly: two-finger scroll pans, pinch (and Ctrl/⌘+scroll) zooms, and the mouse wheel still zooms at the cursor.
+
 ## [1.0.0] — 2026-07-04
 
 Taskwright 1.0 is the first stable release of the agentic task board for VS Code. It began as a fork of [vscode-backlog-md](https://github.com/ysamlan/vscode-backlog-md) (MIT) and grew into a full platform for triaging work onto a git-native board and dispatching isolated Claude Code sessions per task.
