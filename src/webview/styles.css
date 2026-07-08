@@ -301,13 +301,43 @@ body.tasks-page .view-content {
   color: var(--vscode-button-foreground, #ffffff);
 }
 
+/* Kanban view host: a flex column so #kanban-app owns a bounded, scrollable area below
+   the toolbar (the tab bar + toolbar stay fixed; the board scrolls). ID selector beats
+   .view-content { display: block }. */
+#kanban-view {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The single scroll container for the board — scrolls on BOTH axes. min-height:0 lets it
+   shrink inside the flex column so a board taller than the webview scrolls vertically
+   instead of being clipped by body.tasks-page { overflow: hidden }. */
+#kanban-app {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
 /* Kanban Board */
 .kanban-board {
   display: flex;
   gap: 8px;
   padding: 8px;
-  min-height: calc(100vh - 85px);
+  /* Fill #kanban-app when the board is short (columns look full-height) without forcing a
+     spurious scrollbar; a taller board overflows and #kanban-app scrolls. Replaces the old
+     calc(100vh - 85px), which forced the board taller than the pane and got clipped. */
+  min-height: 100%;
+  /* Kept so NESTED boards (milestone/label groups; not direct children of #kanban-app)
+     retain their own horizontal scroll. The top-level board delegates horizontal scroll to
+     #kanban-app via the rule below, so a single container scrolls both axes. */
   overflow-x: auto;
+}
+
+/* Top-level board (direct child of #kanban-app) does not scroll itself — #kanban-app is the
+   single both-axes scroll container. Nested boards are not direct children, so they keep
+   overflow-x:auto from the base rule above. */
+#kanban-app > .kanban-board {
+  overflow-x: visible;
 }
 
 .kanban-board.nested {
@@ -896,7 +926,20 @@ body.tasks-page .view-content {
 }
 
 /* List View */
+
+/* List/archived view hosts: flex columns so .task-list-container owns a bounded, scrollable
+   area (mirrors the kanban #kanban-view/#kanban-app treatment). ID selectors beat
+   .view-content { display: block }. */
+#list-view,
+#archived-view {
+  display: flex;
+  flex-direction: column;
+}
+
 .task-list-container {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   padding: 12px;
 }
 
