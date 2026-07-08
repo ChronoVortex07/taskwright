@@ -1817,8 +1817,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // 3) Install the three Taskwright skills (create-task, execute-task,
     // index-codebase) into the project's .claude/skills/ — idempotent: already-
-    // installed skills are skipped, so re-running setup is safe.
-    const extSkillsDir = path.join(context.extensionPath, '.claude', 'skills');
+    // installed skills are skipped, so re-running setup is safe. The source is the
+    // BUNDLED copy under dist/skills/ (scripts/build.ts bundles them there) so a
+    // published .vsix ships them — .claude/** is excluded from the package.
+    const extSkillsDir = path.join(context.extensionPath, 'dist', 'skills');
     const projectSkillsDir = path.join(root, '.claude', 'skills');
     try {
       const skillResults = installTaskwrightSkills(extSkillsDir, projectSkillsDir, false);
