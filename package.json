@@ -157,6 +157,18 @@
           "default": 30,
           "minimum": 0,
           "markdownDescription": "Minutes after which the active head of the merge queue (a task mid-merge) is treated as abandoned — a crashed agent — and reclaimed so the next task can proceed. Set to `0` to reclaim immediately (not recommended)."
+        },
+        "taskwright.mergeVerifyTimeoutMinutes": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "markdownDescription": "Minutes each `taskwright.mergeVerifyCommands` command may run before `request_merge` kills it and aborts with code `verify_timeout`. Raise this for repos with long test suites so verification can actually finish. An agent can also raise it per call via the `verifyTimeoutMinutes` parameter of the `request_merge` MCP tool (bounded by `taskwright.mergeVerifyTimeoutMaxMinutes`)."
+        },
+        "taskwright.mergeVerifyTimeoutMaxMinutes": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "markdownDescription": "Upper bound (minutes) for the per-call `verifyTimeoutMinutes` parameter of the `request_merge` MCP tool — an agent-requested timeout above this is clamped down to it. Set to `0` (default) for no cap."
         }
       }
     },

@@ -6,6 +6,7 @@ import {
   IN_PROGRESS,
   DEFAULT_MERGE_CONFIG,
   DEFAULT_VERIFY_COMMANDS,
+  DEFAULT_VERIFY_TIMEOUT_MS,
   mergeConfigPath,
   readMergeConfig,
   writeMergeConfig,
@@ -55,7 +56,12 @@ describe('readMergeConfig', () => {
   it('reads a valid config', () => {
     const json = JSON.stringify({ mode: 'auto-pr', verifyCommands: ['x'], staleMinutes: 5 });
     const cfg = readMergeConfig('/c.json', { exists: () => true, read: () => json });
-    expect(cfg).toEqual({ mode: 'auto-pr', verifyCommands: ['x'], staleMinutes: 5 });
+    expect(cfg).toEqual({
+      mode: 'auto-pr',
+      verifyCommands: ['x'],
+      staleMinutes: 5,
+      verifyTimeoutMs: DEFAULT_VERIFY_TIMEOUT_MS,
+    });
   });
 
   it('falls back field-by-field on partial/invalid values', () => {
@@ -64,6 +70,13 @@ describe('readMergeConfig', () => {
     expect(cfg.mode).toBe('manual-review');
     expect(cfg.verifyCommands).toEqual(DEFAULT_VERIFY_COMMANDS);
     expect(cfg.staleMinutes).toBe(30);
+  });
+
+  it('round-trips verifyTimeoutMs and verifyTimeoutMaxMs', () => {
+    const json = JSON.stringify({ verifyTimeoutMs: 1_500_000, verifyTimeoutMaxMs: 3_600_000 });
+    const cfg = readMergeConfig('/c.json', { exists: () => true, read: () => json });
+    expect(cfg.verifyTimeoutMs).toBe(1_500_000);
+    expect(cfg.verifyTimeoutMaxMs).toBe(3_600_000);
   });
 });
 
@@ -104,10 +117,41 @@ describe('resolveMergeConfigFromSettings', () => {
         verifyCommands: ['a', 'b'],
         staleMinutes: 12,
       })
-    ).toEqual({ mode: 'auto-merge', verifyCommands: ['a', 'b'], staleMinutes: 12 });
+    ).toEqual({
+      mode: 'auto-merge',
+      verifyCommands: ['a', 'b'],
+      staleMinutes: 12,
+      verifyTimeoutMs: DEFAULT_VERIFY_TIMEOUT_MS,
+    });
     expect(resolveMergeConfigFromSettings({}).mode).toBe('manual-review');
     expect(resolveMergeConfigFromSettings({ staleMinutes: 0 }).staleMinutes).toBe(0);
     expect(resolveMergeConfigFromSettings({ verifyCommands: [] }).verifyCommands).toEqual([]);
     expect(resolveMergeConfigFromSettings({ staleMinutes: -1 }).staleMinutes).toBe(30);
+  });
+
+  it('defaults verifyTimeoutMs to 10 minutes and omits verifyTimeoutMaxMs', () => {
+    expect(DEFAULT_VERIFY_TIMEOUT_MS).toBe(600_000);
+    const cfg = resolveMergeConfigFromSettings({});
+    expect(cfg.verifyTimeoutMs).toBe(600_000);
+    expect(cfg.verifyTimeoutMaxMs).toBeUndefined();
+    expect(DEFAULT_MERGE_CONFIG.verifyTimeoutMs).toBe(600_000);
+  });
+
+  it('keeps valid positive timeout values and rejects invalid ones', () => {
+    expect(resolveMergeConfigFromSettings({ verifyTimeoutMs: 1_500_000 }).verifyTimeoutMs).toBe(
+      1_500_000
+    );
+    expect(resolveMergeConfigFromSettings({ verifyTimeoutMs: 0 }).verifyTimeoutMs).toBe(600_000);
+    expect(resolveMergeConfigFromSettings({ verifyTimeoutMs: -5 }).verifyTimeoutMs).toBe(600_000);
+    expect(resolveMergeConfigFromSettings({ verifyTimeoutMs: 'x' }).verifyTimeoutMs).toBe(600_000);
+    expect(
+      resolveMergeConfigFromSettings({ verifyTimeoutMaxMs: 3_600_000 }).verifyTimeoutMaxMs
+    ).toBe(3_600_000);
+    expect(resolveMergeConfigFromSettings({ verifyTimeoutMaxMs: 0 }).verifyTimeoutMaxMs).toBe(
+      undefined
+    );
+    expect(resolveMergeConfigFromSettings({ verifyTimeoutMaxMs: 'x' }).verifyTimeoutMaxMs).toBe(
+      undefined
+    );
   });
 });

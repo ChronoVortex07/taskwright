@@ -133,4 +133,32 @@ describe('runVerifyCommands', () => {
     const run: RunFn = async () => ({ code: 0, stdout: '', stderr: '' });
     expect(await runVerifyCommands(run, '/wt', [])).toEqual({ ok: true });
   });
+
+  it('forwards the timeout to each run call', async () => {
+    const timeouts: Array<number | undefined> = [];
+    const run: RunFn = async (_cwd, _cmd, timeoutMs) => {
+      timeouts.push(timeoutMs);
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    await runVerifyCommands(run, '/wt', ['a', 'b'], 1_500_000);
+    expect(timeouts).toEqual([1_500_000, 1_500_000]);
+  });
+
+  it('marks a killed-by-timeout command as timedOut, distinct from a red command', async () => {
+    const run: RunFn = async (_cwd, cmd) =>
+      cmd === 'slow'
+        ? { code: 1, stdout: 'partial', stderr: '', timedOut: true }
+        : { code: 0, stdout: '', stderr: '' };
+    const result = await runVerifyCommands(run, '/wt', ['fast', 'slow'], 5_000);
+    expect(result.ok).toBe(false);
+    expect(result.failedCommand).toBe('slow');
+    expect(result.timedOut).toBe(true);
+  });
+
+  it('does not set timedOut on an ordinary failure', async () => {
+    const run: RunFn = async () => ({ code: 1, stdout: 'boom', stderr: '' });
+    const result = await runVerifyCommands(run, '/wt', ['a']);
+    expect(result.ok).toBe(false);
+    expect(result.timedOut).toBeFalsy();
+  });
 });

@@ -83,7 +83,7 @@ function deps(over: Partial<FinishDeps>): FinishDeps {
 }
 
 describe('requestMerge — abort before enqueue', () => {
-  it('aborts on a dirty worktree without enqueuing', async () => {
+  it('aborts on a dirty worktree without enqueuing, with code dirty_worktree', async () => {
     const q = memQueue();
     const d = deps({
       queue: q.store,
@@ -91,10 +91,11 @@ describe('requestMerge — abort before enqueue', () => {
     });
     const r = await requestMerge(d, 'TASK-7');
     expect(r.status).toBe('aborted');
+    if (r.status === 'aborted') expect(r.code).toBe('dirty_worktree');
     expect(q.store.read()).toEqual(EMPTY_QUEUE);
   });
 
-  it('aborts on rebase conflict with the conflict list', async () => {
+  it('aborts on rebase conflict with the conflict list and code rebase_conflict', async () => {
     const d = deps({
       exec: okGit((a) => {
         if (a[0] === 'rebase' && a[1] === 'main') return new Error('conflict');
@@ -104,10 +105,13 @@ describe('requestMerge — abort before enqueue', () => {
     });
     const r = await requestMerge(d, 'TASK-7');
     expect(r.status).toBe('aborted');
-    if (r.status === 'aborted') expect(r.detail).toContain('src/a.ts');
+    if (r.status === 'aborted') {
+      expect(r.detail).toContain('src/a.ts');
+      expect(r.code).toBe('rebase_conflict');
+    }
   });
 
-  it('aborts on red verification without enqueuing', async () => {
+  it('aborts on red verification without enqueuing, with code verify_failed', async () => {
     const q = memQueue();
     const run: RunFn = async (_c, cmd) =>
       cmd === 'bun run lint'
@@ -115,8 +119,71 @@ describe('requestMerge — abort before enqueue', () => {
         : { code: 0, stdout: '', stderr: '' };
     const r = await requestMerge(deps({ queue: q.store, run }), 'TASK-7');
     expect(r.status).toBe('aborted');
-    if (r.status === 'aborted') expect(r.reason).toContain('bun run lint');
+    if (r.status === 'aborted') {
+      expect(r.reason).toContain('bun run lint');
+      expect(r.code).toBe('verify_failed');
+    }
     expect(q.store.read()).toEqual(EMPTY_QUEUE);
+  });
+});
+
+describe('requestMerge — verify timeout', () => {
+  it('passes config.verifyTimeoutMs to each verify command', async () => {
+    const timeouts: Array<number | undefined> = [];
+    const run: RunFn = async (_c, _cmd, timeoutMs) => {
+      timeouts.push(timeoutMs);
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    const cfg: MergeConfig = {
+      ...DEFAULT_MERGE_CONFIG,
+      mode: 'auto-merge',
+      verifyTimeoutMs: 1_500_000,
+    };
+    const r = await requestMerge(deps({ config: cfg, run }), 'TASK-7');
+    expect(r.status).toBe('merged');
+    expect(timeouts.length).toBeGreaterThan(0);
+    expect(timeouts.every((t) => t === 1_500_000)).toBe(true);
+  });
+
+  it('returns code verify_timeout with an actionable reason, never "Verification failed"', async () => {
+    const q = memQueue();
+    const run: RunFn = async (_c, cmd) =>
+      cmd === 'bun run test'
+        ? { code: 1, stdout: '', stderr: '', timedOut: true }
+        : { code: 0, stdout: '', stderr: '' };
+    const cfg: MergeConfig = { ...DEFAULT_MERGE_CONFIG, verifyTimeoutMs: 900_000 };
+    const r = await requestMerge(deps({ queue: q.store, run, config: cfg }), 'TASK-7');
+    expect(r.status).toBe('aborted');
+    if (r.status === 'aborted') {
+      expect(r.code).toBe('verify_timeout');
+      expect(r.reason).toContain('verify timed out after 900s on `bun run test`');
+      expect(r.reason).toContain('taskwright.mergeVerifyTimeoutMinutes');
+      expect(r.reason).toContain('verifyTimeoutMinutes');
+      expect(r.reason).not.toContain('Verification failed');
+    }
+    expect(q.store.read()).toEqual(EMPTY_QUEUE);
+  });
+
+  it('returns code verify_timeout on the post-wait re-verify too', async () => {
+    const q = memQueue();
+    const b = board();
+    let calls = 0;
+    // Green pre-verify; the re-verify (2nd pass over the single command) times out.
+    const run: RunFn = async () => {
+      calls++;
+      return calls > 1
+        ? { code: 1, stdout: '', stderr: '', timedOut: true }
+        : { code: 0, stdout: '', stderr: '' };
+    };
+    const cfg: MergeConfig = {
+      ...DEFAULT_MERGE_CONFIG,
+      mode: 'auto-merge',
+      verifyCommands: ['bun run test'],
+    };
+    const r = await requestMerge(deps({ queue: q.store, board: b, run, config: cfg }), 'TASK-7');
+    expect(r.status).toBe('aborted');
+    if (r.status === 'aborted') expect(r.code).toBe('verify_timeout');
+    expect(b.statuses).toContain('In Progress'); // status reset after enqueue
   });
 });
 
@@ -282,7 +349,7 @@ describe('requestMerge — auto-pr', () => {
 });
 
 describe('requestMerge — abort at ff-merge resets status and dequeues', () => {
-  it('resets to In Progress and dequeues when the primary tree has code WIP', async () => {
+  it('resets to In Progress and dequeues when the ff-merge fails', async () => {
     const q = memQueue();
     const b = board();
     const cfg: MergeConfig = { ...DEFAULT_MERGE_CONFIG, mode: 'auto-merge' };
@@ -298,6 +365,27 @@ describe('requestMerge — abort at ff-merge resets status and dequeues', () => 
     });
     const r = await requestMerge(d, 'TASK-7');
     expect(r.status).toBe('aborted');
+    expect(b.statuses).toContain('In Progress');
+    expect(q.store.read().entries).toHaveLength(0);
+  });
+
+  it('returns code dirty_primary when the primary tree has code WIP', async () => {
+    const q = memQueue();
+    const b = board();
+    const cfg: MergeConfig = { ...DEFAULT_MERGE_CONFIG, mode: 'auto-merge' };
+    const base = okGit();
+    // Worktree ('/wt') status is clean; the PRIMARY tree ('/primary') has code WIP.
+    const exec: GitExecFn = async (cwd, args) => {
+      if (args[0] === 'status' && cwd === '/primary')
+        return { stdout: ' M src/x.ts\n', stderr: '' };
+      return base(cwd, args);
+    };
+    const r = await requestMerge(deps({ queue: q.store, board: b, config: cfg, exec }), 'TASK-7');
+    expect(r.status).toBe('aborted');
+    if (r.status === 'aborted') {
+      expect(r.code).toBe('dirty_primary');
+      expect(r.reason).toContain('uncommitted changes outside backlog/');
+    }
     expect(b.statuses).toContain('In Progress');
     expect(q.store.read().entries).toHaveLength(0);
   });

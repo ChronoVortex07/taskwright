@@ -111,6 +111,7 @@ describe('requestMerge integration — Fix 1: resetTaskFile enables ff-merge aft
           mode: 'auto-merge',
           verifyCommands: [],
           staleMinutes: 30,
+          verifyTimeoutMs: 600_000,
         },
         queue,
         board,

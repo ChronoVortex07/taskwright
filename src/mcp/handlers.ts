@@ -42,7 +42,7 @@ import {
   positionOf,
   type QueueFsDeps,
 } from '../core/mergeQueue';
-import { mergeConfigPath, readMergeConfig } from '../core/mergeConfig';
+import { DEFAULT_VERIFY_TIMEOUT_MS, mergeConfigPath, readMergeConfig } from '../core/mergeConfig';
 import { readSyncConfig, syncConfigPath } from '../core/syncConfig';
 import {
   pushBoard,
@@ -179,20 +179,30 @@ const childExecAsync = promisify(childExec);
 const defaultGitExec: GitExecFn = (cwd, args) =>
   execFileAsync('git', args, { cwd, timeout: 120_000, maxBuffer: 16 * 1024 * 1024 });
 
-const defaultShellRun: RunFn = async (cwd, commandLine) => {
+const defaultShellRun: RunFn = async (cwd, commandLine, timeoutMs) => {
   try {
     const { stdout, stderr } = await childExecAsync(commandLine, {
       cwd,
-      timeout: 600_000,
+      timeout: timeoutMs ?? DEFAULT_VERIFY_TIMEOUT_MS,
       maxBuffer: 64 * 1024 * 1024,
     });
     return { code: 0, stdout: String(stdout), stderr: String(stderr) };
   } catch (error) {
-    const e = error as { code?: number; stdout?: string; stderr?: string; message?: string };
+    const e = error as {
+      code?: number;
+      stdout?: string;
+      stderr?: string;
+      message?: string;
+      killed?: boolean;
+      signal?: string;
+    };
     return {
       code: typeof e.code === 'number' ? e.code : 1,
       stdout: String(e.stdout ?? ''),
       stderr: String(e.stderr ?? e.message ?? ''),
+      // Node kills a timed-out child (killed=true + the kill signal, no numeric exit code);
+      // surface that as a timeout so verify can report it distinctly from a red command.
+      timedOut: e.killed === true && typeof e.code !== 'number',
     };
   }
 };
@@ -229,11 +239,19 @@ export function parseWorktreeEntries(porcelain: string): WorktreeEntry[] {
   for (const line of porcelain.split(/\r?\n/)) {
     if (line.startsWith('worktree ')) {
       if (cur) entries.push(cur);
-      cur = { path: line.slice('worktree '.length).trim(), branch: null, detached: false, bare: false };
+      cur = {
+        path: line.slice('worktree '.length).trim(),
+        branch: null,
+        detached: false,
+        bare: false,
+      };
     } else if (!cur) {
       continue; // ignore noise before the first `worktree` line
     } else if (line.startsWith('branch ')) {
-      cur.branch = line.slice('branch '.length).trim().replace(/^refs\/heads\//, '');
+      cur.branch = line
+        .slice('branch '.length)
+        .trim()
+        .replace(/^refs\/heads\//, '');
     } else if (line.trim() === 'detached') {
       cur.detached = true;
     } else if (line.trim() === 'bare') {
@@ -391,7 +409,7 @@ async function resolveWorktreeTarget(
  */
 export async function requestMergeHandler(
   deps: McpHandlerDeps,
-  args: { taskId: string; worktree?: string }
+  args: { taskId: string; worktree?: string; verifyTimeoutMinutes?: number }
 ): Promise<RequestMergeResult> {
   const exec = deps.gitExec ?? defaultGitExec;
   const run = deps.shellRun ?? defaultShellRun;
@@ -438,7 +456,22 @@ export async function requestMergeHandler(
   }
 
   const fsDeps = deps.fsDeps ?? nodeQueueFs;
-  const config = readMergeConfig(mergeConfigPath(facts.commonDir), fsDeps);
+  const baseConfig = readMergeConfig(mergeConfigPath(facts.commonDir), fsDeps);
+
+  // Per-call override: a caller that measured its suite may raise (or lower) the
+  // verify timeout for THIS merge, bounded by the repo-level max when one is set.
+  let verifyTimeoutMs = baseConfig.verifyTimeoutMs;
+  if (
+    typeof args.verifyTimeoutMinutes === 'number' &&
+    Number.isFinite(args.verifyTimeoutMinutes) &&
+    args.verifyTimeoutMinutes > 0
+  ) {
+    verifyTimeoutMs = Math.round(args.verifyTimeoutMinutes * 60_000);
+    if (baseConfig.verifyTimeoutMaxMs !== undefined) {
+      verifyTimeoutMs = Math.min(verifyTimeoutMs, baseConfig.verifyTimeoutMaxMs);
+    }
+  }
+  const config = { ...baseConfig, verifyTimeoutMs };
 
   const board = deps.board ?? makePrimaryBoard(facts.primaryRoot, exec);
 

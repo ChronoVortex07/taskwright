@@ -209,10 +209,17 @@ async function syncMergeConfig(repoRoot: string): Promise<void> {
     return; // not a git repo — nothing to publish
   }
   const cfg = vscode.workspace.getConfiguration('taskwright');
+  // Timeout settings are minutes in VS Code; the shared config stores milliseconds.
+  // Non-positive/invalid values fall through resolveMergeConfigFromSettings' coercion
+  // (verifyTimeoutMs -> 10-min default, verifyTimeoutMaxMs -> unset = no cap).
+  const minutesToMs = (v: unknown): number | undefined =>
+    typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.round(v * 60_000) : undefined;
   const merged = resolveMergeConfigFromSettings({
     mode: cfg.get('mergeMode'),
     verifyCommands: cfg.get('mergeVerifyCommands'),
     staleMinutes: cfg.get('mergeQueueStaleMinutes'),
+    verifyTimeoutMs: minutesToMs(cfg.get('mergeVerifyTimeoutMinutes')),
+    verifyTimeoutMaxMs: minutesToMs(cfg.get('mergeVerifyTimeoutMaxMinutes')),
   });
   writeMergeConfig(mergeConfigPath(commonDir), merged, nodeQueueFs);
 }
@@ -1991,7 +1998,9 @@ export async function activate(context: vscode.ExtensionContext) {
         workspaceRootPath &&
         (affectsTaskwrightConfig(event, 'mergeMode') ||
           affectsTaskwrightConfig(event, 'mergeVerifyCommands') ||
-          affectsTaskwrightConfig(event, 'mergeQueueStaleMinutes'))
+          affectsTaskwrightConfig(event, 'mergeQueueStaleMinutes') ||
+          affectsTaskwrightConfig(event, 'mergeVerifyTimeoutMinutes') ||
+          affectsTaskwrightConfig(event, 'mergeVerifyTimeoutMaxMinutes'))
       ) {
         void syncMergeConfig(workspaceRootPath);
       }

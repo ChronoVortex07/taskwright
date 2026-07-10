@@ -16,11 +16,16 @@ export type GitExecFn = (
   args: string[]
 ) => Promise<{ stdout: string; stderr: string }>;
 
-/** Runs a shell command line in `cwd`, resolving with its exit code + output. */
+/**
+ * Runs a shell command line in `cwd`, resolving with its exit code + output.
+ * `timeoutMs` caps the run; a runner that kills the command for exceeding it
+ * reports `timedOut: true` so callers can distinguish a timeout from a red exit.
+ */
 export type RunFn = (
   cwd: string,
-  commandLine: string
-) => Promise<{ code: number; stdout: string; stderr: string }>;
+  commandLine: string,
+  timeoutMs?: number
+) => Promise<{ code: number; stdout: string; stderr: string; timedOut?: boolean }>;
 
 /** True when the worktree has no uncommitted changes. */
 export async function isWorktreeClean(exec: GitExecFn, cwd: string): Promise<boolean> {
@@ -80,18 +85,26 @@ export interface VerifyResult {
   ok: boolean;
   failedCommand?: string;
   output?: string;
+  /** True when the failing command was killed for exceeding the timeout, not a red exit. */
+  timedOut?: boolean;
 }
 
 /** Run each verify command in order; stop and report at the first non-zero exit. */
 export async function runVerifyCommands(
   run: RunFn,
   cwd: string,
-  commands: string[]
+  commands: string[],
+  timeoutMs?: number
 ): Promise<VerifyResult> {
   for (const command of commands) {
-    const { code, stdout, stderr } = await run(cwd, command);
-    if (code !== 0) {
-      return { ok: false, failedCommand: command, output: `${stdout}\n${stderr}`.trim() };
+    const { code, stdout, stderr, timedOut } = await run(cwd, command, timeoutMs);
+    if (code !== 0 || timedOut) {
+      return {
+        ok: false,
+        failedCommand: command,
+        output: `${stdout}\n${stderr}`.trim(),
+        ...(timedOut ? { timedOut: true } : {}),
+      };
     }
   }
   return { ok: true };
@@ -118,6 +131,8 @@ export function hasCodeWip(porcelain: string): boolean {
 export interface FfMergeResult {
   ok: boolean;
   reason?: string;
+  /** Machine-readable cause, when it maps to a MergeAbortCode. */
+  code?: MergeAbortCode;
 }
 
 /**
@@ -152,6 +167,7 @@ export async function ffMergeToBase(
       ok: false,
       reason:
         'The primary tree has uncommitted changes outside backlog/; commit or stash them first.',
+      code: 'dirty_primary',
     };
   }
   try {
@@ -265,11 +281,29 @@ export interface FinishDeps {
   pollIntervalMs?: number;
 }
 
+/**
+ * Machine-readable abort causes for `request_merge`, so orchestrators can branch
+ * on the outcome instead of parsing prose. Aborts without a mapped cause (e.g.
+ * a failed `gh pr create`) carry no code.
+ */
+export type MergeAbortCode =
+  | 'verify_timeout'
+  | 'verify_failed'
+  | 'dirty_worktree'
+  | 'dirty_primary'
+  | 'rebase_conflict';
+
 export type RequestMergeResult =
   | { status: 'merged'; taskId: string; branch: string }
   | { status: 'pr_opened'; taskId: string; url: string }
   | { status: 'sent_back'; taskId: string; reason: string }
-  | { status: 'aborted'; reason: string; detail?: string };
+  | { status: 'aborted'; reason: string; detail?: string; code?: MergeAbortCode };
+
+/** The abort reason for a verify timeout — actionable, and never "Verification failed". */
+function verifyTimeoutReason(command: string | undefined, timeoutMs: number): string {
+  const seconds = Math.round(timeoutMs / 1000);
+  return `verify timed out after ${seconds}s on \`${command}\` (raise taskwright.mergeVerifyTimeoutMinutes or pass verifyTimeoutMinutes)`;
+}
 
 /**
  * The full `request_merge` lifecycle. One blocking call: it suspends on the
@@ -285,6 +319,7 @@ export async function requestMerge(deps: FinishDeps, taskId: string): Promise<Re
     return {
       status: 'aborted',
       reason: 'Your worktree has uncommitted changes; commit or discard them first.',
+      code: 'dirty_worktree',
     };
   }
   const base = await resolveBaseBranch(exec, root);
@@ -294,14 +329,23 @@ export async function requestMerge(deps: FinishDeps, taskId: string): Promise<Re
       status: 'aborted',
       reason: `Rebase onto ${base} hit conflicts; resolve them, then call request_merge again.`,
       detail: (preRebase.conflicts ?? []).join(', '),
+      code: 'rebase_conflict',
     };
   }
-  const preVerify = await runVerifyCommands(run, root, config.verifyCommands);
+  const preVerify = await runVerifyCommands(
+    run,
+    root,
+    config.verifyCommands,
+    config.verifyTimeoutMs
+  );
   if (!preVerify.ok) {
     return {
       status: 'aborted',
-      reason: `Verification failed on \`${preVerify.failedCommand}\`; fix it and call request_merge again.`,
+      reason: preVerify.timedOut
+        ? verifyTimeoutReason(preVerify.failedCommand, config.verifyTimeoutMs)
+        : `Verification failed on \`${preVerify.failedCommand}\`; fix it and call request_merge again.`,
       detail: preVerify.output,
+      code: preVerify.timedOut ? 'verify_timeout' : 'verify_failed',
     };
   }
 
@@ -339,15 +383,24 @@ export async function requestMerge(deps: FinishDeps, taskId: string): Promise<Re
         status: 'aborted',
         reason: `Rebase onto ${base} hit conflicts after waiting; resolve them and call request_merge again.`,
         detail: (reRebase.conflicts ?? []).join(', '),
+        code: 'rebase_conflict',
       };
     }
-    const reVerify = await runVerifyCommands(run, root, config.verifyCommands);
+    const reVerify = await runVerifyCommands(
+      run,
+      root,
+      config.verifyCommands,
+      config.verifyTimeoutMs
+    );
     if (!reVerify.ok) {
       await board.setStatus(taskId, IN_PROGRESS);
       return {
         status: 'aborted',
-        reason: `Verification failed on \`${reVerify.failedCommand}\` after waiting; fix it and call request_merge again.`,
+        reason: reVerify.timedOut
+          ? verifyTimeoutReason(reVerify.failedCommand, config.verifyTimeoutMs)
+          : `Verification failed on \`${reVerify.failedCommand}\` after waiting; fix it and call request_merge again.`,
         detail: reVerify.output,
+        code: reVerify.timedOut ? 'verify_timeout' : 'verify_failed',
       };
     }
 
@@ -369,7 +422,11 @@ export async function requestMerge(deps: FinishDeps, taskId: string): Promise<Re
     const merge = await ffMergeToBase(exec, primaryRoot, base, branch);
     if (!merge.ok) {
       await board.setStatus(taskId, IN_PROGRESS);
-      return { status: 'aborted', reason: merge.reason ?? 'Fast-forward merge failed.' };
+      return {
+        status: 'aborted',
+        reason: merge.reason ?? 'Fast-forward merge failed.',
+        ...(merge.code ? { code: merge.code } : {}),
+      };
     }
     await board.setStatus(taskId, 'Done');
     await board.release(taskId);

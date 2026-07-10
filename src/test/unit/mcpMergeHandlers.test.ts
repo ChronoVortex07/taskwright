@@ -193,6 +193,88 @@ describe('requestMergeHandler', () => {
     expect(statuses.at(-1)).toBe('Done');
     expect(released).toEqual(['TASK-7']);
   });
+
+  /** Scaffold a worktree + in-memory merge-config for the timeout tests. */
+  function timeoutFixture(config: Record<string, unknown>): {
+    root: string;
+    fsDeps: QueueFsDeps;
+    board: {
+      setStatus: () => Promise<void>;
+      release: () => Promise<void>;
+      resetTaskFile: () => Promise<void>;
+    };
+    timeouts: Array<number | undefined>;
+    run: RunFn;
+  } {
+    const primaryRoot = path.join(tmpDir, 'primary');
+    const root = path.join(primaryRoot, '.worktrees', 'task-7-x');
+    fs.mkdirSync(root, { recursive: true });
+    scaffoldBacklog(root);
+    const memStore: Record<string, string> = {};
+    const commonDir = `${primaryRoot}/.git`;
+    memStore[path.join(commonDir, 'taskwright', 'merge-config.json')] = JSON.stringify({
+      mode: 'auto-merge',
+      verifyCommands: ['fake verify'],
+      ...config,
+    });
+    const timeouts: Array<number | undefined> = [];
+    const run: RunFn = async (_cwd, _cmd, timeoutMs) => {
+      timeouts.push(timeoutMs);
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    return {
+      root,
+      fsDeps: makeMemFsDeps(memStore),
+      board: {
+        setStatus: async () => {},
+        release: async () => {},
+        resetTaskFile: async () => {},
+      },
+      timeouts,
+      run,
+    };
+  }
+
+  it('runs verify with the config verifyTimeoutMs by default', async () => {
+    const f = timeoutFixture({ verifyTimeoutMs: 720_000 });
+    const r = await requestMergeHandler(
+      makeDeps(f.root, { board: f.board, fsDeps: f.fsDeps, shellRun: f.run }),
+      { taskId: 'TASK-7' }
+    );
+    expect(r.status).toBe('merged');
+    expect(f.timeouts.every((t) => t === 720_000)).toBe(true);
+  });
+
+  it('honors a per-call verifyTimeoutMinutes override', async () => {
+    const f = timeoutFixture({});
+    const r = await requestMergeHandler(
+      makeDeps(f.root, { board: f.board, fsDeps: f.fsDeps, shellRun: f.run }),
+      { taskId: 'TASK-7', verifyTimeoutMinutes: 25 }
+    );
+    expect(r.status).toBe('merged');
+    expect(f.timeouts.length).toBeGreaterThan(0);
+    expect(f.timeouts.every((t) => t === 25 * 60_000)).toBe(true);
+  });
+
+  it('clamps the per-call override to the repo-level verifyTimeoutMaxMs', async () => {
+    const f = timeoutFixture({ verifyTimeoutMaxMs: 20 * 60_000 });
+    const r = await requestMergeHandler(
+      makeDeps(f.root, { board: f.board, fsDeps: f.fsDeps, shellRun: f.run }),
+      { taskId: 'TASK-7', verifyTimeoutMinutes: 25 }
+    );
+    expect(r.status).toBe('merged');
+    expect(f.timeouts.every((t) => t === 20 * 60_000)).toBe(true);
+  });
+
+  it('ignores a non-positive per-call override', async () => {
+    const f = timeoutFixture({ verifyTimeoutMs: 720_000 });
+    const r = await requestMergeHandler(
+      makeDeps(f.root, { board: f.board, fsDeps: f.fsDeps, shellRun: f.run }),
+      { taskId: 'TASK-7', verifyTimeoutMinutes: 0 }
+    );
+    expect(r.status).toBe('merged');
+    expect(f.timeouts.every((t) => t === 720_000)).toBe(true);
+  });
 });
 
 describe('getActiveTask queue position', () => {

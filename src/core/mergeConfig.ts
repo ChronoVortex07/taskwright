@@ -28,17 +28,24 @@ export const INTERMEDIATE_STATUSES: string[] = MERGE_MODES.map(intermediateStatu
 
 export const DEFAULT_VERIFY_COMMANDS = ['bun run test', 'bun run lint', 'bun run typecheck'];
 export const DEFAULT_STALE_MINUTES = 30;
+/** Default per-command verify timeout: 10 minutes (the historical hardcoded cap). */
+export const DEFAULT_VERIFY_TIMEOUT_MS = 600_000;
 
 export interface MergeConfig {
   mode: MergeMode;
   verifyCommands: string[];
   staleMinutes: number;
+  /** Per-command timeout for the verify runner, in milliseconds. */
+  verifyTimeoutMs: number;
+  /** Optional repo-level ceiling for per-call `verifyTimeoutMinutes` overrides (ms). */
+  verifyTimeoutMaxMs?: number;
 }
 
 export const DEFAULT_MERGE_CONFIG: MergeConfig = {
   mode: 'manual-review',
   verifyCommands: [...DEFAULT_VERIFY_COMMANDS],
   staleMinutes: DEFAULT_STALE_MINUTES,
+  verifyTimeoutMs: DEFAULT_VERIFY_TIMEOUT_MS,
 };
 
 /** `<commonDir>/taskwright/merge-config.json` — shared, written by the extension. */
@@ -58,17 +65,28 @@ function coerceStale(value: unknown): number {
     : DEFAULT_STALE_MINUTES;
 }
 
+/** A strictly positive finite number, else undefined. */
+function positiveMsOrUndefined(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
 /** Coerce loosely-typed input (settings object or parsed JSON) into a MergeConfig. */
 export function resolveMergeConfigFromSettings(raw: {
   mode?: unknown;
   verifyCommands?: unknown;
   staleMinutes?: unknown;
+  verifyTimeoutMs?: unknown;
+  verifyTimeoutMaxMs?: unknown;
 }): MergeConfig {
-  return {
+  const config: MergeConfig = {
     mode: isMergeMode(raw.mode) ? raw.mode : DEFAULT_MERGE_CONFIG.mode,
     verifyCommands: coerceCommands(raw.verifyCommands),
     staleMinutes: coerceStale(raw.staleMinutes),
+    verifyTimeoutMs: positiveMsOrUndefined(raw.verifyTimeoutMs) ?? DEFAULT_VERIFY_TIMEOUT_MS,
   };
+  const maxMs = positiveMsOrUndefined(raw.verifyTimeoutMaxMs);
+  if (maxMs !== undefined) config.verifyTimeoutMaxMs = maxMs;
+  return config;
 }
 
 /** Read the shared config, tolerating missing/corrupt files as defaults. Never throws. */
