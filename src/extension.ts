@@ -52,11 +52,7 @@ import {
 } from './core/hookInstaller';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import {
-  resolveMergeConfigFromSettings,
-  writeMergeConfig,
-  mergeConfigPath,
-} from './core/mergeConfig';
+import { explicitSettingValue, publishMergeConfig, mergeConfigPath } from './core/mergeConfig';
 import { nodeQueueFs, MergeQueueStore, mergeQueuePath, type MergeQueue } from './core/mergeQueue';
 import {
   resolveSyncConfigFromSettings,
@@ -209,19 +205,27 @@ async function syncMergeConfig(repoRoot: string): Promise<void> {
     return; // not a git repo — nothing to publish
   }
   const cfg = vscode.workspace.getConfiguration('taskwright');
+  // Republish ONLY keys the user explicitly set (workspace or global) — merged
+  // over the existing file, never overwriting it wholesale. merge-config.json
+  // is the durable store for agent/CLI-made adjustments (e.g. corrected
+  // verifyCommands in a non-bun repo), which must survive extension restarts.
+  const explicit = <T>(key: string): T | undefined => explicitSettingValue(cfg.inspect<T>(key));
   // Timeout settings are minutes in VS Code; the shared config stores milliseconds.
-  // Non-positive/invalid values fall through resolveMergeConfigFromSettings' coercion
-  // (verifyTimeoutMs -> 10-min default, verifyTimeoutMaxMs -> unset = no cap).
+  // Non-positive/invalid values are treated as not-set (verifyTimeoutMs -> file value
+  // or 10-min default, verifyTimeoutMaxMs -> file value or unset = no cap).
   const minutesToMs = (v: unknown): number | undefined =>
     typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.round(v * 60_000) : undefined;
-  const merged = resolveMergeConfigFromSettings({
-    mode: cfg.get('mergeMode'),
-    verifyCommands: cfg.get('mergeVerifyCommands'),
-    staleMinutes: cfg.get('mergeQueueStaleMinutes'),
-    verifyTimeoutMs: minutesToMs(cfg.get('mergeVerifyTimeoutMinutes')),
-    verifyTimeoutMaxMs: minutesToMs(cfg.get('mergeVerifyTimeoutMaxMinutes')),
-  });
-  writeMergeConfig(mergeConfigPath(commonDir), merged, nodeQueueFs);
+  publishMergeConfig(
+    mergeConfigPath(commonDir),
+    {
+      mode: explicit('mergeMode'),
+      verifyCommands: explicit('mergeVerifyCommands'),
+      staleMinutes: explicit('mergeQueueStaleMinutes'),
+      verifyTimeoutMs: minutesToMs(explicit('mergeVerifyTimeoutMinutes')),
+      verifyTimeoutMaxMs: minutesToMs(explicit('mergeVerifyTimeoutMaxMinutes')),
+    },
+    nodeQueueFs
+  );
 }
 
 /**

@@ -89,6 +89,67 @@ export function resolveMergeConfigFromSettings(raw: {
   return config;
 }
 
+/**
+ * Resolve a `WorkspaceConfiguration.inspect()` result to the value the user
+ * EXPLICITLY set (workspace-folder > workspace > global), or undefined when the
+ * only value available is the package.json default. Used so `syncMergeConfig`
+ * republishes only user-set keys instead of stamping defaults over the file.
+ */
+export function explicitSettingValue<T>(
+  info:
+    | { globalValue?: T; workspaceValue?: T; workspaceFolderValue?: T; defaultValue?: T }
+    | undefined
+): T | undefined {
+  if (!info) return undefined;
+  return info.workspaceFolderValue ?? info.workspaceValue ?? info.globalValue;
+}
+
+/** The raw (pre-coercion) shape of the explicitly-set merge settings. */
+export interface ExplicitMergeSettings {
+  mode?: unknown;
+  verifyCommands?: unknown;
+  staleMinutes?: unknown;
+  verifyTimeoutMs?: unknown;
+  verifyTimeoutMaxMs?: unknown;
+}
+
+/**
+ * Publish the merge settings WITHOUT clobbering the shared file: read the
+ * existing `merge-config.json` (missing/corrupt/non-object → `{}` so defaults
+ * still materialize), overlay only the keys that are defined in `explicit`
+ * (i.e. explicitly set by the user in VS Code), coerce the union through
+ * `resolveMergeConfigFromSettings`, and write the result atomically.
+ *
+ * Semantics: explicit setting wins over file value; file value wins over the
+ * package.json default; corrupt file falls back to defaults. The file remains
+ * the durable store for agent/CLI-made adjustments (e.g. corrected
+ * verifyCommands, verifyTimeoutMs) across extension restarts.
+ */
+export function publishMergeConfig(
+  filePath: string,
+  explicit: ExplicitMergeSettings,
+  fsDeps: Pick<QueueFsDeps, 'exists' | 'read' | 'writeAtomic'>
+): MergeConfig {
+  let fileRaw: Record<string, unknown> = {};
+  if (fsDeps.exists(filePath)) {
+    try {
+      const parsed: unknown = JSON.parse(fsDeps.read(filePath));
+      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        fileRaw = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // corrupt file — treat as absent so defaults materialize
+    }
+  }
+  const overlay: Record<string, unknown> = { ...fileRaw };
+  for (const [key, value] of Object.entries(explicit)) {
+    if (value !== undefined) overlay[key] = value;
+  }
+  const merged = resolveMergeConfigFromSettings(overlay);
+  writeMergeConfig(filePath, merged, fsDeps);
+  return merged;
+}
+
 /** Read the shared config, tolerating missing/corrupt files as defaults. Never throws. */
 export function readMergeConfig(
   filePath: string,
