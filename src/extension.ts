@@ -17,7 +17,11 @@ import { BacklogDocumentLinkProvider } from './language/BacklogDocumentLinkProvi
 import { BacklogHoverProvider } from './language/BacklogHoverProvider';
 import { initializeBacklog, type InitBacklogOptions } from './core/initBacklog';
 import { BacklogWorkspaceManager, type BacklogRoot } from './core/BacklogWorkspaceManager';
-import { detectPackageManager } from './core/AgentIntegrationDetector';
+import {
+  detectPackageManager,
+  detectCodexInstalled,
+  detectCodexIntegration,
+} from './core/AgentIntegrationDetector';
 import { claimTaskForCurrentUser, releaseTaskClaim } from './providers/claimActions';
 import { dispatchTask } from './providers/dispatchActions';
 import { cancelDispatch } from './core/cancelDispatch';
@@ -40,6 +44,9 @@ import {
 import { injectConvention, injectAgentsConvention } from './core/agentConvention';
 import { installTaskwrightSkills, type SkillInstallResult } from './core/skillInstaller';
 import { extractTaskwrightServer, upsertTaskwrightMcpServer } from './core/mcpProjectConfig';
+import { upsertCodexMcpServer } from './core/codexConfig';
+import { installCodexPrompts } from './core/codexPrompts';
+import { homedir } from 'os';
 import { affectsTaskwrightConfig, getTaskwrightConfig } from './config';
 import {
   installGuard,
@@ -1763,6 +1770,43 @@ export async function activate(context: vscode.ExtensionContext) {
   // and the on-activate refresh below.
   const CLAUDE_MCP_REGISTERED_KEY = 'taskwright.mcpRegistered';
   const mcpServerPath = path.join(context.extensionPath, 'dist', 'mcp', 'server.js');
+
+  // Shared adapter step: offer the Taskwright convention block for AGENTS.md —
+  // the agent-neutral instruction surface (Claude Code reads it via CLAUDE.md's
+  // @AGENTS.md include, Codex reads it natively). Idempotent — only a marked
+  // block is written; existing content is preserved. Creation is consent-gated
+  // with a modal.
+  const offerAgentsConvention = async (root: string): Promise<void> => {
+    const agentsMdPath = path.join(root, 'AGENTS.md');
+    const agentsExisted = fs.existsSync(agentsMdPath);
+    const agentsExisting = agentsExisted ? fs.readFileSync(agentsMdPath, 'utf-8') : '';
+    const agentsUpdated = injectAgentsConvention(agentsExisting);
+    if (agentsUpdated === agentsExisting) {
+      if (agentsExisted) {
+        vscode.window.showInformationMessage('AGENTS.md already has the Taskwright instructions.');
+      }
+      // fall through — the caller's remaining setup steps still need to run
+      return;
+    }
+    const agentsChoice = await vscode.window.showInformationMessage(
+      agentsExisted
+        ? 'Add Taskwright agent instructions to your AGENTS.md? Only a marked block is added — your existing content is preserved.'
+        : 'Create an AGENTS.md with Taskwright agent instructions so any agent uses the MCP server?',
+      { modal: true },
+      'Add'
+    );
+    if (agentsChoice === 'Add') {
+      try {
+        fs.writeFileSync(agentsMdPath, agentsUpdated, 'utf-8');
+        vscode.window.showInformationMessage(
+          `${agentsExisted ? 'Updated' : 'Created'} AGENTS.md with Taskwright agent instructions.`
+        );
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to update AGENTS.md: ${error}`);
+      }
+    }
+  };
+
   const setUpClaudeIntegration = async (): Promise<void> => {
     const root = activeRootDir();
     if (!root) {
@@ -1828,37 +1872,8 @@ export async function activate(context: vscode.ExtensionContext) {
     }
 
     // 2b) Offer the same convention for AGENTS.md so non-Claude agents (Codex,
-    // etc.) also reach for the Taskwright MCP. Idempotent — only a marked block
-    // is written; existing content is preserved. Creation is consent-gated with a
-    // modal, mirroring the CLAUDE.md step above.
-    const agentsMdPath = path.join(root, 'AGENTS.md');
-    const agentsExisted = fs.existsSync(agentsMdPath);
-    const agentsExisting = agentsExisted ? fs.readFileSync(agentsMdPath, 'utf-8') : '';
-    const agentsUpdated = injectAgentsConvention(agentsExisting);
-    if (agentsUpdated === agentsExisting) {
-      if (agentsExisted) {
-        vscode.window.showInformationMessage('AGENTS.md already has the Taskwright instructions.');
-      }
-      // fall through — skills install still needs to run below
-    } else {
-      const agentsChoice = await vscode.window.showInformationMessage(
-        agentsExisted
-          ? 'Add Taskwright agent instructions to your AGENTS.md? Only a marked block is added — your existing content is preserved.'
-          : 'Create an AGENTS.md with Taskwright agent instructions so any agent uses the MCP server?',
-        { modal: true },
-        'Add'
-      );
-      if (agentsChoice === 'Add') {
-        try {
-          fs.writeFileSync(agentsMdPath, agentsUpdated, 'utf-8');
-          vscode.window.showInformationMessage(
-            `${agentsExisted ? 'Updated' : 'Created'} AGENTS.md with Taskwright agent instructions.`
-          );
-        } catch (error) {
-          vscode.window.showErrorMessage(`Failed to update AGENTS.md: ${error}`);
-        }
-      }
-    }
+    // etc.) also reach for the Taskwright MCP (shared adapter step).
+    await offerAgentsConvention(root);
 
     // 3) Install the four user-facing Taskwright skills (create-task,
     // execute-task, index-codebase, orchestrate-board) into the project's
@@ -1924,8 +1939,115 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     }
   };
+  // Codex integration adapter: register the Taskwright MCP server in Codex's
+  // user-global config.toml and install the four user-facing skills as Codex
+  // custom prompts — the Codex counterpart of setUpClaudeIntegration. Codex has
+  // no per-project MCP surface, so registration targets $CODEX_HOME
+  // (~/.codex by default) with an ABSOLUTE path to the extension's committed
+  // launcher (scripts/taskwright-mcp.cjs); the launcher resolves the primary
+  // checkout's built server from the session's cwd, so worktrees resolve the
+  // primary build exactly as with Claude Code.
+  const codexHome = (): string => {
+    const fromEnv = process.env.CODEX_HOME?.trim();
+    return fromEnv ? fromEnv : path.join(homedir(), '.codex');
+  };
+  const setUpCodexIntegration = async (): Promise<void> => {
+    const root = activeRootDir();
+    if (!root) {
+      vscode.window.showErrorMessage('No backlog folder found in workspace');
+      return;
+    }
+    const codexDir = codexHome();
+    if (!fs.existsSync(codexDir)) {
+      vscode.window.showWarningMessage(
+        `Codex does not appear to be installed (no ${codexDir}). Install Codex, then run "Taskwright: Set Up Codex Integration (MCP + prompts)" again.`
+      );
+      return;
+    }
+
+    // 1) Upsert [mcp_servers.taskwright] into Codex's config.toml (idempotent,
+    // preserves every other line of the user's config).
+    const launcherPath = path.join(context.extensionPath, 'scripts', 'taskwright-mcp.cjs');
+    if (!fs.existsSync(launcherPath)) {
+      vscode.window.showErrorMessage(
+        'The Taskwright MCP launcher (scripts/taskwright-mcp.cjs) is missing. Reinstall or rebuild the extension.'
+      );
+      return;
+    }
+    try {
+      const templatePath = path.join(context.extensionPath, '.mcp.json');
+      const server = extractTaskwrightServer(fs.readFileSync(templatePath, 'utf-8'));
+      // Codex's config is user-global — swap the template's repo-relative
+      // launcher arg for the extension's absolute one.
+      const codexServer = { ...server, args: [launcherPath] };
+      const configPath = path.join(codexDir, 'config.toml');
+      const existing = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf-8') : '';
+      fs.writeFileSync(configPath, upsertCodexMcpServer(existing, codexServer), 'utf-8');
+      vscode.window.showInformationMessage(
+        'Registered the Taskwright MCP server in Codex (config.toml). Restart Codex to load it.'
+      );
+    } catch (error) {
+      vscode.window.showErrorMessage(
+        `Failed to register the Taskwright MCP server with Codex: ${error}`
+      );
+    }
+
+    // 2) Install the four user-facing skills as Codex custom prompts
+    // (~/.codex/prompts/<name>.md, invoked as /<name>), rendered from the same
+    // bundled skill sources the Claude installer copies — one source of truth,
+    // per-agent renderers. Idempotent: existing prompts are skipped.
+    try {
+      const extSkillsDir = path.join(context.extensionPath, 'dist', 'skills');
+      const promptResults = installCodexPrompts(
+        extSkillsDir,
+        path.join(codexDir, 'prompts'),
+        false
+      );
+      const created = promptResults.filter((r: SkillInstallResult) => r.action === 'created');
+      const skipped = promptResults.filter((r: SkillInstallResult) => r.action === 'skipped');
+      if (created.length > 0 || skipped.length > 0) {
+        const parts: string[] = [];
+        if (created.length > 0) {
+          parts.push(
+            `installed ${created.map((r: SkillInstallResult) => `/${r.name}`).join(', ')}`
+          );
+        }
+        if (skipped.length > 0) {
+          parts.push(
+            `${skipped.map((r: SkillInstallResult) => `/${r.name}`).join(', ')} already present`
+          );
+        }
+        vscode.window.showInformationMessage(`Taskwright Codex prompts: ${parts.join('; ')}.`);
+      }
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to install Taskwright Codex prompts: ${error}`);
+    }
+
+    // 3) AGENTS.md is Codex's native instruction surface — offer the shared
+    // Taskwright convention block (same marked block the Claude flow offers).
+    await offerAgentsConvention(root);
+  };
+
+  // Generalized entry point: run the setup adapter for each requested agent.
+  // Per-agent adapters keep their own consent gates and error surfaces.
+  const agentIntegrationAdapters = {
+    claude: setUpClaudeIntegration,
+    codex: setUpCodexIntegration,
+  } as const;
+  type AgentIntegrationTarget = keyof typeof agentIntegrationAdapters;
+  const setUpAgentIntegration = async (...targets: AgentIntegrationTarget[]): Promise<void> => {
+    for (const target of targets) {
+      await agentIntegrationAdapters[target]();
+    }
+  };
+
   context.subscriptions.push(
-    vscode.commands.registerCommand('taskwright.setupClaudeIntegration', setUpClaudeIntegration)
+    vscode.commands.registerCommand('taskwright.setupClaudeIntegration', () =>
+      setUpAgentIntegration('claude')
+    ),
+    vscode.commands.registerCommand('taskwright.setupCodexIntegration', () =>
+      setUpAgentIntegration('codex')
+    )
   );
 
   // Edit Board Config — opens the config editor modal in the tasks webview
@@ -1968,9 +2090,33 @@ export async function activate(context: vscode.ExtensionContext) {
       "Don't ask again"
     );
     if (choice === 'Set up') {
-      await setUpClaudeIntegration();
+      await setUpAgentIntegration('claude');
     } else if (choice === "Don't ask again") {
       await context.globalState.update(CLAUDE_SETUP_DISMISSED_KEY, true);
+    }
+  })();
+
+  // One-time prompt (Codex): in a backlog repo where Codex is installed
+  // (~/.codex exists) but the Taskwright MCP server isn't in its config yet,
+  // offer to set it up. Fire-and-forget so it never blocks activation.
+  const CODEX_SETUP_DISMISSED_KEY = 'taskwright.codexSetupDismissed';
+  void (async () => {
+    if (context.globalState.get<boolean>(CODEX_SETUP_DISMISSED_KEY)) return;
+    const root = activeRootDir();
+    if (!root) return;
+    if (!(await detectCodexInstalled())) return;
+    if ((await detectCodexIntegration(root)).mcpConfigured) return;
+    const choice = await vscode.window.showInformationMessage(
+      'Set up Taskwright for Codex? Registers the MCP server in ~/.codex/config.toml and installs the Taskwright skills as Codex custom prompts.',
+      'Set up',
+      'Not now',
+      "Don't ask again"
+    );
+    if (choice === 'Set up') {
+      await setUpAgentIntegration('codex');
+      await context.globalState.update(CODEX_SETUP_DISMISSED_KEY, true);
+    } else if (choice === "Don't ask again") {
+      await context.globalState.update(CODEX_SETUP_DISMISSED_KEY, true);
     }
   })();
 

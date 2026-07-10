@@ -51,6 +51,15 @@ describe('injectAgentsConvention', () => {
     expect(injectAgentsConvention(once)).toBe(once);
   });
 
+  it('is agent-neutral: names each agent-specific MCP registration surface', () => {
+    // AGENTS.md is the shared contract for Claude Code AND Codex — the block
+    // must not assume Claude-only registration (.mcp.json) or Claude-specific
+    // tool syntax.
+    expect(TASKWRIGHT_AGENTS_CONVENTION).toContain('.mcp.json');
+    expect(TASKWRIGHT_AGENTS_CONVENTION).toContain('~/.codex/config.toml');
+    expect(TASKWRIGHT_AGENTS_CONVENTION).not.toContain('mcp__');
+  });
+
   it('is a distinct body from the CLAUDE.md convention', () => {
     // The AGENTS.md block leads with the MCP-server framing and the merge close;
     // the CLAUDE.md block does not mention request_merge.

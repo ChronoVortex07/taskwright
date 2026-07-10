@@ -2,9 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   detectClaudeCodeIntegration,
   detectCodexIntegration,
+  detectCodexInstalled,
   detectGuidelinesMarker,
   detectIntegration,
   detectPackageManager,
+  isAgentsMdOnlyRepo,
 } from '../../core/AgentIntegrationDetector';
 import * as fs from 'fs/promises';
 import * as childProcess from 'child_process';
@@ -239,6 +241,85 @@ describe('AgentIntegrationDetector', () => {
 
       const result = await detectCodexIntegration('/workspace');
       expect(result.guidelinesInjected).toBe(true);
+    });
+  });
+
+  // Helper that matches by FULL normalized path (forward slashes), so tests can
+  // distinguish the workspace .codex/config.toml from the home-dir one.
+  function mockFilesByFullPath(files: Record<string, string>) {
+    mockReadFile.mockImplementation(async (path: unknown) => {
+      const pathStr = String(path).replace(/\\/g, '/');
+      if (pathStr in files) {
+        return files[pathStr];
+      }
+      throw new Error('ENOENT: no such file or directory');
+    });
+  }
+
+  describe('detectCodexIntegration — home-dir config', () => {
+    it('detects mcp_servers.taskwright in the home ~/.codex/config.toml', async () => {
+      mockFilesByFullPath({
+        '/home/user/.codex/config.toml': '[mcp_servers.taskwright]\ncommand = "node"',
+      });
+
+      const result = await detectCodexIntegration('/workspace', '/home/user');
+      expect(result.mcpConfigured).toBe(true);
+    });
+
+    it('still detects the workspace .codex/config.toml when the home config lacks the entry', async () => {
+      mockFilesByFullPath({
+        '/home/user/.codex/config.toml': 'model = "o3"',
+        '/workspace/.codex/config.toml': '[mcp_servers.taskwright]\ncommand = "node"',
+      });
+
+      const result = await detectCodexIntegration('/workspace', '/home/user');
+      expect(result.mcpConfigured).toBe(true);
+    });
+
+    it('reports unconfigured when neither config has the entry', async () => {
+      mockFilesByFullPath({
+        '/home/user/.codex/config.toml': 'model = "o3"',
+      });
+
+      const result = await detectCodexIntegration('/workspace', '/home/user');
+      expect(result.mcpConfigured).toBe(false);
+    });
+  });
+
+  describe('detectCodexInstalled', () => {
+    it('returns true when ~/.codex/config.toml exists', async () => {
+      mockFilesByFullPath({ '/home/user/.codex/config.toml': 'model = "o3"' });
+      expect(await detectCodexInstalled('/home/user')).toBe(true);
+    });
+
+    it('returns true when only ~/.codex/auth.json exists (installed, unconfigured)', async () => {
+      mockFilesByFullPath({ '/home/user/.codex/auth.json': '{}' });
+      expect(await detectCodexInstalled('/home/user')).toBe(true);
+    });
+
+    it('returns false when the ~/.codex directory has neither file', async () => {
+      mockFilesByFullPath({});
+      expect(await detectCodexInstalled('/home/user')).toBe(false);
+    });
+  });
+
+  describe('isAgentsMdOnlyRepo', () => {
+    it('returns true when AGENTS.md exists and CLAUDE.md does not', async () => {
+      mockFilesByFullPath({ '/workspace/AGENTS.md': '# Agents' });
+      expect(await isAgentsMdOnlyRepo('/workspace')).toBe(true);
+    });
+
+    it('returns false when both AGENTS.md and CLAUDE.md exist', async () => {
+      mockFilesByFullPath({
+        '/workspace/AGENTS.md': '# Agents',
+        '/workspace/CLAUDE.md': '# Claude',
+      });
+      expect(await isAgentsMdOnlyRepo('/workspace')).toBe(false);
+    });
+
+    it('returns false when neither file exists', async () => {
+      mockFilesByFullPath({});
+      expect(await isAgentsMdOnlyRepo('/workspace')).toBe(false);
     });
   });
 

@@ -351,6 +351,10 @@
         "title": "Taskwright: Set Up Claude Code Integration (MCP + CLAUDE.md)"
       },
       {
+        "command": "taskwright.setupCodexIntegration",
+        "title": "Taskwright: Set Up Codex Integration (MCP + prompts)"
+      },
+      {
         "command": "taskwright.editBoardConfig",
         "title": "Taskwright: Edit Board Config",
         "icon": "$(gear)",

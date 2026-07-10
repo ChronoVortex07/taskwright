@@ -1,5 +1,6 @@
 import { readFile } from 'fs/promises';
 import { join } from 'path';
+import { homedir } from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { TASKWRIGHT_MCP_NAME } from './claudeMcp';
@@ -103,16 +104,32 @@ export async function detectClaudeCodeIntegration(workspaceRoot: string): Promis
  * Detect Codex integration in the workspace.
  *
  * Checks:
- * - `.codex/config.toml` for `[mcp_servers.taskwright]` (legacy `mcp_servers.backlog` too)
+ * - `.codex/config.toml` (workspace) and `<homeDir>/.codex/config.toml` (the
+ *   config Codex actually reads) for `[mcp_servers.taskwright]` (legacy
+ *   `mcp_servers.backlog` too)
  * - `AGENTS.md` for the guidelines marker
  */
-export async function detectCodexIntegration(workspaceRoot: string): Promise<AgentStatus> {
+export async function detectCodexIntegration(
+  workspaceRoot: string,
+  homeDir: string = homedir()
+): Promise<AgentStatus> {
   const result: AgentStatus = { mcpConfigured: false, guidelinesInjected: false };
 
-  // Check .codex/config.toml (simple string search, no TOML parser)
-  const codexConfig = await safeReadFile(join(workspaceRoot, '.codex', 'config.toml'));
-  if (codexConfig && MCP_SERVER_NAMES.some((name) => codexConfig.includes(`mcp_servers.${name}`))) {
-    result.mcpConfigured = true;
+  // Check the workspace-local and home-dir Codex configs (simple string
+  // search, no TOML parser).
+  const configPaths = [
+    join(workspaceRoot, '.codex', 'config.toml'),
+    join(homeDir, '.codex', 'config.toml'),
+  ];
+  for (const configPath of configPaths) {
+    const codexConfig = await safeReadFile(configPath);
+    if (
+      codexConfig &&
+      MCP_SERVER_NAMES.some((name) => codexConfig.includes(`mcp_servers.${name}`))
+    ) {
+      result.mcpConfigured = true;
+      break;
+    }
   }
 
   // Check AGENTS.md for guidelines marker
@@ -122,6 +139,34 @@ export async function detectCodexIntegration(workspaceRoot: string): Promise<Age
   }
 
   return result;
+}
+
+/**
+ * Whether Codex appears to be installed for this user: `<homeDir>/.codex`
+ * contains its `config.toml` or `auth.json`. (File reads only — keeps the
+ * detector's fs surface to `readFile`, mirroring the rest of this module.)
+ */
+export async function detectCodexInstalled(homeDir: string = homedir()): Promise<boolean> {
+  for (const file of ['config.toml', 'auth.json']) {
+    if ((await safeReadFile(join(homeDir, '.codex', file))) !== null) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether the repo is an AGENTS.md-only repo — it carries agent instructions in
+ * AGENTS.md but has no CLAUDE.md. Such repos are likely driven by an
+ * AGENTS.md-native agent (Codex, etc.), so Codex integration is worth offering.
+ */
+export async function isAgentsMdOnlyRepo(workspaceRoot: string): Promise<boolean> {
+  const agentsMd = await safeReadFile(join(workspaceRoot, 'AGENTS.md'));
+  if (agentsMd === null) {
+    return false;
+  }
+  const claudeMd = await safeReadFile(join(workspaceRoot, 'CLAUDE.md'));
+  return claudeMd === null;
 }
 
 /**

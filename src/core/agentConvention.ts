@@ -36,7 +36,7 @@ export function injectConvention(existingClaudeMd: string): string {
  */
 export const TASKWRIGHT_AGENTS_CONVENTION = `## Taskwright
 
-This project is managed with [Taskwright](https://github.com/ChronoVortex07/taskwright), an agentic task board on a git-native Backlog.md backbone. Task and project management runs through the **Taskwright MCP server** (see \`.mcp.json\`), not an external CLI. At the **start of a task session**:
+This project is managed with [Taskwright](https://github.com/ChronoVortex07/taskwright), an agentic task board on a git-native Backlog.md backbone. Task and project management runs through the **Taskwright MCP server** — registered per agent (\`.mcp.json\` for Claude Code, \`~/.codex/config.toml\` for Codex), not an external CLI. At the **start of a task session**:
 
 1. Call the \`taskwright\` MCP tool **\`get_active_task\`** to load your assigned task and its full context (description, acceptance criteria, plan). Work from that — do not infer the task from the file tree.
 2. Call **\`claim_task\`** with your task ID to mark it in progress so parallel sessions in other worktrees don't collide (advisory).
