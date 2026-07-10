@@ -59,7 +59,13 @@ import {
 } from './core/hookInstaller';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { explicitSettingValue, publishMergeConfig, mergeConfigPath } from './core/mergeConfig';
+import {
+  explicitSettingValue,
+  publishMergeConfig,
+  readMergeConfig,
+  mergeConfigPath,
+} from './core/mergeConfig';
+import { runVerifyDoctor, verifyDoctorNotification } from './core/verifyDoctor';
 import { nodeQueueFs, MergeQueueStore, mergeQueuePath, type MergeQueue } from './core/mergeQueue';
 import {
   resolveSyncConfigFromSettings,
@@ -233,6 +239,60 @@ async function syncMergeConfig(repoRoot: string): Promise<void> {
     },
     nodeQueueFs
   );
+}
+
+/**
+ * Verify-command doctor (TASK-86): validate the effective merge-verify commands
+ * against the repo's actual shape (package.json scripts, Python/uv markers, …)
+ * and, when a command provably cannot run (e.g. the bun-flavored defaults in a
+ * Python repo), surface a warning with a one-click "Apply suggested commands"
+ * that persists durably (workspace setting + republished merge-config.json).
+ * Suggestions are always human-confirmed — nothing is rewritten silently.
+ */
+async function runVerifyDoctorCheck(
+  repoRoot: string,
+  options: { quietWhenOk: boolean }
+): Promise<void> {
+  const commonDir = await resolveCommonDir(repoRoot);
+  if (!commonDir) return;
+  const config = readMergeConfig(mergeConfigPath(commonDir), nodeQueueFs);
+  const report = runVerifyDoctor({
+    root: repoRoot,
+    commands: config.verifyCommands,
+    fs: nodeQueueFs,
+  });
+  if (report.ok) {
+    if (!options.quietWhenOk) {
+      vscode.window.showInformationMessage(
+        `Taskwright merge verify: all ${report.findings.length} configured verify command(s) look runnable in this repo.`
+      );
+    }
+    return;
+  }
+  const note = verifyDoctorNotification(report);
+  if (!note) return;
+  const applyAction = 'Apply suggested commands';
+  const settingsAction = 'Open Settings';
+  const actions = note.suggestions.length > 0 ? [applyAction, settingsAction] : [settingsAction];
+  const pick = await vscode.window.showWarningMessage(note.message, ...actions);
+  if (pick === applyAction) {
+    await vscode.workspace
+      .getConfiguration('taskwright')
+      .update('mergeVerifyCommands', note.suggestions, vscode.ConfigurationTarget.Workspace);
+    // Republish immediately so the shared merge-config.json (which the
+    // out-of-process MCP merge gate reads) reflects the fix now, not on the
+    // next activation. The config-change listener also fires; publishing is
+    // idempotent and clobber-safe (TASK-85).
+    await syncMergeConfig(repoRoot);
+    vscode.window.showInformationMessage(
+      `Updated taskwright.mergeVerifyCommands to: ${note.suggestions.join(' && ')}`
+    );
+  } else if (pick === settingsAction) {
+    void vscode.commands.executeCommand(
+      'workbench.action.openSettings',
+      'taskwright.mergeVerifyCommands'
+    );
+  }
 }
 
 /**
@@ -496,7 +556,12 @@ export async function activate(context: vscode.ExtensionContext) {
     syncWorktreeGuard(workspaceRootPath, context.extensionUri);
     syncPostCheckoutWarn(workspaceRootPath, context.extensionUri);
     syncBoardHooks(workspaceRootPath);
-    void syncMergeConfig(workspaceRootPath);
+    // Publish the merge config, then run the verify-command doctor over the
+    // published result — flags verify commands that provably cannot run in this
+    // repo (misconfigured merge gate) at activation instead of mid-merge.
+    void syncMergeConfig(workspaceRootPath).then(() =>
+      runVerifyDoctorCheck(workspaceRootPath, { quietWhenOk: true })
+    );
     void publishSyncConfig(workspaceRootPath);
   }
 
@@ -1938,6 +2003,13 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.showErrorMessage(`Failed to write project-local .mcp.json: ${error}`);
       }
     }
+
+    // 5) Verify-command doctor: detect the repo type and flag configured merge
+    // verify commands that provably cannot run here (e.g. the bun-flavored
+    // defaults in a Python repo), offering a one-click confirmed fix. Setup is
+    // an explicit human action, so a healthy gate is confirmed out loud too.
+    await syncMergeConfig(root);
+    await runVerifyDoctorCheck(root, { quietWhenOk: false });
   };
   // Codex integration adapter: register the Taskwright MCP server in Codex's
   // user-global config.toml and install the four user-facing skills as Codex
