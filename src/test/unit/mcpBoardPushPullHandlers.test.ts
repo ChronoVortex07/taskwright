@@ -8,7 +8,7 @@
  * actual board git-plumbing (`deps.boardExec`, defaulting to real git) runs
  * against real temporary git repos, matching `boardPushPull.test.ts`.
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -24,6 +24,11 @@ import type { GitExecFn } from '../../core/finishTask';
 import { writeSyncConfig, syncConfigPath, DEFAULT_SYNC_CONFIG } from '../../core/syncConfig';
 import { nodeQueueFs } from '../../core/mergeQueue';
 import { makeTempGitRepo, TempRepo } from './helpers/tempGitRepo';
+
+// Real-git plumbing against temp origin+clone repos (many spawns per test). On
+// a loaded Windows box (e.g. parallel merge-queue verifies) spawn latency alone
+// can blow vitest's 5s default — these are not 5s-shaped tests.
+vi.setConfig({ testTimeout: 30_000 });
 
 const execFileAsync = promisify(execFile);
 

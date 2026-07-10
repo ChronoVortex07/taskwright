@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -28,6 +28,11 @@ import {
   type BoardGitExec,
 } from '../../core/boardRef';
 import { makeTempGitRepo, TempRepo } from './helpers/tempGitRepo';
+
+// Real-git plumbing against temp repos: dozens of git spawns per test. On a
+// loaded Windows box (e.g. parallel merge-queue verifies) spawn latency alone
+// can blow vitest's 5s default — these are not 5s-shaped tests.
+vi.setConfig({ testTimeout: 30_000 });
 
 const execFileAsync = promisify(execFile);
 
