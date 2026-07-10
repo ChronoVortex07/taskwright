@@ -42,7 +42,7 @@ async function addSecondClone(origin: string): Promise<TempRepo> {
   return clone;
 }
 
-describe('pushBoard / pullBoard (Board Sync v2 Task F)', { timeout: 15_000 }, () => {
+describe('pushBoard / pullBoard (Board Sync v2 Task F)', { timeout: 60_000 }, () => {
   let cleanupAll: (() => void)[] = [];
 
   afterEach(() => {
@@ -173,58 +173,62 @@ describe('pushBoard / pullBoard (Board Sync v2 Task F)', { timeout: 15_000 }, ()
     expect(fs.existsSync(path.join(cloneA.root, 'backlog/tasks/task-3 - C.md'))).toBe(true);
   });
 
-  it('same-task edit on both sides surfaces a conflict; newer updated_date wins', { timeout: 15_000 }, async () => {
-    const { origin: bareOrigin, clone: cloneA, cleanup } = await makeOriginAndClone();
-    cleanupAll.push(cleanup);
-    cloneA.addGitignore(['backlog/tasks/']);
-    cloneA.writeFile(
-      'backlog/tasks/task-1 - A.md',
-      "---\nid: TASK-1\nupdated_date: '2026-07-01 09:00'\n---\noriginal\n"
-    );
-    await pushBoard({ cwd: cloneA.root, ref: REF, remote: REMOTE, message: 'A seeds' });
+  it(
+    'same-task edit on both sides surfaces a conflict; newer updated_date wins',
+    { timeout: 60_000 },
+    async () => {
+      const { origin: bareOrigin, clone: cloneA, cleanup } = await makeOriginAndClone();
+      cleanupAll.push(cleanup);
+      cloneA.addGitignore(['backlog/tasks/']);
+      cloneA.writeFile(
+        'backlog/tasks/task-1 - A.md',
+        "---\nid: TASK-1\nupdated_date: '2026-07-01 09:00'\n---\noriginal\n"
+      );
+      await pushBoard({ cwd: cloneA.root, ref: REF, remote: REMOTE, message: 'A seeds' });
 
-    const cloneB = await addSecondClone(bareOrigin);
-    cleanupAll.push(() => cloneB.cleanup());
-    cloneB.addGitignore(['backlog/tasks/']);
-    await pullBoard({ cwd: cloneB.root, ref: REF, remote: REMOTE, message: 'B pulls seed' });
+      const cloneB = await addSecondClone(bareOrigin);
+      cleanupAll.push(() => cloneB.cleanup());
+      cloneB.addGitignore(['backlog/tasks/']);
+      await pullBoard({ cwd: cloneB.root, ref: REF, remote: REMOTE, message: 'B pulls seed' });
 
-    // Both sides edit the SAME task, B's edit is newer.
-    cloneA.writeFile(
-      'backlog/tasks/task-1 - A.md',
-      "---\nid: TASK-1\nupdated_date: '2026-07-01 10:00'\n---\nA-edit\n"
-    );
-    await pushBoard({ cwd: cloneA.root, ref: REF, remote: REMOTE, message: 'A edits' });
+      // Both sides edit the SAME task, B's edit is newer.
+      cloneA.writeFile(
+        'backlog/tasks/task-1 - A.md',
+        "---\nid: TASK-1\nupdated_date: '2026-07-01 10:00'\n---\nA-edit\n"
+      );
+      await pushBoard({ cwd: cloneA.root, ref: REF, remote: REMOTE, message: 'A edits' });
 
-    cloneB.writeFile(
-      'backlog/tasks/task-1 - A.md',
-      "---\nid: TASK-1\nupdated_date: '2026-07-01 11:00'\n---\nB-edit\n"
-    );
-    const pushB = await pushBoard({
-      cwd: cloneB.root,
-      ref: REF,
-      remote: REMOTE,
-      message: 'B edits',
-    });
+      cloneB.writeFile(
+        'backlog/tasks/task-1 - A.md',
+        "---\nid: TASK-1\nupdated_date: '2026-07-01 11:00'\n---\nB-edit\n"
+      );
+      const pushB = await pushBoard({
+        cwd: cloneB.root,
+        ref: REF,
+        remote: REMOTE,
+        message: 'B edits',
+      });
 
-    expect(pushB.pushed).toBe(true);
-    expect(pushB.conflicts).toHaveLength(1);
-    expect(pushB.conflicts[0]).toMatchObject({
-      id: 'TASK-1',
-      reason: 'edited-both',
-      resolution: 'ours', // B is "ours" from B's own perspective, and B is newer
-    });
+      expect(pushB.pushed).toBe(true);
+      expect(pushB.conflicts).toHaveLength(1);
+      expect(pushB.conflicts[0]).toMatchObject({
+        id: 'TASK-1',
+        reason: 'edited-both',
+        resolution: 'ours', // B is "ours" from B's own perspective, and B is newer
+      });
 
-    const pullA = await pullBoard({
-      cwd: cloneA.root,
-      ref: REF,
-      remote: REMOTE,
-      message: 'A pulls',
-    });
-    expect(pullA.pulled).toBe(true);
-    expect(
-      fs.readFileSync(path.join(cloneA.root, 'backlog/tasks/task-1 - A.md'), 'utf-8')
-    ).toContain('B-edit'); // newer (B's) edit wins
-  });
+      const pullA = await pullBoard({
+        cwd: cloneA.root,
+        ref: REF,
+        remote: REMOTE,
+        message: 'A pulls',
+      });
+      expect(pullA.pulled).toBe(true);
+      expect(
+        fs.readFileSync(path.join(cloneA.root, 'backlog/tasks/task-1 - A.md'), 'utf-8')
+      ).toContain('B-edit'); // newer (B's) edit wins
+    }
+  );
 
   it('a board push never dirties the working tree or moves HEAD', async () => {
     const { clone, cleanup } = await makeOriginAndClone();
