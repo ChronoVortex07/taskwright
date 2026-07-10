@@ -1,6 +1,7 @@
 ﻿import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { BacklogWriter } from '../../core/BacklogWriter';
 import { BacklogParser } from '../../core/BacklogParser';
+import { clearClaim } from '../../core/claims';
 import * as fs from 'fs';
 
 vi.mock('fs', async () => {
@@ -534,6 +535,53 @@ Document body.
 
       const writtenContent = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
       expect(writtenContent).toBe(cliProduced);
+    });
+  });
+
+  describe('Taskwright surgical fields stay single-line (TASK-89)', () => {
+    const LONG_BRANCH =
+      'task-89-claim-identity-per-session-claimed-by-idempotent-re-claim-for-the-same-claimant';
+    const CLAIMED_CONTENT = `---
+id: TASK-1
+title: Fold Test
+status: To Do
+assignee: []
+dependencies: []
+claimed_by: '@agent/${LONG_BRANCH}'
+worktree: ${LONG_BRANCH}
+claimed_at: '2026-07-10 12:00'
+category: Core Board
+---
+
+## Description
+
+Body.
+`;
+
+    async function rewrite(): Promise<string> {
+      vi.mocked(fs.readFileSync).mockReturnValue(CLAIMED_CONTENT);
+      mockReaddirSync(['task-1.md']);
+      await writer.updateTask('TASK-1', { status: 'In Progress' }, mockParser);
+      return vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+    }
+
+    it('does not fold long claim values into >- block scalars on a full rewrite', async () => {
+      const written = await rewrite();
+      expect(written).not.toContain('>-');
+      expect(written).toContain(`worktree: ${LONG_BRANCH}`);
+      expect(written).toContain(`claimed_by: '@agent/${LONG_BRANCH}'`);
+    });
+
+    it('regression: full rewrite then release leaves clean frontmatter (category intact)', async () => {
+      const written = await rewrite();
+      const released = clearClaim(written);
+      expect(released).not.toContain('worktree');
+      expect(released).not.toContain(LONG_BRANCH);
+      const parser = new BacklogParser('/fake/backlog');
+      const task = parser.parseTaskContent(released, '/fake/backlog/tasks/task-1.md');
+      expect(task?.claimedBy).toBeUndefined();
+      expect(task?.category).toBe('Core Board');
+      expect(task?.status).toBe('In Progress');
     });
   });
 });

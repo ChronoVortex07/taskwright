@@ -116,3 +116,61 @@ describe('removeField', () => {
     expect(removeField(doc, 'plan')).toBe(doc);
   });
 });
+
+describe('folded/multi-line values (TASK-89 continuation safety)', () => {
+  // A full BacklogWriter rewrite (js-yaml, lineWidth 80) folds long scalars:
+  //   worktree: >-
+  //     task-89-very-long-branch-name
+  // Surgical removal must take the continuation line(s) with the key.
+  const folded = [
+    '---',
+    'id: TASK-1',
+    'title: Example',
+    'worktree: >-',
+    '  task-89-claim-identity-per-session-claimed-by-idempotent-re-claim-for-the-same',
+    'category: Core Board',
+    '---',
+    '',
+    'Body.',
+  ].join('\n');
+
+  it('removeField removes a folded value together with its continuation lines', () => {
+    const out = removeField(folded, 'worktree');
+    expect(splitFrontmatter(out)!.fields).toEqual([
+      'id: TASK-1',
+      'title: Example',
+      'category: Core Board',
+    ]);
+  });
+
+  it('removeField keeps adjacent keys intact after removing a folded value', () => {
+    const out = removeField(folded, 'worktree');
+    expect(out).toContain('category: Core Board');
+    expect(out).not.toContain('task-89-claim-identity');
+  });
+
+  it('upsertScalarField replaces a folded value without leaving a dangling continuation', () => {
+    const out = upsertScalarField(folded, 'worktree', 'short-branch');
+    expect(splitFrontmatter(out)!.fields).toEqual([
+      'id: TASK-1',
+      'title: Example',
+      'worktree: short-branch',
+      'category: Core Board',
+    ]);
+  });
+
+  it('removeField also handles block-sequence values (list continuations)', () => {
+    const withList = [
+      '---',
+      'id: TASK-1',
+      'labels:',
+      '  - one',
+      '  - two',
+      'category: Core Board',
+      '---',
+      'Body.',
+    ].join('\n');
+    const out = removeField(withList, 'labels');
+    expect(splitFrontmatter(out)!.fields).toEqual(['id: TASK-1', 'category: Core Board']);
+  });
+});

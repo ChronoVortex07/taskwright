@@ -10,7 +10,7 @@
  * asynchronously, so a claim reduces — but cannot prevent — duplicate work.
  */
 
-import { quoteValue, splitFrontmatter } from './frontmatterEdit';
+import { quoteValue, removeFieldLines, splitFrontmatter } from './frontmatterEdit';
 
 export interface Claim {
   /** Who/what holds the claim (agent or user id, may be @-prefixed). */
@@ -47,25 +47,29 @@ function claimLines(claim: Claim): string[] {
 
 /**
  * Add or replace the claim on a task file's content. Existing claim lines are
- * removed first, so re-claiming never duplicates fields. Returns `content`
- * unchanged if it has no frontmatter block.
+ * removed first — together with any folded/multi-line continuation lines a
+ * full YAML rewrite may have introduced — so re-claiming never duplicates
+ * fields or orphans a continuation. Returns `content` unchanged if it has no
+ * frontmatter block.
  */
 export function applyClaim(content: string, claim: Claim): string {
   const split = splitFrontmatter(content);
   if (!split) return content;
-  const fields = split.fields.filter((line) => !CLAIM_KEY_RE.test(line));
+  const fields = removeFieldLines(split.fields, CLAIM_KEY_RE);
   fields.push(...claimLines(claim));
   return [...split.before, ...fields, ...split.after].join('\n');
 }
 
 /**
- * Remove any claim from a task file's content. Idempotent: returns the exact
- * input string when there was nothing to remove.
+ * Remove any claim from a task file's content, including folded/multi-line
+ * value continuations (a dangling continuation would corrupt the next field —
+ * TASK-89). Idempotent: returns the exact input string when there was nothing
+ * to remove.
  */
 export function clearClaim(content: string): string {
   const split = splitFrontmatter(content);
   if (!split) return content;
-  const fields = split.fields.filter((line) => !CLAIM_KEY_RE.test(line));
+  const fields = removeFieldLines(split.fields, CLAIM_KEY_RE);
   if (fields.length === split.fields.length) return content;
   return [...split.before, ...fields, ...split.after].join('\n');
 }

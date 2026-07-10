@@ -6,6 +6,52 @@ import matter from 'gray-matter';
 import { Milestone, Task, TaskStatus } from './types';
 import { BacklogParser } from './BacklogParser';
 import { atomicWriteFileSync } from './atomicWrite';
+import { quoteValue } from './frontmatterEdit';
+
+/**
+ * Taskwright-only surgical fields that must serialize as a SINGLE line.
+ * claims.ts / frontmatterEdit.ts edit these line-wise; js-yaml (lineWidth 80)
+ * would fold a long value into a `>-` block scalar whose indented continuation
+ * a line-wise removal could orphan onto the next field (TASK-89).
+ */
+const SINGLE_LINE_FIELD_RE = /^(claimed_by|worktree|claimed_at|plan): ([>|][+-]?)$/;
+
+/**
+ * Collapse folded/literal block scalars of Taskwright surgical fields back to
+ * one `key: value` line inside the serialized document's frontmatter. Folded
+ * lines are re-joined with spaces (YAML folding semantics); other fields are
+ * left byte-for-byte as the serializer emitted them.
+ */
+function collapseFoldedSurgicalFields(serialized: string): string {
+  const lines = serialized.split('\n');
+  if (lines[0]?.trim() !== '---') return serialized;
+  let end = -1;
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim() === '---') {
+      end = i;
+      break;
+    }
+  }
+  if (end === -1) return serialized;
+  const out: string[] = [lines[0]];
+  for (let i = 1; i < end; i++) {
+    const match = lines[i].match(SINGLE_LINE_FIELD_RE);
+    if (!match) {
+      out.push(lines[i]);
+      continue;
+    }
+    const parts: string[] = [];
+    let j = i + 1;
+    while (j < end && /^[ \t]+\S/.test(lines[j])) {
+      parts.push(lines[j].trim());
+      j++;
+    }
+    out.push(`${match[1]}: ${quoteValue(parts.join(' '))}`);
+    i = j - 1;
+  }
+  out.push(...lines.slice(end));
+  return out.join('\n');
+}
 
 /**
  * Compute an MD5 hash of file content for conflict detection
@@ -1452,7 +1498,10 @@ export class BacklogWriter {
     // this, any pre-existing blank line would compound with the post-process
     // regex to produce a double blank line.
     const trimmedBody = body.replace(/^\n+/, '');
-    const serialized = matter.stringify(trimmedBody, ordered);
+    // Keep Taskwright surgical fields single-line — js-yaml folds long values
+    // into `>-` block scalars, which the surgical line-wise editors would
+    // corrupt on removal (TASK-89).
+    const serialized = collapseFoldedSurgicalFields(matter.stringify(trimmedBody, ordered));
     if (!blankLineAfterFrontmatter) return serialized;
     return serialized.replace(/^(---\n(?:.*\n)*?---)\n(?!$)/, '$1\n\n');
   }

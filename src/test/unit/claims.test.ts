@@ -76,6 +76,54 @@ describe('claims', () => {
     });
   });
 
+  describe('folded claim values (TASK-89 continuation safety)', () => {
+    const LONG_BRANCH =
+      'task-89-claim-identity-per-session-claimed-by-idempotent-re-claim-for-the-same-claimant';
+    // The shape a full BacklogWriter rewrite (js-yaml lineWidth 80) leaves behind.
+    const FOLDED = [
+      '---',
+      'id: TASK-1',
+      'title: Sample task',
+      'status: In Progress',
+      'assignee: []',
+      'dependencies: []',
+      "claimed_by: '@agent'",
+      'worktree: >-',
+      `  ${LONG_BRANCH}`,
+      "claimed_at: '2026-07-10 12:00'",
+      'category: Core Board',
+      '---',
+      '',
+      'Body.',
+    ].join('\n');
+
+    it('clearClaim removes a folded worktree together with its continuation line', () => {
+      const cleared = clearClaim(FOLDED);
+      expect(cleared).not.toContain('worktree:');
+      expect(cleared).not.toContain(LONG_BRANCH);
+      // The adjacent category key must be untouched — the observed corruption
+      // was the dangling continuation attaching to `category:`.
+      expect(cleared).toContain('category: Core Board');
+      const task = parser.parseTaskContent(cleared, '/fake/path/task-1.md');
+      expect(task?.claimedBy).toBeUndefined();
+      expect(task?.worktree).toBeUndefined();
+      expect(task?.category).toBe('Core Board');
+    });
+
+    it('applyClaim replaces a folded claim without leaving a dangling continuation', () => {
+      const reclaimed = applyClaim(FOLDED, {
+        claimedBy: '@agent/task-1-x',
+        worktree: 'task-1-x',
+        claimedAt: '2026-07-10 13:00',
+      });
+      expect(reclaimed).not.toContain('>-');
+      expect(reclaimed).not.toContain(LONG_BRANCH);
+      const task = parser.parseTaskContent(reclaimed, '/fake/path/task-1.md');
+      expect(task?.worktree).toBe('task-1-x');
+      expect(task?.category).toBe('Core Board');
+    });
+  });
+
   describe('isClaimStale', () => {
     // Construct instants in LOCAL time so the test is timezone-independent
     // (isClaimStale parses the bare 'YYYY-MM-DD HH:mm' string as local time).

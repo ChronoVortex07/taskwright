@@ -34,10 +34,37 @@ export function quoteValue(value: string): string {
 
 const fieldKeyRe = (key: string): RegExp => new RegExp(`^${key}:`);
 
+/** True when a frontmatter line continues the previous field's value (indented). */
+const isContinuationLine = (line: string): boolean => /^[ \t]/.test(line);
+
+/**
+ * Remove every field matching `keyRe` from a frontmatter fields array TOGETHER
+ * with any continuation lines belonging to its value. After a full YAML
+ * rewrite a long value can span multiple lines (folded `>-` block scalars,
+ * block sequences), and dropping only the key line would orphan the indented
+ * continuation onto the next field — the observed `category:` corruption
+ * (TASK-89).
+ */
+export function removeFieldLines(fields: string[], keyRe: RegExp): string[] {
+  const out: string[] = [];
+  let removing = false;
+  for (const line of fields) {
+    if (keyRe.test(line)) {
+      removing = true;
+      continue;
+    }
+    if (removing && isContinuationLine(line)) continue;
+    removing = false;
+    out.push(line);
+  }
+  return out;
+}
+
 /**
  * Set a scalar field in the frontmatter, replacing it in place when present or
- * appending it after the existing fields. Returns `content` unchanged when it
- * has no frontmatter block.
+ * appending it after the existing fields. A replaced field's continuation
+ * lines (folded/multi-line values) are removed with it. Returns `content`
+ * unchanged when it has no frontmatter block.
  */
 export function upsertScalarField(content: string, key: string, value: string): string {
   const split = splitFrontmatter(content);
@@ -47,7 +74,9 @@ export function upsertScalarField(content: string, key: string, value: string): 
   const idx = split.fields.findIndex((f) => re.test(f));
   const fields = [...split.fields];
   if (idx >= 0) {
-    fields[idx] = line;
+    let span = 1;
+    while (idx + span < fields.length && isContinuationLine(fields[idx + span])) span++;
+    fields.splice(idx, span, line);
   } else {
     fields.push(line);
   }
@@ -73,14 +102,14 @@ export function setStatusField(content: string, status: string): string {
 }
 
 /**
- * Remove a field from the frontmatter. Idempotent: returns the exact input
- * string when the field (or frontmatter) is absent.
+ * Remove a field (and any continuation lines of its value) from the
+ * frontmatter. Idempotent: returns the exact input string when the field (or
+ * frontmatter) is absent.
  */
 export function removeField(content: string, key: string): string {
   const split = splitFrontmatter(content);
   if (!split) return content;
-  const re = fieldKeyRe(key);
-  const fields = split.fields.filter((f) => !re.test(f));
+  const fields = removeFieldLines(split.fields, fieldKeyRe(key));
   if (fields.length === split.fields.length) return content;
   return [...split.before, ...fields, ...split.after].join('\n');
 }
