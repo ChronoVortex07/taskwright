@@ -14,6 +14,7 @@ import {
   listMilestonesHandler,
   getBoardHandler,
   searchTasksHandler,
+  boardDoctorHandler,
 } from '../../mcp/handlers';
 import type { McpHandlerDeps } from '../../mcp/handlers';
 
@@ -50,9 +51,12 @@ function scaffold(configExtra = ''): void {
 }
 function deps(): McpHandlerDeps {
   return {
-    root, backlogPath,
-    parser: new BacklogParser(backlogPath), writer: new BacklogWriter(),
-    claimService: new ClaimService(), planService: new PlanService(),
+    root,
+    backlogPath,
+    parser: new BacklogParser(backlogPath),
+    writer: new BacklogWriter(),
+    claimService: new ClaimService(),
+    planService: new PlanService(),
     treeFieldService: new TreeFieldService(),
   };
 }
@@ -189,9 +193,10 @@ describe('getBoardHandler', () => {
     expect((await getBoardHandler(d, { milestone: 'Backburner' })).map((b) => b.id)).toEqual([
       'TASK-2',
     ]);
-    expect(
-      (await getBoardHandler(d, { status: 'To Do' })).map((b) => b.id).sort()
-    ).toEqual(['TASK-1', 'TASK-2']);
+    expect((await getBoardHandler(d, { status: 'To Do' })).map((b) => b.id).sort()).toEqual([
+      'TASK-1',
+      'TASK-2',
+    ]);
   });
 
   it('reports locked/blockedBy from the derivation', async () => {
@@ -251,5 +256,38 @@ describe('universe exclusion (completed/archive)', () => {
 
     const board = await getBoardHandler(d, {});
     expect(board.map((b) => b.id).sort()).toEqual(['TASK-1']);
+  });
+});
+
+describe('boardDoctorHandler', () => {
+  it('reports a healthy board when nothing has drifted', async () => {
+    const d = deps();
+    await createTaskHandler(d, { title: 'Fine task' });
+    const result = await boardDoctorHandler(d);
+    expect(result.healthy).toBe(true);
+    expect(result.findings).toEqual([]);
+  });
+
+  it('reports typed findings for drifted .taskwright state (read-only)', async () => {
+    const d = deps();
+    await createTaskHandler(d, { title: 'Done one' });
+    await editTaskHandler(d, { taskId: 'TASK-1', status: 'Done' });
+    // Stale handoff for the Done task + dangling active-task pointer.
+    fs.mkdirSync(path.join(root, '.taskwright', 'handoff'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.taskwright', 'handoff', 'TASK-1.md'), 'prompt');
+    fs.writeFileSync(
+      path.join(root, '.taskwright', 'active-task.json'),
+      JSON.stringify({ taskId: 'TASK-404', setAt: '2026-07-01T00:00:00Z' })
+    );
+
+    const result = await boardDoctorHandler(d);
+    expect(result.healthy).toBe(false);
+    expect(result.findings.map((f) => [f.type, f.taskId]).sort()).toEqual([
+      ['dangling-active-task', 'TASK-404'],
+      ['stale-handoff', 'TASK-1'],
+    ]);
+    // Read-only: the drifted files are untouched.
+    expect(fs.existsSync(path.join(root, '.taskwright', 'handoff', 'TASK-1.md'))).toBe(true);
+    expect(fs.existsSync(path.join(root, '.taskwright', 'active-task.json'))).toBe(true);
   });
 });

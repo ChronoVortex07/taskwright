@@ -65,6 +65,7 @@ import { selectReadyTasks, DEFAULT_CLAIM_STALENESS_HOURS } from '../core/readyTa
 import { resolveClaimAction, stalenessMsFromHours } from '../core/claimResolution';
 import { agentClaimIdentity, worktreeBranchFromPath } from '../core/claimIdentity';
 import { extractPlanFiles, selectDisjointBatch } from '../core/planFiles';
+import { runBoardDoctor, type DoctorFinding } from '../core/boardDoctor';
 
 /**
  * Pure-ish implementations of the Taskwright MCP tools, decoupled from the MCP
@@ -1152,6 +1153,26 @@ export async function nextReadyTasksHandler(
   );
   const byId = new Map(orderedReady.map((t) => [t.id, t]));
   return batchIds.map((id) => toBoardSummary(byId.get(id)!, board));
+}
+
+export interface BoardDoctorResult {
+  healthy: boolean;
+  findings: DoctorFinding[];
+}
+
+/**
+ * `board_doctor`: read-only health check over the board + `.taskwright/` +
+ * `.worktrees/` state (dangling active-task pointer, stale handoffs, orphaned
+ * worktrees, in-flight tasks with no claim, claims whose worktree vanished,
+ * malformed categories, dangling frontmatter continuations). Same core the
+ * extension's activation check and `taskwright.doctor` command run (parity);
+ * repairs are the extension's job — this tool never mutates anything. Use it
+ * to pre-flight the board before orchestrating.
+ */
+export async function boardDoctorHandler(deps: McpHandlerDeps): Promise<BoardDoctorResult> {
+  const repoRoot = path.dirname(deps.backlogPath);
+  const findings = await runBoardDoctor(deps.parser, repoRoot);
+  return { healthy: findings.length === 0, findings };
 }
 
 /** Re-read a just-written task and shape it for return; throws if it vanished. */

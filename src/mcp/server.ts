@@ -31,6 +31,7 @@ import {
   getBoardHandler,
   searchTasksHandler,
   nextReadyTasksHandler,
+  boardDoctorHandler,
   createTaskHandler,
   createCategoryHandler,
   createMilestoneHandler,
@@ -235,6 +236,16 @@ async function main(): Promise<void> {
       },
     },
     async (args) => jsonContent(await nextReadyTasksHandler(deps, args))
+  );
+
+  server.registerTool(
+    'board_doctor',
+    {
+      title: 'Board doctor',
+      description:
+        'Read-only health check over the board and its .taskwright/.worktrees state. Returns { healthy, findings } where each finding is typed (dangling-active-task, stale-handoff, orphaned-worktree, in-flight-no-claim, claim-worktree-vanished, malformed-category, dangling-continuation) with a suggested repair kind. Never mutates anything — repairs run through the extension (taskwright.doctor) with human confirmation. Use this to pre-flight the board before orchestrating work.',
+    },
+    async () => runTool(() => boardDoctorHandler(deps))
   );
 
   server.registerTool(

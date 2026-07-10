@@ -24,6 +24,7 @@ import {
 } from './core/AgentIntegrationDetector';
 import { claimTaskForCurrentUser, releaseTaskClaim } from './providers/claimActions';
 import { dispatchTask } from './providers/dispatchActions';
+import { runBoardDoctorFlow } from './providers/doctorActions';
 import { cancelDispatch } from './core/cancelDispatch';
 import { writeCancellationMarker } from './core/cancellationMarker';
 import { removeWorktree } from './core/finishTask';
@@ -1630,6 +1631,33 @@ export async function activate(context: vscode.ExtensionContext) {
       );
     })
   );
+
+  // Board doctor (TASK-90): on-demand health check with one-click repairs, plus
+  // a silent-when-clean activation-time run. Read-only until the user picks
+  // repairs; every repair routes through the existing writers.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('taskwright.doctor', async () => {
+      if (!parser) {
+        vscode.window.showErrorMessage('No backlog folder found in workspace');
+        return;
+      }
+      try {
+        await runBoardDoctorFlow(
+          { parser, writer, refresh: refreshAllViews },
+          { interactive: true }
+        );
+      } catch (error) {
+        vscode.window.showErrorMessage(`Board doctor failed: ${error}`);
+      }
+    })
+  );
+  if (parser) {
+    const activationParser = parser;
+    void runBoardDoctorFlow(
+      { parser: activationParser, writer, refresh: refreshAllViews },
+      { interactive: false }
+    ).catch((error) => console.error('Taskwright board doctor (activation) failed:', error));
+  }
 
   // Register set/clear active-task commands. The active task is Taskwright's
   // pull-based handoff: it is written to <root>/.taskwright/active-task.json so
