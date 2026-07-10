@@ -20,7 +20,7 @@ bypassing it.
 - **From any session — no board Dispatch required.** Run `/execute-task` from a primary-rooted
   session (optionally naming a task, e.g. `/execute-task TASK-7`) and this skill bootstraps the task's
   isolated worktree for you via `start_task`, then runs the same loop.
-- Not for authoring or decomposing new work — that is `/create-task`. This skill *executes* an
+- Not for authoring or decomposing new work — that is `/create-task`. This skill _executes_ an
   existing task.
 
 ## Subscription safety
@@ -92,7 +92,7 @@ agent. The sub-skills it invokes (`superpowers:executing-plans`, `superpowers:su
       in its `dependencies` / `blockedBy` (if they chain, they are not independent — fall through).
    3. **Otherwise** ⇒ invoke `superpowers:test-driven-development` (write the failing test first,
       then implement).
-   Precedence is **plan > independent-subtasks > TDD**.
+      Precedence is **plan > independent-subtasks > TDD**.
 
 5. **Record progress.** As you go, use `edit_task` to append implementation notes (decisions,
    surprises) and, when done, a final summary. Do **not** call `complete_task` — `request_merge`
@@ -109,10 +109,25 @@ agent. The sub-skills it invokes (`superpowers:executing-plans`, `superpowers:su
      `.worktrees/task-7-add-login`). The `worktree` target tells `request_merge` which linked worktree
      to rebase/verify/merge — without it, `request_merge` aborts because the MCP is rooted in the
      primary tree.
-   Wait for it to return. It rebases onto the base branch, runs the verify commands, waits for its
-   turn in the merge queue (and, in manual-review mode, for the human's approval on the board),
-   fast-forward-merges (or opens a PR), marks the task **Done**, and removes your worktree. Do not
-   merge, commit, or push from the repository root yourself.
+     Wait for it to return. It rebases onto the base branch, runs the verify commands, waits for its
+     turn in the merge queue (and, in manual-review mode, for the human's approval on the board),
+     fast-forward-merges (or opens a PR), marks the task **Done**, and removes your worktree. Do not
+     merge, commit, or push from the repository root yourself.
+
+   **Bounded wait (`waitMinutes`) and the `pending` status.** By default the call blocks until the
+   merge resolves. If a long park is likely (manual-review with a slow human, a deep queue) you may
+   pass `waitMinutes` to bound the wait. On expiry the call returns
+   `{ status: "pending", queuePosition, ticket }` — this is **not** a failure: your work is verified,
+   the queue entry and board status are kept, and nothing needs re-doing. Handle it by **polling or
+   parking**:
+   - **Poll**: run the cancellation check, then call `request_merge` again with the same `taskId`
+     (+ the returned `ticket`, and `waitMinutes` again if you want to stay bounded). The resume is
+     idempotent — no re-enqueue, and verify is skipped when the base branch has not moved.
+   - **Park**: if your session must end, report the task as pending (include the ticket) so a later
+     session — or the human approving on the board — completes the merge; a later `request_merge`
+     with the ticket resumes it, and a `sent_back` return on resume means a reviewer sent the task
+     back while you were parked.
+     Never treat `pending` as an error, and never fall back to merging from the repo root because of it.
 
 ## Cancellation contract
 

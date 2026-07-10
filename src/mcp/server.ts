@@ -20,6 +20,7 @@ import { ClaimService } from '../core/ClaimService';
 import { PlanService } from '../core/PlanService';
 import { TreeFieldService } from '../core/TreeFieldService';
 import { resolveWorkspaceBacklogRoot } from '../core/boardRoot';
+import type { MergeProgress } from '../core/finishTask';
 import {
   getActiveTask,
   claimTaskHandler,
@@ -403,7 +404,7 @@ async function main(): Promise<void> {
     {
       title: 'Request merge',
       description:
-        "Submit a finished task for integration and wait. Normally called from INSIDE your .worktrees/<branch>: it rebases onto the base branch, runs the verify commands, then enqueues you in the shared merge queue. It blocks until you reach the head and (in manual-review mode) a human approves, then fast-forward-merges to the base branch (or opens a PR), completes the task, and removes your worktree. Optionally, a primary-rooted session may pass `worktree` (a branch name or a repo-root-relative .worktrees/<branch> path) to drive the close against THAT worktree instead of the caller's cwd; the target must be a clean, non-detached linked worktree of this repo under .worktrees/. Call this once when the task is committed and clean; do not merge or commit to the repo root yourself.",
+        "Submit a finished task for integration and wait. Normally called from INSIDE your .worktrees/<branch>: it rebases onto the base branch, runs the verify commands, then enqueues you in the shared merge queue. It blocks until you reach the head and (in manual-review mode) a human approves, then fast-forward-merges to the base branch (or opens a PR), completes the task, and removes your worktree. It emits MCP progress notifications during verify and the queue wait, so clients that reset timeouts on progress stay alive. Pass `waitMinutes` to bound the wait: on expiry it returns { status: 'pending', queuePosition, ticket } with the queue entry KEPT — call request_merge again later with the same taskId (+ the ticket) to resume idempotently (no re-enqueue; verify is skipped when the base has not moved). Optionally, a primary-rooted session may pass `worktree` (a branch name or a repo-root-relative .worktrees/<branch> path) to drive the close against THAT worktree instead of the caller's cwd; the target must be a clean, non-detached linked worktree of this repo under .worktrees/. Call this once when the task is committed and clean; do not merge or commit to the repo root yourself.",
       inputSchema: {
         taskId: z.string().describe('Task ID to integrate, e.g. TASK-7.'),
         worktree: z
@@ -418,9 +419,41 @@ async function main(): Promise<void> {
           .describe(
             'Optional per-call verify timeout in minutes (e.g. after measuring a long suite). Overrides the repo default (taskwright.mergeVerifyTimeoutMinutes, 10 min if unset); clamped to the repo-level max when one is configured. Non-positive values are ignored.'
           ),
+        waitMinutes: z
+          .number()
+          .optional()
+          .describe(
+            'Optional cap on the queue/approval wait, in minutes (0 = check once). When exceeded, returns { status: "pending", queuePosition, ticket } instead of blocking; the queue entry and board status are kept, and a later request_merge call for the same task resumes it idempotently. Omit for the fully-blocking default.'
+          ),
+        ticket: z
+          .string()
+          .optional()
+          .describe(
+            'The ticket a previous { status: "pending" } return handed back. Presenting it lets a resume detect a reviewer’s Send back that happened while you were parked (returned as status "sent_back" instead of silently re-submitting).'
+          ),
       },
     },
-    async (args) => runTool(() => requestMergeHandler(deps, args))
+    async (args, extra) => {
+      // Forward core progress as MCP progress notifications — but only when the
+      // client asked for them (sent a progressToken). `progress` is a monotonic
+      // counter (there is no meaningful total for a queue wait).
+      const progressToken = extra._meta?.progressToken;
+      let sequence = 0;
+      const onProgress =
+        progressToken === undefined
+          ? undefined
+          : (p: MergeProgress): void => {
+              void extra
+                .sendNotification({
+                  method: 'notifications/progress',
+                  params: { progressToken, progress: ++sequence, message: p.message },
+                })
+                .catch(() => {
+                  // liveness only — a dropped notification must never break the merge
+                });
+            };
+      return runTool(() => requestMergeHandler(deps, args, onProgress));
+    }
   );
 
   server.registerTool(

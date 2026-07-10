@@ -6,6 +6,7 @@ import {
   markEntryActive,
   isHeadStale,
   positionOf,
+  recordVerifiedHead,
   type QueueEntry,
 } from './mergeQueue';
 import { intermediateStatusForMode, IN_PROGRESS, type MergeConfig } from './mergeConfig';
@@ -304,6 +305,48 @@ export interface BoardOps {
   resetTaskFile(taskId: string): Promise<void>;
 }
 
+/**
+ * A liveness update emitted during `request_merge`'s long phases (TASK-88), so
+ * MCP clients that reset tool timeouts on progress stay alive and the human
+ * sees what the merge is doing. Purely observational — dropping every event
+ * changes nothing.
+ */
+export interface MergeProgress {
+  /** Which long phase is running. */
+  phase: 'verify' | 'queue-wait';
+  /** Human-readable liveness line (what a client should display). */
+  message: string;
+  /** verify: the command line currently running. */
+  command?: string;
+  /** verify: 1-based index of the running command. */
+  commandIndex?: number;
+  /** verify: total number of verify commands. */
+  commandCount?: number;
+  /** verify: whole seconds since this command started. */
+  elapsedSeconds?: number;
+  /** queue-wait: 1-based position in the merge queue. */
+  queuePosition?: number;
+  /** queue-wait: manual-review approval state. */
+  approved?: boolean;
+}
+
+/** Per-call options for {@link requestMerge} (TASK-88). */
+export interface RequestMergeOptions {
+  /**
+   * Cap on the queue/approval wait, in minutes (0 = check once). When exceeded,
+   * requestMerge returns `{ status: 'pending' }` — the queue entry and the
+   * intermediate board status are KEPT — instead of blocking forever. Omit for
+   * the fully-blocking default.
+   */
+  waitMinutes?: number;
+  /**
+   * The `ticket` a previous `pending` return handed back. When presented and the
+   * queue entry has vanished (a reviewer's Send back while the caller was
+   * parked), the resume returns `sent_back` instead of silently re-submitting.
+   */
+  ticket?: string;
+}
+
 export interface FinishDeps {
   /** The worktree cwd the agent runs in. */
   root: string;
@@ -322,6 +365,14 @@ export interface FinishDeps {
   sleep: (ms: number) => Promise<void>;
   /** Base long-poll interval; jittered per iteration. Default 1000ms. */
   pollIntervalMs?: number;
+  /**
+   * Optional observer for long-phase liveness (TASK-88). Fire-and-forget: it is
+   * only consulted when set (no observer ⇒ zero extra sleeps/ticks) and a
+   * throwing observer never breaks the merge.
+   */
+  onProgress?: (progress: MergeProgress) => void;
+  /** Interval between progress heartbeats/verify ticks. Default 10s. */
+  progressIntervalMs?: number;
 }
 
 /**
@@ -340,7 +391,20 @@ export type RequestMergeResult =
   | { status: 'merged'; taskId: string; branch: string }
   | { status: 'pr_opened'; taskId: string; url: string }
   | { status: 'sent_back'; taskId: string; reason: string }
-  | { status: 'aborted'; reason: string; detail?: string; code?: MergeAbortCode };
+  | { status: 'aborted'; reason: string; detail?: string; code?: MergeAbortCode }
+  | {
+      /** waitMinutes elapsed: still queued, nothing failed (TASK-88). The queue
+       *  entry and intermediate board status are kept; call request_merge again
+       *  with the same taskId (+ this ticket) to resume — verify is skipped when
+       *  the base has not moved. */
+      status: 'pending';
+      taskId: string;
+      /** 1-based position in the merge queue at return time. */
+      queuePosition: number;
+      /** Opaque resume token; pass it back so a reviewer's Send back while parked is detected. */
+      ticket: string;
+      message: string;
+    };
 
 /** The current HEAD commit SHA of `cwd`, or null when it cannot be resolved. */
 async function resolveHeadSha(exec: GitExecFn, cwd: string): Promise<string | null> {
@@ -357,14 +421,105 @@ function verifyTimeoutReason(command: string | undefined, timeoutMs: number): st
   return `verify timed out after ${seconds}s on \`${command}\` (raise taskwright.mergeVerifyTimeoutMinutes or pass verifyTimeoutMinutes)`;
 }
 
+/** Invoke the progress observer, swallowing observer errors (fire-and-forget). */
+function safeEmit(deps: FinishDeps, progress: MergeProgress): void {
+  if (!deps.onProgress) return;
+  try {
+    deps.onProgress(progress);
+  } catch {
+    // observational only — a broken observer must never break the merge
+  }
+}
+
 /**
- * The full `request_merge` lifecycle. One blocking call: it suspends on the
- * long-poll until this task is the head AND (auto-mode OR human-approved), then
- * integrates and cleans up. Aborts before enqueue never touch the queue; aborts
- * after enqueue reset the board status and always dequeue.
+ * Run the verify commands, emitting progress (command name, i/n, elapsed ticks
+ * while a command runs) when an observer is attached (TASK-88). With no
+ * observer this is exactly {@link runVerifyCommands} — no extra sleeps, no
+ * behavioral change.
  */
-export async function requestMerge(deps: FinishDeps, taskId: string): Promise<RequestMergeResult> {
+async function runVerifyObserved(deps: FinishDeps, stage: string): Promise<VerifyResult> {
+  const { run, root, config } = deps;
+  if (!deps.onProgress) {
+    return runVerifyCommands(run, root, config.verifyCommands, config.verifyTimeoutMs);
+  }
+  const commands = config.verifyCommands;
+  const tickMs = deps.progressIntervalMs ?? 10_000;
+  for (let i = 0; i < commands.length; i++) {
+    const command = commands[i];
+    const startMs = deps.now().getTime();
+    const emit = (elapsedSeconds: number): void =>
+      safeEmit(deps, {
+        phase: 'verify',
+        command,
+        commandIndex: i + 1,
+        commandCount: commands.length,
+        elapsedSeconds,
+        message: `${stage}: running \`${command}\` (${i + 1}/${commands.length}, ${elapsedSeconds}s elapsed)`,
+      });
+    emit(0);
+    // Race the command against tick-length sleeps so a long-running suite still
+    // produces liveness every tick (clients reset tool timeouts on progress).
+    const running = run(root, command, config.verifyTimeoutMs).then((result) => ({
+      settled: true as const,
+      result,
+    }));
+    let outcome: Awaited<ReturnType<RunFn>>;
+    for (;;) {
+      const winner = await Promise.race([
+        running,
+        deps.sleep(tickMs).then(() => ({ settled: false as const })),
+      ]);
+      if (winner.settled) {
+        outcome = winner.result;
+        break;
+      }
+      emit(Math.max(0, Math.round((deps.now().getTime() - startMs) / 1000)));
+    }
+    if (outcome.code !== 0 || outcome.timedOut) {
+      return {
+        ok: false,
+        failedCommand: command,
+        output: `${outcome.stdout}\n${outcome.stderr}`.trim(),
+        ...(outcome.timedOut ? { timedOut: true } : {}),
+      };
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * The full `request_merge` lifecycle. By default one blocking call: it suspends
+ * on the long-poll until this task is the head AND (auto-mode OR
+ * human-approved), then integrates and cleans up. Aborts before enqueue never
+ * touch the queue; aborts after enqueue reset the board status and always
+ * dequeue.
+ *
+ * TASK-88 unpins the wait from the caller's process: with `opts.waitMinutes`
+ * the wait is bounded — on expiry the call returns `{ status: 'pending' }`,
+ * KEEPING the queue entry and the intermediate board status, and a later call
+ * for the same task resumes that entry idempotently (no re-enqueue, and no
+ * re-verify when the post-rebase HEAD still matches the recorded verified sha).
+ */
+export async function requestMerge(
+  deps: FinishDeps,
+  taskId: string,
+  opts?: RequestMergeOptions
+): Promise<RequestMergeResult> {
   const { exec, run, queue, board, config, root, primaryRoot, branch, worktreeRel } = deps;
+
+  // Resume detection (TASK-88): a previous call may have returned 'pending',
+  // leaving our entry queued. A presented ticket with NO surviving entry means
+  // a reviewer sent the task back while the caller was parked — surface that
+  // instead of silently re-submitting.
+  const existing = queue.read().entries.find((e) => e.taskId === taskId);
+  if (!existing && opts?.ticket !== undefined) {
+    return {
+      status: 'sent_back',
+      taskId,
+      reason: 'A reviewer sent this task back for changes while it was parked in the queue.',
+    };
+  }
+  const resumed = existing !== undefined;
 
   // 1. Validate + verify up front (aborts here never enqueue).
   if (!(await isWorktreeClean(exec, root))) {
@@ -384,28 +539,28 @@ export async function requestMerge(deps: FinishDeps, taskId: string): Promise<Re
       code: 'rebase_conflict',
     };
   }
-  const preVerify = await runVerifyCommands(
-    run,
-    root,
-    config.verifyCommands,
-    config.verifyTimeoutMs
-  );
-  if (!preVerify.ok) {
-    return {
-      status: 'aborted',
-      reason: preVerify.timedOut
-        ? verifyTimeoutReason(preVerify.failedCommand, config.verifyTimeoutMs)
-        : `Verification failed on \`${preVerify.failedCommand}\`; fix it and call request_merge again.`,
-      detail: preVerify.output,
-      code: preVerify.timedOut ? 'verify_timeout' : 'verify_failed',
-    };
-  }
-  // Record the commit the verify passed against. At queue head, when the
-  // post-wait rebase is a no-op (base didn't move ⇒ HEAD unchanged), the tree
-  // to merge is byte-identical to the one just verified — re-verifying it is
-  // redundant. Comparing HEAD (not the base ref) is race-free: verified
-  // content == merged content, by construction. Unresolvable ⇒ always re-verify.
+  // The commit any verify verdict applies to. Comparing HEAD (not the base ref)
+  // is race-free: verified content == merged content, by construction.
+  // Unresolvable ⇒ always (re-)verify.
   const verifiedHeadSha = await resolveHeadSha(exec, root);
+  // Resume skip (TASK-88): the queue entry records the HEAD its verify passed
+  // against; when the post-rebase HEAD still matches, the tree is byte-identical
+  // to the one already verified — re-verifying is redundant.
+  const verifyStillCurrent =
+    verifiedHeadSha !== null && existing?.verifiedHeadSha === verifiedHeadSha;
+  if (!verifyStillCurrent) {
+    const preVerify = await runVerifyObserved(deps, 'verify');
+    if (!preVerify.ok) {
+      return {
+        status: 'aborted',
+        reason: preVerify.timedOut
+          ? verifyTimeoutReason(preVerify.failedCommand, config.verifyTimeoutMs)
+          : `Verification failed on \`${preVerify.failedCommand}\`; fix it and call request_merge again.`,
+        detail: preVerify.output,
+        code: preVerify.timedOut ? 'verify_timeout' : 'verify_failed',
+      };
+    }
+  }
 
   // 2. Enqueue + park in the mode's intermediate status (inside try so dequeue covers failures).
   const entry: QueueEntry = {
@@ -419,15 +574,45 @@ export async function requestMerge(deps: FinishDeps, taskId: string): Promise<Re
     activeAt: null,
   };
 
+  // A 'pending' return parks the entry for a later resume — the ONLY exit that
+  // must not dequeue.
+  let keepQueued = false;
   try {
-    queue.mutate((q) => enqueueEntry(q, entry));
-    await board.setStatus(taskId, intermediateStatusForMode(config.mode));
+    queue.mutate((q) => enqueueEntry(q, entry)); // idempotent — a resume keeps its original slot
+    if (verifiedHeadSha !== null) {
+      queue.mutate((q) => recordVerifiedHead(q, taskId, verifiedHeadSha));
+    }
+    // A resume is already parked in the intermediate status; don't re-write it
+    // (each write bumps updated_date, polluting board merge resolution).
+    if (!resumed) await board.setStatus(taskId, intermediateStatusForMode(config.mode));
 
-    // 3. Wait for the green light.
-    const waited = await waitForTurn(deps, taskId);
+    // 3. Wait for the green light (bounded when waitMinutes is set).
+    const deadlineMs =
+      opts?.waitMinutes !== undefined ? deps.now().getTime() + opts.waitMinutes * 60_000 : null;
+    const waited = await waitForTurn(deps, taskId, deadlineMs);
     if (waited === 'sent_back') {
       await board.setStatus(taskId, IN_PROGRESS);
       return { status: 'sent_back', taskId, reason: 'A reviewer sent this task back for changes.' };
+    }
+    if (waited === 'wait_timeout') {
+      // Pending is not an abort: keep the queue entry and the parked board
+      // status so a later request_merge call resumes exactly where we left off.
+      keepQueued = true;
+      const q = queue.read();
+      const position = positionOf(q, taskId);
+      const submittedAt =
+        q.entries.find((e) => e.taskId === taskId)?.submittedAt ?? entry.submittedAt;
+      const awaitingApproval = config.mode === 'manual-review';
+      return {
+        status: 'pending',
+        taskId,
+        queuePosition: position,
+        ticket: `${taskId}@${submittedAt}`,
+        message:
+          `Still waiting in the merge queue (position ${position}` +
+          (awaitingApproval ? ', awaiting human approval on the board' : '') +
+          `). The queue entry is kept — call request_merge again with the same taskId and this ticket to resume; verify is skipped when the base has not moved.`,
+      };
     }
 
     // Mark active so the stale-head reclaim protects us while we merge.
@@ -450,12 +635,7 @@ export async function requestMerge(deps: FinishDeps, taskId: string): Promise<Re
     const rebaseWasNoOp =
       verifiedHeadSha !== null && headSha !== null && headSha === verifiedHeadSha;
     if (!rebaseWasNoOp) {
-      const reVerify = await runVerifyCommands(
-        run,
-        root,
-        config.verifyCommands,
-        config.verifyTimeoutMs
-      );
+      const reVerify = await runVerifyObserved(deps, 're-verify');
       if (!reVerify.ok) {
         await board.setStatus(taskId, IN_PROGRESS);
         return {
@@ -500,18 +680,29 @@ export async function requestMerge(deps: FinishDeps, taskId: string): Promise<Re
     return { status: 'merged', taskId, branch };
   } finally {
     // 7. Dequeue — unblocks the next head. Safe/no-op if already removed.
-    queue.mutate((q) => removeEntry(q, taskId));
+    // A 'pending' return is the one exit that parks the entry instead (TASK-88).
+    if (!keepQueued) queue.mutate((q) => removeEntry(q, taskId));
   }
 }
 
 /**
  * Long-poll the shared queue until this task may proceed. Returns 'proceed' when
  * it is the head and (auto-mode or approved); 'sent_back' when its entry vanished
- * (a reviewer's Send back). Reclaims a stale foreign head each iteration.
+ * (a reviewer's Send back); 'wait_timeout' when `deadlineMs` passed first
+ * (TASK-88 — only when the caller bounded the wait). Reclaims a stale foreign
+ * head each iteration, and emits queue-wait progress (position, approval state)
+ * on change or heartbeat when an observer is attached.
  */
-async function waitForTurn(deps: FinishDeps, taskId: string): Promise<'proceed' | 'sent_back'> {
+async function waitForTurn(
+  deps: FinishDeps,
+  taskId: string,
+  deadlineMs: number | null = null
+): Promise<'proceed' | 'sent_back' | 'wait_timeout'> {
   const { queue, config, now } = deps;
   const base = deps.pollIntervalMs ?? 1000;
+  const heartbeatMs = deps.progressIntervalMs ?? 10_000;
+  let lastSignature = '';
+  let lastEmitMs = -Infinity;
   for (;;) {
     const q = queue.read();
     // positionOf returns 0 only when our entry is absent — a reviewer's Send back
@@ -529,6 +720,27 @@ async function waitForTurn(deps: FinishDeps, taskId: string): Promise<'proceed' 
     const gated = config.mode !== 'manual-review';
     const approved = q.entries.find((e) => e.taskId === taskId)?.approved === true;
     if (isHead && (gated || approved)) return 'proceed';
+
+    if (deadlineMs !== null && now().getTime() >= deadlineMs) return 'wait_timeout';
+
+    if (deps.onProgress) {
+      const position = positionOf(q, taskId);
+      const signature = `${position}:${approved}`;
+      const nowMs = now().getTime();
+      if (signature !== lastSignature || nowMs - lastEmitMs >= heartbeatMs) {
+        const awaitingApproval = config.mode === 'manual-review' && !approved;
+        safeEmit(deps, {
+          phase: 'queue-wait',
+          queuePosition: position,
+          approved,
+          message: awaitingApproval
+            ? `Waiting in the merge queue at position ${position}; awaiting human approval on the board.`
+            : `Waiting in the merge queue at position ${position}.`,
+        });
+        lastSignature = signature;
+        lastEmitMs = nowMs;
+      }
+    }
 
     await deps.sleep(base + Math.floor(Math.random() * base)); // jittered
   }

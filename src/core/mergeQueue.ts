@@ -19,6 +19,13 @@ export interface QueueEntry {
   active: boolean;
   /** ISO-8601 time the head went active, or null. */
   activeAt: string | null;
+  /**
+   * HEAD commit the verify commands last passed against (TASK-88). A re-entrant
+   * `request_merge` resume skips re-verifying when the post-rebase HEAD still
+   * matches — identical tree, identical verdict. Absent on legacy entries ⇒
+   * always re-verify.
+   */
+  verifiedHeadSha?: string;
 }
 
 export interface MergeQueue {
@@ -68,6 +75,11 @@ export function removeEntry(queue: MergeQueue, taskId: string): MergeQueue {
 /** Mark a task as the active head performing its merge, at ISO time `atIso`. */
 export function markEntryActive(queue: MergeQueue, taskId: string, atIso: string): MergeQueue {
   return patchEntry(queue, taskId, { active: true, activeAt: atIso });
+}
+
+/** Record the HEAD sha the verify commands passed against (no-op when absent). */
+export function recordVerifiedHead(queue: MergeQueue, taskId: string, sha: string): MergeQueue {
+  return patchEntry(queue, taskId, { verifiedHeadSha: sha });
 }
 
 /**

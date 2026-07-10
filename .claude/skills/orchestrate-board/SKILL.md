@@ -9,7 +9,7 @@ allowed-tools: mcp__taskwright__next_ready_tasks, mcp__taskwright__start_task, m
 Drive the whole Taskwright board, not one task: repeatedly pull the **ready** tasks, run each end
 to end in its own isolated worktree (yourself sequentially, or via parallel in-session subagents),
 and stop on a clear condition. Parity: every step is one a human can drive from the board (Dispatch
-/ Claim / Request merge) — you are automating the *sequence across many tasks*, not bypassing review
+/ Claim / Request merge) — you are automating the _sequence across many tasks_, not bypassing review
 or the merge queue. Each individual task is still executed by `/execute-task`; this skill is the loop
 around it.
 
@@ -19,7 +19,7 @@ around it.
   board's ready tasks.
 - Best when several tasks are ready and independent and the user wants them all taken to Done.
 - **Not** for a single task — use `/execute-task`. **Not** for authoring or decomposing new work —
-  use `/create-task`. This skill only *runs existing ready tasks*.
+  use `/create-task`. This skill only _runs existing ready tasks_.
 
 ## Subscription safety
 
@@ -31,8 +31,8 @@ plus local Bash/Read/Grep/Glob.
 ## Key facts you rely on
 
 - **The ready set is dependency-independent — but not necessarily FILE-independent.**
-  `next_ready_tasks` returns only tasks whose *every* dependency is Done, so two returned tasks can
-  never depend on each other and are safe to run **concurrently** as far as *ordering* goes. They can
+  `next_ready_tasks` returns only tasks whose _every_ dependency is Done, so two returned tasks can
+  never depend on each other and are safe to run **concurrently** as far as _ordering_ goes. They can
   still edit the **same files**, which collides at merge time. So for the parallel batch, pull it with
   **`next_ready_tasks { parallelSafe: true, limit: cap }`** — it returns only tasks whose attached-plan
   file footprints are pairwise disjoint (a task with no plan / unknown footprint comes back solo). The
@@ -40,7 +40,7 @@ plus local Bash/Read/Grep/Glob.
   are the dispatched agent's to resolve during `request_merge`'s rebase.
 - **The merge queue serializes merges for you.** Each task's `/execute-task` closes with
   `request_merge`, which waits its turn in the shared merge queue and merges under right-of-way. You
-  never order merges yourself — parallel workers do their *work* concurrently and their *merges*
+  never order merges yourself — parallel workers do their _work_ concurrently and their _merges_
   serialize automatically.
 - **Claims are advisory and are your anti-collision guard.** `next_ready_tasks` already excludes
   tasks a live session holds or that are active in the merge queue. Every worker still **claims before
@@ -69,7 +69,7 @@ Repeat rounds until a stop condition fires:
    - Call `get_board`. If it shows **no** non-Done tasks → **Drained**: report Done and stop.
    - If non-Done tasks remain but are all `locked`/blocked by not-yet-Done dependencies and nothing is
      in flight → **All-blocked**: report the blocked frontier (which tasks, blocked by what) and stop.
-   Otherwise (ready set non-empty) continue.
+     Otherwise (ready set non-empty) continue.
 
 3. **Choose the batch.** In **parallel** mode, the `parallelSafe` call in step 1 already returned a
    conflict-safe, cap-sized batch — dispatch exactly those. In **sequential** mode take the single top
@@ -86,6 +86,15 @@ Repeat rounds until a stop condition fires:
 
 5. **Reconcile results.** For each runner's returned status:
    - `done` → count it; its dependents may now be ready.
+   - `pending` → the task's `request_merge` hit its `waitMinutes` bound while parked in the merge
+     queue (usually awaiting human approval in manual-review mode). **Not a failure**: the work is
+     committed and verified, and the queue entry is kept. Do NOT `release_task` and do NOT
+     re-dispatch. Park it on a pending list (task ID + `ticket` + worktree) and on later rounds — or
+     at the end of the run — resume it from this session with
+     `request_merge { taskId, worktree, ticket, waitMinutes }`: the resume is idempotent (no
+     re-enqueue; verify is skipped when the base has not moved). A `sent_back` on resume means a
+     reviewer sent it back while parked — surface it like a failure (the board already reset it to
+     In Progress). Pending tasks count as **in flight** for the stop conditions, not blocked.
    - `surrendered` → another session held it; skip (not a failure).
    - `cancelled` → a human cancelled the dispatch; note it and do not retry (the extension already
      tore the worktree down and released the claim).
@@ -135,9 +144,13 @@ Do this, in order:
 5. On any unrecoverable failure (a verify gate you cannot make pass, an unresolvable rebase conflict,
    a crash), call `release_task` with { "taskId": "{{taskId}}" } so the task returns to the ready
    pool, and report {"status":"failed","taskId":"{{taskId}}","reason":"<one line>"}.
+6. If `request_merge` returns {"status":"pending", ...} (a bounded wait expired while parked in the
+   merge queue), that is NOT a failure: do NOT `release_task`, do NOT retry the work. Report
+   {"status":"pending","taskId":"{{taskId}}","ticket":"<ticket>","worktree":"<worktree>"} so the
+   orchestrator can resume the merge later.
 
 Return ONLY a compact JSON object:
-{"status":"done"|"failed"|"surrendered"|"cancelled","taskId":"{{taskId}}","summary":"<1-2 sentences>"}
+{"status":"done"|"failed"|"surrendered"|"cancelled"|"pending","taskId":"{{taskId}}","summary":"<1-2 sentences>"}
 ```
 
 In **self-driven sequential** mode you perform these same five steps inline for the one task, instead
@@ -147,10 +160,12 @@ of handing them to a subagent.
 
 - One round = pull ready → run a batch → reconcile → refresh; loop until a stop condition.
 - The ready set is dependency-independent; for the parallel batch use `next_ready_tasks { parallelSafe:
-  true, limit: cap }` so co-dispatched tasks are also FILE-disjoint (avoid merge conflicts). Cap the
+true, limit: cap }` so co-dispatched tasks are also FILE-disjoint (avoid merge conflicts). Cap the
   fan-out (default 3), don't swarm. Any conflict that still slips through is the agent's to rebase away.
 - Claim before work; a surrendered claim means skip, never double-execute.
 - Let `request_merge` (inside `/execute-task`) serialize merges — never order merges yourself.
 - Failures: surface + `release_task` + move on; no auto-retry unless the user asks.
+- `pending` is not a failure: keep the ticket, never release/re-dispatch, resume the merge later with
+  `request_merge { taskId, worktree, ticket }`.
 - Stop on drained / all-blocked / user budget / no-progress — and always report what remains.
 - Subscription-safe: parallelism is `Task` subagents in-session; never `claude -p`.

@@ -11,6 +11,7 @@ import {
   markEntryActive,
   positionOf,
   isHeadStale,
+  recordVerifiedHead,
   mergeQueuePath,
   MergeQueueStore,
   nodeQueueFs,
@@ -62,6 +63,24 @@ describe('pure queue transforms', () => {
     expect(q.entries[0].activeAt).toBe('2026-07-01T12:05:00.000Z');
     q = removeEntry(q, 'TASK-1');
     expect(q.entries.map((e) => e.taskId)).toEqual(['TASK-2']);
+  });
+
+  it('recordVerifiedHead stamps the sha on the matching entry only (TASK-88)', () => {
+    let q: MergeQueue = EMPTY_QUEUE;
+    q = enqueueEntry(q, entry('TASK-1'));
+    q = enqueueEntry(q, entry('TASK-2'));
+    q = recordVerifiedHead(q, 'TASK-2', 'sha-2');
+    expect(q.entries.find((e) => e.taskId === 'TASK-2')?.verifiedHeadSha).toBe('sha-2');
+    expect(q.entries.find((e) => e.taskId === 'TASK-1')?.verifiedHeadSha).toBeUndefined();
+    // absent task ⇒ no-op, no throw
+    expect(recordVerifiedHead(q, 'TASK-9', 'x').entries).toHaveLength(2);
+  });
+
+  it('verifiedHeadSha round-trips through the store (TASK-88)', () => {
+    const files: Record<string, string> = {};
+    const store = new MergeQueueStore('/q.json', memFs(files));
+    store.mutate((q) => enqueueEntry(q, entry('TASK-1', { verifiedHeadSha: 'abc123' })));
+    expect(store.read().entries[0].verifiedHeadSha).toBe('abc123');
   });
 
   it('isHeadStale is true only when the head is active beyond the timeout', () => {

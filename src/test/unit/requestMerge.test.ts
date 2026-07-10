@@ -6,6 +6,7 @@ import {
   type BoardOps,
   type GitExecFn,
   type RunFn,
+  type MergeProgress,
 } from '../../core/finishTask';
 import {
   MergeQueueStore,
@@ -460,6 +461,288 @@ describe('requestMerge — abort at ff-merge resets status and dequeues', () => 
     const r = await requestMerge(deps({ queue: q.store, board: b, config: cfg, exec }), 'TASK-7');
     expect(r.status).toBe('merged');
     expect(q.store.read().entries).toHaveLength(0);
+  });
+});
+
+describe('requestMerge — waitMinutes returns pending instead of blocking (TASK-88)', () => {
+  it('returns pending with queuePosition + ticket when the wait exceeds waitMinutes, keeping the entry and status', async () => {
+    const q = memQueue();
+    const b = board();
+    // manual-review, never approved; the clock advances 30s per poll.
+    let t = Date.parse('2026-07-01T12:00:00.000Z');
+    const d = deps({
+      queue: q.store,
+      board: b,
+      now: () => new Date(t),
+      sleep: async () => {
+        t += 30_000;
+      },
+    });
+    const r = await requestMerge(d, 'TASK-7', { waitMinutes: 1 });
+    expect(r.status).toBe('pending');
+    if (r.status === 'pending') {
+      expect(r.taskId).toBe('TASK-7');
+      expect(r.queuePosition).toBe(1);
+      expect(r.ticket).toContain('TASK-7@');
+    }
+    // The queue entry is KEPT (no dequeue) and the board stays parked in the
+    // intermediate status — pending is not an abort.
+    expect(q.store.read().entries.map((e) => e.taskId)).toEqual(['TASK-7']);
+    expect(b.statuses).toEqual(['Pending Review']);
+  });
+
+  it('waitMinutes: 0 checks once and returns pending immediately when not proceedable', async () => {
+    const q = memQueue();
+    const sleep = vi.fn(async () => {});
+    const r = await requestMerge(deps({ queue: q.store, sleep }), 'TASK-7', { waitMinutes: 0 });
+    expect(r.status).toBe('pending');
+    expect(sleep).not.toHaveBeenCalled();
+    expect(q.store.read().entries).toHaveLength(1);
+  });
+
+  it('still merges within waitMinutes when the gate opens in time', async () => {
+    const q = memQueue();
+    let t = Date.parse('2026-07-01T12:00:00.000Z');
+    let polls = 0;
+    const sleep = async (): Promise<void> => {
+      t += 1_000;
+      polls++;
+      if (polls === 1) {
+        q.store.mutate((cur) => ({
+          version: 1,
+          entries: cur.entries.map((e) => ({ ...e, approved: true })),
+        }));
+      }
+    };
+    const r = await requestMerge(
+      deps({ queue: q.store, now: () => new Date(t), sleep }),
+      'TASK-7',
+      {
+        waitMinutes: 5,
+      }
+    );
+    expect(r.status).toBe('merged');
+    expect(q.store.read().entries).toHaveLength(0);
+  });
+});
+
+describe('requestMerge — re-entrant resume of a pending queue entry (TASK-88)', () => {
+  /** Single verify command so run-call counts map 1:1 to verify passes. */
+  const oneCommand: MergeConfig = {
+    ...DEFAULT_MERGE_CONFIG,
+    mode: 'auto-merge',
+    verifyCommands: ['bun run test'],
+  };
+
+  it('resumes the existing entry without re-enqueueing and skips verify when the base did not move', async () => {
+    const q = memQueue();
+    q.store.mutate((cur) =>
+      enqueueEntry(cur, {
+        taskId: 'TASK-7',
+        branch: 'task-7-x',
+        worktree: '.worktrees/task-7-x',
+        mode: 'auto-merge',
+        submittedAt: '2026-07-01T11:30:00.000Z',
+        approved: false,
+        active: false,
+        activeAt: null,
+        verifiedHeadSha: 'headsha',
+      })
+    );
+    let verifyRuns = 0;
+    const run: RunFn = async () => {
+      verifyRuns++;
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    const exec = okGit((a) =>
+      a[0] === 'rev-parse' && a[1] === 'HEAD' ? { stdout: 'headsha\n' } : undefined
+    );
+    const b = board();
+    const r = await requestMerge(
+      deps({ queue: q.store, board: b, run, exec, config: oneCommand }),
+      'TASK-7'
+    );
+    expect(r.status).toBe('merged');
+    expect(verifyRuns).toBe(0); // recorded sha matches HEAD ⇒ no pre-verify, no head re-verify
+    // Resume does NOT re-park the task in the intermediate status.
+    expect(b.statuses).toEqual(['Done']);
+    expect(q.store.read().entries).toHaveLength(0);
+  });
+
+  it('re-verifies on resume when the base moved (HEAD differs from the recorded sha)', async () => {
+    const q = memQueue();
+    q.store.mutate((cur) =>
+      enqueueEntry(cur, {
+        taskId: 'TASK-7',
+        branch: 'task-7-x',
+        worktree: '.worktrees/task-7-x',
+        mode: 'auto-merge',
+        submittedAt: '2026-07-01T11:30:00.000Z',
+        approved: false,
+        active: false,
+        activeAt: null,
+        verifiedHeadSha: 'oldsha',
+      })
+    );
+    let verifyRuns = 0;
+    const run: RunFn = async () => {
+      verifyRuns++;
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    const exec = okGit((a) =>
+      a[0] === 'rev-parse' && a[1] === 'HEAD' ? { stdout: 'newsha\n' } : undefined
+    );
+    const r = await requestMerge(deps({ queue: q.store, run, exec, config: oneCommand }), 'TASK-7');
+    expect(r.status).toBe('merged');
+    expect(verifyRuns).toBe(1); // fresh verify against the moved base; head re-verify skipped (no-op)
+  });
+
+  it('a pending call then a resume runs verify exactly once and keeps one ticket', async () => {
+    const q = memQueue();
+    let verifyRuns = 0;
+    const run: RunFn = async () => {
+      verifyRuns++;
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    const exec = okGit((a) =>
+      a[0] === 'rev-parse' && a[1] === 'HEAD' ? { stdout: 'headsha\n' } : undefined
+    );
+    const cfg: MergeConfig = { ...DEFAULT_MERGE_CONFIG, verifyCommands: ['bun run test'] };
+    // First call: manual-review, never approved, waitMinutes 0 ⇒ pending.
+    const first = await requestMerge(deps({ queue: q.store, run, exec, config: cfg }), 'TASK-7', {
+      waitMinutes: 0,
+    });
+    expect(first.status).toBe('pending');
+    expect(verifyRuns).toBe(1);
+    const firstTicket = first.status === 'pending' ? first.ticket : '';
+
+    // Second call (still unapproved): resumes the SAME entry, no duplicate verify.
+    const second = await requestMerge(deps({ queue: q.store, run, exec, config: cfg }), 'TASK-7', {
+      waitMinutes: 0,
+      ticket: firstTicket,
+    });
+    expect(second.status).toBe('pending');
+    if (second.status === 'pending') expect(second.ticket).toBe(firstTicket);
+    expect(verifyRuns).toBe(1); // base unchanged ⇒ verify skipped on resume
+    expect(q.store.read().entries).toHaveLength(1); // never duplicated
+  });
+
+  it('returns sent_back when a ticket is presented but the entry vanished (reviewer send-back while parked)', async () => {
+    const q = memQueue();
+    let verifyRuns = 0;
+    const run: RunFn = async () => {
+      verifyRuns++;
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    const r = await requestMerge(deps({ queue: q.store, run }), 'TASK-7', {
+      ticket: 'TASK-7@2026-07-01T11:30:00.000Z',
+    });
+    expect(r.status).toBe('sent_back');
+    expect(verifyRuns).toBe(0); // detected before any expensive work
+    expect(q.store.read().entries).toHaveLength(0); // never re-enqueued
+  });
+});
+
+describe('requestMerge — onProgress (TASK-88)', () => {
+  it('emits verify progress with command name, index, and count', async () => {
+    const events: MergeProgress[] = [];
+    const cfg: MergeConfig = {
+      ...DEFAULT_MERGE_CONFIG,
+      mode: 'auto-merge',
+      verifyCommands: ['cmd-a', 'cmd-b'],
+    };
+    const r = await requestMerge(
+      deps({ config: cfg, onProgress: (e) => events.push(e) }),
+      'TASK-7'
+    );
+    expect(r.status).toBe('merged');
+    const verify = events.filter((e) => e.phase === 'verify');
+    expect(
+      verify.some((e) => e.command === 'cmd-a' && e.commandIndex === 1 && e.commandCount === 2)
+    ).toBe(true);
+    expect(verify.some((e) => e.command === 'cmd-b' && e.commandIndex === 2)).toBe(true);
+    expect(verify.every((e) => typeof e.message === 'string' && e.message.length > 0)).toBe(true);
+  });
+
+  it('emits elapsed ticks while a long verify command runs', async () => {
+    const events: MergeProgress[] = [];
+    let t = Date.parse('2026-07-01T12:00:00.000Z');
+    let resolveRun!: (v: { code: number; stdout: string; stderr: string }) => void;
+    const run: RunFn = () =>
+      new Promise((res) => {
+        resolveRun = res;
+      });
+    let ticks = 0;
+    const sleep = async (): Promise<void> => {
+      ticks++;
+      t += 10_000;
+      if (ticks >= 2) resolveRun({ code: 0, stdout: '', stderr: '' });
+    };
+    const cfg: MergeConfig = {
+      ...DEFAULT_MERGE_CONFIG,
+      mode: 'auto-merge',
+      verifyCommands: ['slow suite'],
+    };
+    // Constant HEAD so the queue-head re-verify is skipped (run is called once).
+    const exec = okGit((a) =>
+      a[0] === 'rev-parse' && a[1] === 'HEAD' ? { stdout: 'headsha\n' } : undefined
+    );
+    const r = await requestMerge(
+      deps({
+        config: cfg,
+        run,
+        exec,
+        sleep,
+        now: () => new Date(t),
+        onProgress: (e) => events.push(e),
+        progressIntervalMs: 5_000,
+      }),
+      'TASK-7'
+    );
+    expect(r.status).toBe('merged');
+    const ticksEmitted = events.filter(
+      (e) => e.phase === 'verify' && (e.elapsedSeconds ?? 0) >= 10
+    );
+    expect(ticksEmitted.length).toBeGreaterThanOrEqual(1);
+    expect(ticksEmitted[0].command).toBe('slow suite');
+  });
+
+  it('emits queue-wait progress with position and approval state', async () => {
+    const q = memQueue();
+    const events: MergeProgress[] = [];
+    // No verify commands: the verify ticker also consumes deps.sleep when an
+    // observer is attached, and this fake must only serve the queue poll.
+    const cfg: MergeConfig = { ...DEFAULT_MERGE_CONFIG, verifyCommands: [] };
+    const sleep = async (): Promise<void> => {
+      q.store.mutate((cur) => ({
+        version: 1,
+        entries: cur.entries.map((e) => ({ ...e, approved: true })),
+      }));
+    };
+    const r = await requestMerge(
+      deps({ queue: q.store, config: cfg, sleep, onProgress: (e) => events.push(e) }),
+      'TASK-7'
+    );
+    expect(r.status).toBe('merged');
+    const waits = events.filter((e) => e.phase === 'queue-wait');
+    expect(waits.length).toBeGreaterThanOrEqual(1);
+    expect(waits[0].queuePosition).toBe(1);
+    expect(waits[0].approved).toBe(false);
+    expect(waits[0].message).toMatch(/approval/i);
+  });
+
+  it('a throwing onProgress observer never breaks the merge', async () => {
+    const cfg: MergeConfig = { ...DEFAULT_MERGE_CONFIG, mode: 'auto-merge' };
+    const r = await requestMerge(
+      deps({
+        config: cfg,
+        onProgress: () => {
+          throw new Error('observer exploded');
+        },
+      }),
+      'TASK-7'
+    );
+    expect(r.status).toBe('merged');
   });
 });
 

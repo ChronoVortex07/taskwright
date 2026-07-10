@@ -58,6 +58,7 @@ import {
   type GitExecFn,
   type RunFn,
   type RequestMergeResult,
+  type MergeProgress,
 } from '../core/finishTask';
 import { worktreePathFor } from '../core/WorktreeService';
 import { selectReadyTasks, DEFAULT_CLAIM_STALENESS_HOURS } from '../core/readyTasks';
@@ -405,11 +406,21 @@ async function resolveWorktreeTarget(
 /**
  * `request_merge`: submit the active task for integration and block until it is
  * merged / a PR is opened / it is sent back — the single closing call an agent
- * makes from inside its worktree.
+ * makes from inside its worktree. TASK-88: `waitMinutes` bounds the queue wait
+ * (expiry returns `{ status: 'pending' }` with a resume ticket, keeping the
+ * queue entry), and `onProgress` receives liveness updates during verify and
+ * the queue wait for the transport to forward as MCP progress notifications.
  */
 export async function requestMergeHandler(
   deps: McpHandlerDeps,
-  args: { taskId: string; worktree?: string; verifyTimeoutMinutes?: number }
+  args: {
+    taskId: string;
+    worktree?: string;
+    verifyTimeoutMinutes?: number;
+    waitMinutes?: number;
+    ticket?: string;
+  },
+  onProgress?: (progress: MergeProgress) => void
 ): Promise<RequestMergeResult> {
   const exec = deps.gitExec ?? defaultGitExec;
   const run = deps.shellRun ?? defaultShellRun;
@@ -475,6 +486,15 @@ export async function requestMergeHandler(
 
   const board = deps.board ?? makePrimaryBoard(facts.primaryRoot, exec);
 
+  // TASK-88: a non-negative finite waitMinutes bounds the queue wait (0 = check
+  // once); anything else keeps the fully-blocking default.
+  const waitMinutes =
+    typeof args.waitMinutes === 'number' &&
+    Number.isFinite(args.waitMinutes) &&
+    args.waitMinutes >= 0
+      ? args.waitMinutes
+      : undefined;
+
   return requestMerge(
     {
       root,
@@ -488,8 +508,12 @@ export async function requestMergeHandler(
       run,
       now: deps.now ?? (() => new Date()),
       sleep: deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))),
+      onProgress,
     },
-    args.taskId
+    args.taskId,
+    waitMinutes !== undefined || args.ticket !== undefined
+      ? { waitMinutes, ticket: args.ticket }
+      : undefined
   );
 }
 

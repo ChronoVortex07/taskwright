@@ -18,7 +18,7 @@ import { ClaimService } from '../../core/ClaimService';
 import { PlanService } from '../../core/PlanService';
 import { TreeFieldService } from '../../core/TreeFieldService';
 import { requestMergeHandler, getActiveTask, type McpHandlerDeps } from '../../mcp/handlers';
-import type { GitExecFn, RunFn } from '../../core/finishTask';
+import type { GitExecFn, RunFn, MergeProgress } from '../../core/finishTask';
 import type { QueueFsDeps } from '../../core/mergeQueue';
 
 /** In-memory QueueFsDeps backed by a plain object — no vi.mock needed. */
@@ -274,6 +274,49 @@ describe('requestMergeHandler', () => {
     );
     expect(r.status).toBe('merged');
     expect(f.timeouts.every((t) => t === 720_000)).toBe(true);
+  });
+
+  it('returns pending (entry kept) when waitMinutes elapses before approval (TASK-88)', async () => {
+    const primaryRoot = path.join(tmpDir, 'primary');
+    const root = path.join(primaryRoot, '.worktrees', 'task-7-x');
+    fs.mkdirSync(root, { recursive: true });
+    scaffoldBacklog(root);
+    const memStore: Record<string, string> = {};
+    const commonDir = `${primaryRoot}/.git`;
+    memStore[path.join(commonDir, 'taskwright', 'merge-config.json')] = JSON.stringify({
+      mode: 'manual-review',
+      verifyCommands: [],
+    });
+    const fsDeps = makeMemFsDeps(memStore);
+    const board = {
+      setStatus: async () => {},
+      release: async () => {},
+      resetTaskFile: async () => {},
+    };
+    // Never approved; waitMinutes 0 ⇒ one gate check, then pending.
+    const r = await requestMergeHandler(makeDeps(root, { board, fsDeps }), {
+      taskId: 'TASK-7',
+      waitMinutes: 0,
+    });
+    expect(r.status).toBe('pending');
+    if (r.status === 'pending') {
+      expect(r.queuePosition).toBe(1);
+      expect(r.ticket).toContain('TASK-7@');
+    }
+    const queued = JSON.parse(memStore[path.join(commonDir, 'taskwright', 'merge-queue.json')]);
+    expect(queued.entries.map((e: { taskId: string }) => e.taskId)).toEqual(['TASK-7']);
+  });
+
+  it('threads onProgress through to the verify phase (TASK-88)', async () => {
+    const f = timeoutFixture({});
+    const events: MergeProgress[] = [];
+    const r = await requestMergeHandler(
+      makeDeps(f.root, { board: f.board, fsDeps: f.fsDeps, shellRun: f.run }),
+      { taskId: 'TASK-7' },
+      (e) => events.push(e)
+    );
+    expect(r.status).toBe('merged');
+    expect(events.some((e) => e.phase === 'verify' && e.command === 'fake verify')).toBe(true);
   });
 });
 
