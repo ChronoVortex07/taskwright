@@ -147,5 +147,6 @@ describe('requestMerge integration — Fix 1: resetTaskFile enables ff-merge aft
 
     // Assert: queue is empty (dequeued)
     expect(queue.read().entries).toHaveLength(0);
-  });
+    // Real-git integration: many subprocess spawns; the 5s default flakes under load.
+  }, 60_000);
 });

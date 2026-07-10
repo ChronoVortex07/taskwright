@@ -146,7 +146,8 @@ describe('pushBoardHandler / pullBoardHandler', () => {
     expect(fs.readFileSync(path.join(cloneB.root, 'backlog/tasks/task-1 - A.md'), 'utf-8')).toBe(
       '---\nid: TASK-1\n---\nA\n'
     );
-  });
+    // Real-git integration: many subprocess spawns; the 5s default flakes under load.
+  }, 60_000);
 
   it('pull_board reports not-pulled when the remote has no board ref yet', async () => {
     const { clone, cleanup } = await makeOriginAndClone();

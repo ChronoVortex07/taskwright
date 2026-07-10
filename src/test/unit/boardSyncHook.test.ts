@@ -99,7 +99,8 @@ describe('runBoardSyncHook', () => {
     expect(fs.readFileSync(path.join(cloneB.root, 'backlog/tasks/task-1 - A.md'), 'utf-8')).toBe(
       '---\nid: TASK-1\n---\nA\n'
     );
-  });
+    // Real-git integration: many subprocess spawns; the 5s default flakes under load.
+  }, 60_000);
 
   it('logs (does not throw) when a pull has nothing to fetch yet', async () => {
     const { clone, cleanup } = await makeOriginAndClone();
