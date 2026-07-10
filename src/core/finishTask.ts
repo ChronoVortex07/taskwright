@@ -110,22 +110,42 @@ export async function runVerifyCommands(
   return { ok: true };
 }
 
-/**
- * True when `git status --porcelain` output contains any change **outside**
- * `backlog/`. Board files under `backlog/` are expected to be dirty (Taskwright
- * runs with `auto_commit: false`); real code WIP must block the ff-merge.
- */
-export function hasCodeWip(porcelain: string): boolean {
+/** Target path of each `git status --porcelain` entry (rename destination, quotes stripped). */
+function porcelainTargets(porcelain: string): string[] {
   return porcelain
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
-    .some((line) => {
+    .map((line) => {
       // strip the 2-char XY status + space; take the destination path for renames
       const rest = line.slice(2).trim();
       const target = rest.includes(' -> ') ? rest.split(' -> ')[1] : rest;
-      return !target.replace(/^"|"$/g, '').startsWith('backlog/');
+      return target.replace(/^"|"$/g, '');
     });
+}
+
+/**
+ * True when `git status --porcelain` output contains any change **outside**
+ * `backlog/`. Board files under `backlog/` are expected to be dirty (Taskwright
+ * runs with `auto_commit: false`). Strict fallback for when the merge footprint
+ * cannot be computed — prefer {@link collidingWipPaths}.
+ */
+export function hasCodeWip(porcelain: string): boolean {
+  return porcelainTargets(porcelain).some((target) => !target.startsWith('backlog/'));
+}
+
+/**
+ * The porcelain entries (outside `backlog/`) that actually collide with the
+ * paths a fast-forward merge would update (`mergeTouchedPaths`, from
+ * `git diff --name-only base..branch`). Only these block the ff-merge —
+ * unrelated WIP (untracked scratch files, mods to files the merge never
+ * touches) survives a fast-forward untouched and must not abort it.
+ */
+export function collidingWipPaths(porcelain: string, mergeTouchedPaths: string[]): string[] {
+  const touched = new Set(mergeTouchedPaths);
+  return porcelainTargets(porcelain).filter(
+    (target) => !target.startsWith('backlog/') && touched.has(target)
+  );
 }
 
 export interface FfMergeResult {
@@ -162,11 +182,34 @@ export async function ffMergeToBase(
     };
   }
   const { stdout: porcelain } = await exec(primaryRoot, ['status', '--porcelain']);
-  if (hasCodeWip(porcelain)) {
+  // Block only WIP that the fast-forward would actually overwrite: intersect the
+  // porcelain paths (outside backlog/) with the merge footprint. Unrelated WIP
+  // (scratch files, mods the merge never touches) survives an ff untouched.
+  let blocking: string[] | null;
+  try {
+    const { stdout } = await exec(primaryRoot, ['diff', '--name-only', `${base}..${branch}`]);
+    blocking = collidingWipPaths(
+      porcelain,
+      stdout
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
+  } catch {
+    blocking = null; // footprint unknown — fall back to the strict check below
+  }
+  if (blocking === null && hasCodeWip(porcelain)) {
     return {
       ok: false,
       reason:
         'The primary tree has uncommitted changes outside backlog/; commit or stash them first.',
+      code: 'dirty_primary',
+    };
+  }
+  if (blocking !== null && blocking.length > 0) {
+    return {
+      ok: false,
+      reason: `The primary tree has uncommitted changes this merge would overwrite: ${blocking.join(', ')}; commit or stash them first.`,
       code: 'dirty_primary',
     };
   }
@@ -299,6 +342,15 @@ export type RequestMergeResult =
   | { status: 'sent_back'; taskId: string; reason: string }
   | { status: 'aborted'; reason: string; detail?: string; code?: MergeAbortCode };
 
+/** The current HEAD commit SHA of `cwd`, or null when it cannot be resolved. */
+async function resolveHeadSha(exec: GitExecFn, cwd: string): Promise<string | null> {
+  try {
+    return (await exec(cwd, ['rev-parse', 'HEAD'])).stdout.trim() || null;
+  } catch {
+    return null; // unknown — callers must treat this as "re-verify"
+  }
+}
+
 /** The abort reason for a verify timeout — actionable, and never "Verification failed". */
 function verifyTimeoutReason(command: string | undefined, timeoutMs: number): string {
   const seconds = Math.round(timeoutMs / 1000);
@@ -348,6 +400,12 @@ export async function requestMerge(deps: FinishDeps, taskId: string): Promise<Re
       code: preVerify.timedOut ? 'verify_timeout' : 'verify_failed',
     };
   }
+  // Record the commit the verify passed against. At queue head, when the
+  // post-wait rebase is a no-op (base didn't move ⇒ HEAD unchanged), the tree
+  // to merge is byte-identical to the one just verified — re-verifying it is
+  // redundant. Comparing HEAD (not the base ref) is race-free: verified
+  // content == merged content, by construction. Unresolvable ⇒ always re-verify.
+  const verifiedHeadSha = await resolveHeadSha(exec, root);
 
   // 2. Enqueue + park in the mode's intermediate status (inside try so dequeue covers failures).
   const entry: QueueEntry = {
@@ -386,22 +444,29 @@ export async function requestMerge(deps: FinishDeps, taskId: string): Promise<Re
         code: 'rebase_conflict',
       };
     }
-    const reVerify = await runVerifyCommands(
-      run,
-      root,
-      config.verifyCommands,
-      config.verifyTimeoutMs
-    );
-    if (!reVerify.ok) {
-      await board.setStatus(taskId, IN_PROGRESS);
-      return {
-        status: 'aborted',
-        reason: reVerify.timedOut
-          ? verifyTimeoutReason(reVerify.failedCommand, config.verifyTimeoutMs)
-          : `Verification failed on \`${reVerify.failedCommand}\` after waiting; fix it and call request_merge again.`,
-        detail: reVerify.output,
-        code: reVerify.timedOut ? 'verify_timeout' : 'verify_failed',
-      };
+    // Skip the redundant re-verify when the rebase was a no-op: HEAD still at
+    // the commit the pre-enqueue verify passed against ⇒ identical tree.
+    const headSha = await resolveHeadSha(exec, root);
+    const rebaseWasNoOp =
+      verifiedHeadSha !== null && headSha !== null && headSha === verifiedHeadSha;
+    if (!rebaseWasNoOp) {
+      const reVerify = await runVerifyCommands(
+        run,
+        root,
+        config.verifyCommands,
+        config.verifyTimeoutMs
+      );
+      if (!reVerify.ok) {
+        await board.setStatus(taskId, IN_PROGRESS);
+        return {
+          status: 'aborted',
+          reason: reVerify.timedOut
+            ? verifyTimeoutReason(reVerify.failedCommand, config.verifyTimeoutMs)
+            : `Verification failed on \`${reVerify.failedCommand}\` after waiting; fix it and call request_merge again.`,
+          detail: reVerify.output,
+          code: reVerify.timedOut ? 'verify_timeout' : 'verify_failed',
+        };
+      }
     }
 
     // 5-6. Perform the action, then mark Done + clean up. The task file stays on

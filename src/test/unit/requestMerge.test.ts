@@ -230,6 +230,56 @@ describe('requestMerge — auto-merge happy path', () => {
   });
 });
 
+describe('requestMerge — skips redundant queue-head re-verify when base did not move', () => {
+  /** Single verify command so run-call counts map 1:1 to verify passes. */
+  const oneCommand: MergeConfig = {
+    ...DEFAULT_MERGE_CONFIG,
+    mode: 'auto-merge',
+    verifyCommands: ['bun run test'],
+  };
+
+  it('runs verify only once when the post-wait rebase is a no-op (HEAD unchanged)', async () => {
+    let verifyRuns = 0;
+    const run: RunFn = async () => {
+      verifyRuns++;
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    const exec = okGit((a) =>
+      a[0] === 'rev-parse' && a[1] === 'HEAD' ? { stdout: 'headsha\n' } : undefined
+    );
+    const r = await requestMerge(deps({ run, config: oneCommand, exec }), 'TASK-7');
+    expect(r.status).toBe('merged');
+    expect(verifyRuns).toBe(1); // pre-enqueue only; queue-head re-verify skipped
+  });
+
+  it('re-verifies when the rebase moved HEAD (base advanced during the wait)', async () => {
+    let verifyRuns = 0;
+    const run: RunFn = async () => {
+      verifyRuns++;
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    let headReads = 0;
+    const exec = okGit((a) =>
+      a[0] === 'rev-parse' && a[1] === 'HEAD' ? { stdout: `sha-${++headReads}\n` } : undefined
+    );
+    const r = await requestMerge(deps({ run, config: oneCommand, exec }), 'TASK-7');
+    expect(r.status).toBe('merged');
+    expect(verifyRuns).toBe(2); // base moved → strictly re-verify
+  });
+
+  it('re-verifies when HEAD cannot be resolved (fail-safe)', async () => {
+    let verifyRuns = 0;
+    const run: RunFn = async () => {
+      verifyRuns++;
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    // okGit's default rev-parse throws for anything but refs/heads/main.
+    const r = await requestMerge(deps({ run, config: oneCommand }), 'TASK-7');
+    expect(r.status).toBe('merged');
+    expect(verifyRuns).toBe(2);
+  });
+});
+
 describe('requestMerge — manual-review gate', () => {
   it('waits until approved, then merges', async () => {
     const q = memQueue();
@@ -369,24 +419,46 @@ describe('requestMerge — abort at ff-merge resets status and dequeues', () => 
     expect(q.store.read().entries).toHaveLength(0);
   });
 
-  it('returns code dirty_primary when the primary tree has code WIP', async () => {
+  it('returns code dirty_primary when primary WIP collides with the merge footprint', async () => {
     const q = memQueue();
     const b = board();
     const cfg: MergeConfig = { ...DEFAULT_MERGE_CONFIG, mode: 'auto-merge' };
     const base = okGit();
-    // Worktree ('/wt') status is clean; the PRIMARY tree ('/primary') has code WIP.
+    // Worktree ('/wt') status is clean; the PRIMARY tree ('/primary') has WIP on a
+    // file the fast-forward would update.
     const exec: GitExecFn = async (cwd, args) => {
       if (args[0] === 'status' && cwd === '/primary')
         return { stdout: ' M src/x.ts\n', stderr: '' };
+      if (args[0] === 'diff' && cwd === '/primary' && args.includes('main..task-7-x'))
+        return { stdout: 'src/x.ts\n', stderr: '' };
       return base(cwd, args);
     };
     const r = await requestMerge(deps({ queue: q.store, board: b, config: cfg, exec }), 'TASK-7');
     expect(r.status).toBe('aborted');
     if (r.status === 'aborted') {
       expect(r.code).toBe('dirty_primary');
-      expect(r.reason).toContain('uncommitted changes outside backlog/');
+      expect(r.reason).toContain('src/x.ts'); // names the blocking file
     }
     expect(b.statuses).toContain('In Progress');
+    expect(q.store.read().entries).toHaveLength(0);
+  });
+
+  it('merges despite primary WIP that does not collide with the merge footprint', async () => {
+    const q = memQueue();
+    const b = board();
+    const cfg: MergeConfig = { ...DEFAULT_MERGE_CONFIG, mode: 'auto-merge' };
+    const base = okGit();
+    // Primary has an unrelated untracked file + unrelated tracked mod; the
+    // branch's footprint does not include them — the merge must proceed.
+    const exec: GitExecFn = async (cwd, args) => {
+      if (args[0] === 'status' && cwd === '/primary')
+        return { stdout: '?? scratch.txt\n M docs/readme.md\n', stderr: '' };
+      if (args[0] === 'diff' && cwd === '/primary' && args.includes('main..task-7-x'))
+        return { stdout: 'src/feature.ts\n', stderr: '' };
+      return base(cwd, args);
+    };
+    const r = await requestMerge(deps({ queue: q.store, board: b, config: cfg, exec }), 'TASK-7');
+    expect(r.status).toBe('merged');
     expect(q.store.read().entries).toHaveLength(0);
   });
 });

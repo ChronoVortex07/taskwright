@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   hasCodeWip,
+  collidingWipPaths,
   ffMergeToBase,
   openPullRequest,
   removeWorktree,
@@ -38,6 +39,34 @@ describe('hasCodeWip', () => {
   });
 });
 
+describe('collidingWipPaths', () => {
+  it('returns only porcelain paths that intersect the merge footprint', () => {
+    expect(
+      collidingWipPaths(' M src/app.ts\n M src/other.ts\n?? notes.txt\n', [
+        'src/app.ts',
+        'notes.txt',
+      ])
+    ).toEqual(['src/app.ts', 'notes.txt']);
+  });
+  it('is empty when WIP and footprint are disjoint', () => {
+    expect(collidingWipPaths(' M src/unrelated.ts\n?? scratch.md\n', ['src/app.ts'])).toEqual([]);
+  });
+  it('excludes backlog/ paths even when the footprint touches them', () => {
+    expect(
+      collidingWipPaths(' M backlog/tasks/TASK-7 - x.md\n', ['backlog/tasks/TASK-7 - x.md'])
+    ).toEqual([]);
+  });
+  it('uses the rename destination and strips quotes', () => {
+    expect(collidingWipPaths('R  src/a.ts -> src/b.ts\n', ['src/b.ts'])).toEqual(['src/b.ts']);
+    expect(collidingWipPaths('R  "src/a b.ts" -> "src/c d.ts"\n', ['src/c d.ts'])).toEqual([
+      'src/c d.ts',
+    ]);
+  });
+  it('is empty on empty porcelain', () => {
+    expect(collidingWipPaths('', ['src/app.ts'])).toEqual([]);
+  });
+});
+
 describe('ffMergeToBase', () => {
   it('fast-forwards when primary is on base and has no code WIP', async () => {
     const calls: string[][] = [];
@@ -67,15 +96,69 @@ describe('ffMergeToBase', () => {
     expect(r.reason).toContain('detached');
   });
 
-  it('aborts when the primary tree has code WIP', async () => {
+  it('aborts when primary WIP collides with the merge footprint, naming the files', async () => {
     const exec = gitExec((a) => {
       if (a[0] === 'symbolic-ref') return { stdout: 'main' };
-      if (a[0] === 'status') return { stdout: ' M src/app.ts\n' };
+      if (a[0] === 'status') return { stdout: ' M src/app.ts\n?? scratch.txt\n' };
+      if (a[0] === 'diff' && a.includes('main..task-7-x'))
+        return { stdout: 'src/app.ts\nscratch.txt\nsrc/untouched-by-wip.ts\n' };
       return { stdout: '' };
     });
     const r = await ffMergeToBase(exec, '/primary', 'main', 'task-7-x');
     expect(r.ok).toBe(false);
+    expect(r.code).toBe('dirty_primary');
     expect(r.reason).toContain('uncommitted');
+    // The message names WHICH files block.
+    expect(r.reason).toContain('src/app.ts');
+    expect(r.reason).toContain('scratch.txt');
+  });
+
+  it('proceeds when primary WIP does not collide with the merge footprint', async () => {
+    const calls: string[][] = [];
+    const exec = gitExec((a) => {
+      calls.push(a);
+      if (a[0] === 'symbolic-ref') return { stdout: 'main' };
+      // Unrelated tracked mod + unrelated untracked file — neither is in the footprint.
+      if (a[0] === 'status') return { stdout: ' M src/unrelated.ts\n?? notes.txt\n' };
+      if (a[0] === 'diff' && a.includes('main..task-7-x')) return { stdout: 'src/app.ts\n' };
+      return { stdout: '' };
+    });
+    expect(await ffMergeToBase(exec, '/primary', 'main', 'task-7-x')).toEqual({ ok: true });
+    expect(calls).toContainEqual(['merge', '--ff-only', 'task-7-x']);
+  });
+
+  it('still ignores backlog/ WIP even when the branch touches those files', async () => {
+    const exec = gitExec((a) => {
+      if (a[0] === 'symbolic-ref') return { stdout: 'main' };
+      if (a[0] === 'status') return { stdout: ' M backlog/tasks/TASK-7 - x.md\n' };
+      if (a[0] === 'diff' && a.includes('main..task-7-x'))
+        return { stdout: 'backlog/tasks/TASK-7 - x.md\n' };
+      return { stdout: '' };
+    });
+    expect(await ffMergeToBase(exec, '/primary', 'main', 'task-7-x')).toEqual({ ok: true });
+  });
+
+  it('falls back to the strict outside-backlog check when the footprint diff fails', async () => {
+    const exec = gitExec((a) => {
+      if (a[0] === 'symbolic-ref') return { stdout: 'main' };
+      if (a[0] === 'status') return { stdout: ' M src/app.ts\n' };
+      if (a[0] === 'diff') return new Error('diff failed');
+      return { stdout: '' };
+    });
+    const r = await ffMergeToBase(exec, '/primary', 'main', 'task-7-x');
+    expect(r.ok).toBe(false);
+    expect(r.code).toBe('dirty_primary');
+    expect(r.reason).toContain('outside backlog/');
+  });
+
+  it('footprint-diff failure with only backlog/ WIP still proceeds', async () => {
+    const exec = gitExec((a) => {
+      if (a[0] === 'symbolic-ref') return { stdout: 'main' };
+      if (a[0] === 'status') return { stdout: ' M backlog/tasks/x.md\n' };
+      if (a[0] === 'diff') return new Error('diff failed');
+      return { stdout: '' };
+    });
+    expect(await ffMergeToBase(exec, '/primary', 'main', 'task-7-x')).toEqual({ ok: true });
   });
 
   it('aborts when the fast-forward merge fails', async () => {
