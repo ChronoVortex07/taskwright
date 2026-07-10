@@ -148,6 +148,127 @@ describe('mcp handlers', () => {
     });
   });
 
+  describe('claimTaskHandler identity & idempotent re-claim (TASK-89)', () => {
+    const WORKTREE_ROOT = path.join(ROOT, '.worktrees', 'task-7-sample');
+
+    function makeWorktreeDeps(overrides: Partial<McpHandlerDeps> = {}): McpHandlerDeps {
+      return { ...makeDeps(), root: WORKTREE_ROOT, ...overrides };
+    }
+
+    /** Route reads to task content with the given claim lines injected. */
+    function routeClaimedReads(claimLines: string[]): void {
+      const content = TASK_CONTENT.replace(
+        'dependencies: []',
+        ['dependencies: []', ...claimLines].join('\n')
+      );
+      vi.mocked(fs.readFileSync).mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const str = String(p);
+        if (str.includes('active-task.json')) {
+          throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        }
+        return content;
+      });
+    }
+
+    /** A 'YYYY-MM-DD HH:mm' local timestamp `hoursAgo` hours in the past. */
+    function stampHoursAgo(hoursAgo: number): string {
+      const d = new Date(Date.now() - hoursAgo * 3600_000);
+      const pad = (n: number): string => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    it('derives the claimant identity from a .worktrees session root', async () => {
+      routeReads(null);
+      const result = await claimTaskHandler(makeWorktreeDeps(), { taskId: 'TASK-7' });
+      expect(result.claimed).toBe(true);
+      expect(result.claimedBy).toBe('@agent/task-7-sample');
+      // The derived branch is recorded as the claim's worktree too.
+      expect(result.worktree).toBe('task-7-sample');
+      const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+      expect(written).toContain("claimed_by: '@agent/task-7-sample'");
+    });
+
+    it('derives the identity from an explicit worktree arg when given', async () => {
+      routeReads(null);
+      const result = await claimTaskHandler(makeDeps(), {
+        taskId: 'TASK-7',
+        worktree: 'task-9-z',
+      });
+      expect(result.claimed).toBe(true);
+      expect(result.claimedBy).toBe('@agent/task-9-z');
+      expect(result.worktree).toBe('task-9-z');
+    });
+
+    it('falls back to the git branch for a primary-rooted session', async () => {
+      routeReads(null);
+      const gitExec = vi.fn().mockResolvedValue({ stdout: 'main\n', stderr: '' });
+      const result = await claimTaskHandler({ ...makeDeps(), gitExec }, { taskId: 'TASK-7' });
+      expect(gitExec).toHaveBeenCalledWith(ROOT, ['rev-parse', '--abbrev-ref', 'HEAD']);
+      expect(result.claimedBy).toBe('@agent/main');
+    });
+
+    it('falls back to the bare @agent when no branch is derivable', async () => {
+      routeReads(null);
+      const gitExec = vi.fn().mockRejectedValue(new Error('not a git repo'));
+      const result = await claimTaskHandler({ ...makeDeps(), gitExec }, { taskId: 'TASK-7' });
+      expect(result.claimed).toBe(true);
+      expect(result.claimedBy).toBe('@agent');
+    });
+
+    it('re-claiming your own task is an idempotent no-op (claimed: true, no write)', async () => {
+      routeClaimedReads([
+        "claimed_by: '@agent/task-7-sample'",
+        `claimed_at: '${stampHoursAgo(1)}'`,
+      ]);
+      const result = await claimTaskHandler(makeWorktreeDeps(), { taskId: 'TASK-7' });
+      expect(result.claimed).toBe(true);
+      expect(result.surrendered).toBeUndefined();
+      expect(result.alreadyClaimed).toBe(true);
+      expect(result.claimedBy).toBe('@agent/task-7-sample');
+      expect(fs.writeFileSync).not.toHaveBeenCalled();
+    });
+
+    it('a different identity holding a live claim surrenders with heldBy', async () => {
+      routeClaimedReads(["claimed_by: '@agent/task-8-other'", `claimed_at: '${stampHoursAgo(1)}'`]);
+      const result = await claimTaskHandler(makeWorktreeDeps(), { taskId: 'TASK-7' });
+      expect(result.claimed).toBe(false);
+      expect(result.surrendered).toBe(true);
+      expect(result.heldBy).toBe('@agent/task-8-other');
+      expect(fs.writeFileSync).not.toHaveBeenCalled();
+    });
+
+    it('a stale foreign claim is overridden without surrendering', async () => {
+      routeClaimedReads([
+        "claimed_by: '@agent/task-8-other'",
+        `claimed_at: '${stampHoursAgo(13)}'`,
+      ]);
+      const result = await claimTaskHandler(makeWorktreeDeps(), { taskId: 'TASK-7' });
+      expect(result.claimed).toBe(true);
+      expect(result.surrendered).toBeUndefined();
+      const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+      expect(written).toContain("claimed_by: '@agent/task-7-sample'");
+    });
+
+    it('upgrades a legacy generic @agent claim in place instead of surrendering', async () => {
+      routeClaimedReads(["claimed_by: '@agent'", `claimed_at: '${stampHoursAgo(1)}'`]);
+      const result = await claimTaskHandler(makeWorktreeDeps(), { taskId: 'TASK-7' });
+      expect(result.claimed).toBe(true);
+      expect(result.claimedBy).toBe('@agent/task-7-sample');
+      const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+      expect(written).toContain("claimed_by: '@agent/task-7-sample'");
+    });
+
+    it('an explicit claimedBy arg is used verbatim and beats derivation', async () => {
+      routeReads(null);
+      const result = await claimTaskHandler(makeWorktreeDeps(), {
+        taskId: 'TASK-7',
+        claimedBy: '@codex/worker-3',
+      });
+      expect(result.claimed).toBe(true);
+      expect(result.claimedBy).toBe('@codex/worker-3');
+    });
+  });
+
   describe('releaseTaskHandler', () => {
     it('clears the claim and confirms', async () => {
       routeReads(null);

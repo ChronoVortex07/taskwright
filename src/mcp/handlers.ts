@@ -62,7 +62,8 @@ import {
 } from '../core/finishTask';
 import { worktreePathFor } from '../core/WorktreeService';
 import { selectReadyTasks, DEFAULT_CLAIM_STALENESS_HOURS } from '../core/readyTasks';
-import { stalenessMsFromHours } from '../core/claimResolution';
+import { resolveClaimAction, stalenessMsFromHours } from '../core/claimResolution';
+import { agentClaimIdentity, worktreeBranchFromPath } from '../core/claimIdentity';
 import { extractPlanFiles, selectDisjointBatch } from '../core/planFiles';
 
 /**
@@ -157,6 +158,8 @@ export interface ClaimResult {
   surrendered?: boolean;
   /** Who holds the task when `surrendered` is true. */
   heldBy?: string;
+  /** True when the caller already held the claim — the re-claim was an idempotent no-op. */
+  alreadyClaimed?: boolean;
   /** True when the task cannot be claimed because its dependencies are unmet. */
   locked?: boolean;
   /** The blocking dependency IDs when `locked` is true. */
@@ -705,13 +708,46 @@ export async function getActiveTask(deps: McpHandlerDeps): Promise<ActiveTaskRes
   };
 }
 
-/** Place an advisory claim on a task so other sessions can see it is in progress. */
+/**
+ * Best-effort branch/worktree of the calling session, used to derive the
+ * per-session claimant identity (TASK-89). Precedence: explicit `worktree` arg
+ * → `.worktrees/<branch>` segment of the session root (dispatched sessions;
+ * git-free) → the root's git branch (primary-rooted sessions). Undefined when
+ * nothing is derivable (detached HEAD, not a repo).
+ */
+async function deriveClaimantBranch(
+  deps: McpHandlerDeps,
+  explicit?: string
+): Promise<string | undefined> {
+  const arg = explicit?.trim();
+  if (arg) return arg;
+  const fromPath = worktreeBranchFromPath(deps.root);
+  if (fromPath) return fromPath;
+  try {
+    const exec = deps.gitExec ?? defaultGitExec;
+    const branch = (await exec(deps.root, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim();
+    return branch && branch !== 'HEAD' ? branch : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Place an advisory claim on a task so other sessions can see it is in progress.
+ *
+ * The claimant identity is per-session and worktree-derived (`@agent/<branch>`,
+ * see {@link agentClaimIdentity}) unless an explicit `claimedBy` is given, so a
+ * relaunched session in the same worktree recognizes its own claim. Re-claiming
+ * your own task is an idempotent no-op (`claimed: true, alreadyClaimed: true`);
+ * a live claim by a DIFFERENT identity surrenders (`claimed: false,
+ * surrendered: true, heldBy`) instead of silently overwriting. Stale foreign
+ * claims (older than the staleness window) and legacy generic '@agent' claims
+ * are reclaimed/upgraded in place.
+ */
 export async function claimTaskHandler(
   deps: McpHandlerDeps,
   args: { taskId: string; claimedBy?: string; worktree?: string }
 ): Promise<ClaimResult> {
-  const claimedBy = args.claimedBy?.trim() || '@agent';
-
   // Dependency gate: a locked task cannot be claimed by an agent.
   // Intentional fail-open: a transient derive/IO error must not brick claims — do not "fix" to fail-closed.
   const states = await loadTreeStateFromParser(deps.parser).catch(() => undefined);
@@ -720,8 +756,36 @@ export async function claimTaskHandler(
     return { claimed: false, taskId: args.taskId, locked: true, blockedBy: derived.blockedBy };
   }
 
+  const task = await deps.parser.getTask(args.taskId);
+  if (!task) {
+    throw new Error(`Task ${args.taskId} not found`);
+  }
+
+  const branch = await deriveClaimantBranch(deps, args.worktree);
+  const claimedBy = args.claimedBy?.trim() || agentClaimIdentity(branch);
+
+  const action = resolveClaimAction(
+    { claimedBy: task.claimedBy, claimedAt: task.claimedAt },
+    claimedBy,
+    stalenessMsFromHours(DEFAULT_CLAIM_STALENESS_HOURS)
+  );
+  if (action === 'conflict') {
+    return { claimed: false, taskId: args.taskId, surrendered: true, heldBy: task.claimedBy };
+  }
+  if (action === 'self') {
+    // Idempotent re-claim: the caller already holds it — echo the existing claim.
+    return {
+      claimed: true,
+      taskId: args.taskId,
+      claimedBy,
+      worktree: task.worktree,
+      claimedAt: task.claimedAt,
+      alreadyClaimed: true,
+    };
+  }
+
   const claim = await deps.claimService.claimTask(args.taskId, claimedBy, deps.parser, {
-    worktree: args.worktree,
+    worktree: args.worktree?.trim() || branch,
   });
   return {
     claimed: true,

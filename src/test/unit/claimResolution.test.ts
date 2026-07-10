@@ -57,4 +57,85 @@ describe('resolveClaimAction', () => {
       'conflict'
     );
   });
+
+  describe('per-session claimant identity (TASK-89)', () => {
+    it('is "self" for the same worktree-derived identity (restart re-claim)', () => {
+      expect(
+        resolveClaimAction(
+          { claimedBy: '@agent/task-61-fix-login', claimedAt: claimTimestamp() },
+          '@agent/task-61-fix-login',
+          12 * HOUR,
+          now
+        )
+      ).toBe('self');
+    });
+
+    it('trims identities before comparing', () => {
+      expect(
+        resolveClaimAction(
+          { claimedBy: '  @agent/task-7-x  ', claimedAt: claimTimestamp() },
+          '@agent/task-7-x ',
+          12 * HOUR,
+          now
+        )
+      ).toBe('self');
+    });
+
+    it('is "conflict" when a different derived identity holds a live claim', () => {
+      expect(
+        resolveClaimAction(
+          { claimedBy: '@agent/task-8-other', claimedAt: claimTimestamp() },
+          '@agent/task-7-x',
+          12 * HOUR,
+          now
+        )
+      ).toBe('conflict');
+    });
+
+    it('upgrades a legacy generic @agent claim in place for an agent-derived claimant', () => {
+      // The generic '@agent' carries no identity, so it cannot be distinguished between
+      // agent sessions — an agent-derived claimant rewrites it instead of surrendering.
+      expect(
+        resolveClaimAction(
+          { claimedBy: '@agent', claimedAt: claimTimestamp() },
+          '@agent/task-7-x',
+          12 * HOUR,
+          now
+        )
+      ).toBe('free');
+    });
+
+    it('a bare @agent re-claim over a bare @agent claim stays "self"', () => {
+      expect(
+        resolveClaimAction(
+          { claimedBy: '@agent', claimedAt: claimTimestamp() },
+          '@agent',
+          12 * HOUR,
+          now
+        )
+      ).toBe('self');
+    });
+
+    it('does NOT upgrade a legacy @agent claim for a human claimant (still conflict)', () => {
+      expect(
+        resolveClaimAction(
+          { claimedBy: '@agent', claimedAt: claimTimestamp() },
+          '@alice',
+          12 * HOUR,
+          now
+        )
+      ).toBe('conflict');
+    });
+
+    it('does NOT treat @agent-prefixed non-derived identities as generic upgrades', () => {
+      expect(
+        resolveClaimAction(
+          { claimedBy: '@agent/task-8-other', claimedAt: claimTimestamp() },
+          '@agent',
+          12 * HOUR,
+          now
+        )
+      ).toBe('conflict');
+    });
+  });
 });

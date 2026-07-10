@@ -113,14 +113,21 @@ async function main(): Promise<void> {
     {
       title: 'Claim task',
       description:
-        'Place an advisory claim on a task so other sessions see it is in progress. Claiming is advisory (git syncs asynchronously across worktrees) — it reduces, not prevents, duplicate work.',
+        'Place an advisory claim on a task so other sessions see it is in progress. The claimant identity is derived from your session worktree/branch (e.g. @agent/task-7-fix-login), so re-claiming YOUR OWN task is an idempotent no-op ({ claimed: true, alreadyClaimed: true }) — safe after a restart. A live claim held by a DIFFERENT identity returns { claimed: false, surrendered: true, heldBy } — pick another task instead of double-executing. Stale claims (past the staleness window) and legacy generic @agent claims are reclaimed in place.',
       inputSchema: {
         taskId: z.string().describe('Task ID to claim, e.g. TASK-7.'),
         claimedBy: z
           .string()
           .optional()
-          .describe('Identity holding the claim (defaults to @agent).'),
-        worktree: z.string().optional().describe('Branch or worktree being worked in.'),
+          .describe(
+            'Identity holding the claim. Defaults to a per-session identity derived from the worktree/branch (@agent/<branch>; bare @agent when none is derivable).'
+          ),
+        worktree: z
+          .string()
+          .optional()
+          .describe(
+            'Branch or worktree being worked in (also seeds the derived identity). Defaults to the session root’s .worktrees/<branch> segment or git branch.'
+          ),
       },
     },
     async (args) => runTool(() => claimTaskHandler(deps, args))
