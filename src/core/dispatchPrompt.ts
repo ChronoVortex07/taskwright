@@ -1,14 +1,18 @@
 import { ChecklistItem, Task } from './types';
 import { substitutePlaceholders } from './templateRender';
+import { CLAUDE_DISPATCH_TEMPLATE } from './dispatchProfiles';
 
 /**
- * Subscription-safe dispatch: Taskwright never spawns `claude -p` (that risks
- * switching from a Claude subscription to metered API usage). Instead it renders
- * a paste-ready prompt the user drops into a fresh Claude Code session, so the
- * session starts with exactly one task's context and nothing else.
+ * Subscription-safe dispatch: Taskwright never spawns an agent in headless
+ * print mode (`claude -p`, `codex exec`, … — that risks switching from a
+ * subscription to metered API usage). Instead it renders a paste-ready prompt
+ * the user drops into a fresh interactive agent session, so the session starts
+ * with exactly one task's context and nothing else.
  *
- * This module is the pure core — flatten a task into strings and substitute them
- * into a (configurable) template. No git, no clipboard, no VS Code here.
+ * This module is the pure, agent-neutral core — flatten a task into strings and
+ * substitute them into a (configurable) template. The agent-specific parts
+ * (templates, suggested launch commands) are data in `dispatchProfiles.ts`.
+ * No git, no clipboard, no VS Code here.
  */
 
 /** Render-ready, already-stringified fields available to a dispatch template. */
@@ -27,31 +31,11 @@ export interface DispatchContext {
 }
 
 /**
- * Default dispatch prompt. Deliberately delegates to the `/execute-task` skill
- * rather than inlining the workflow: the skill pulls the session's context via
- * `get_active_task` (not guessing from the file tree), verifies the worktree and
- * installs deps, `claim`s the task, executes with the right strategy, records
- * progress with `edit_task`, and closes with `request_merge` — all in-session and
- * subscription-safe (never `claude -p`). Stays scoped to the one task.
+ * Default dispatch prompt — the Claude Code profile's template (Claude is the
+ * default `taskwright.dispatchAgent`). Kept as a named export for back-compat;
+ * per-agent templates live in `dispatchProfiles.ts`.
  */
-export const DEFAULT_DISPATCH_TEMPLATE = `You are a fresh Claude Code session assigned exactly one task. Work only on this task — do not touch unrelated code or other tasks.
-
-Launch this session INSIDE your isolated worktree .worktrees/{{worktree}} — open that folder / start the session with it as the working directory. Do NOT start at the repository root and cd in: the taskwright MCP server roots itself at the directory the session launched in, and an in-session cd does not move it. A fresh worktree has no node_modules (it is git-ignored), so run \`bun install\` there once before you build or test. Do NOT git checkout, commit, or merge in the repository root — that tree is shared with other agents and committing there corrupts their branches.
-
-Task {{id}}: {{title}}
-Status: {{status}} · Priority: {{priority}} · Labels: {{labels}}
-
-## Description
-{{description}}
-
-## Acceptance Criteria
-{{acceptanceCriteria}}
-
-## Implementation Plan
-{{plan}}
-
----
-Run the \`/execute-task\` skill. It loads your assignment (\`get_active_task\`), verifies you are worktree-rooted and installs deps, claims the task, executes with the right strategy (attached plan → executing-plans; independent subtasks → subagent-driven-development; else test-driven-development), records progress with \`edit_task\`, checks for cancellation, and closes with \`request_merge\` from inside your worktree. It is subscription-safe (in-session; never \`claude -p\`). If \`/execute-task\` is unavailable, follow the project's TDD / superpowers workflow by hand and close with \`request_merge\` (taskwright MCP) from inside your worktree.`;
+export const DEFAULT_DISPATCH_TEMPLATE = CLAUDE_DISPATCH_TEMPLATE;
 
 /** Format a checklist as markdown, or a placeholder when empty. */
 export function formatChecklist(items: ChecklistItem[]): string {
@@ -112,10 +96,38 @@ export interface TerminalLaunchDecision {
 }
 
 /**
- * Whether a shell command line launches `claude` in print/headless mode
- * (`-p` / `--print`) in any of its `&&`/`||`/`;`/`|`-separated segments. Dispatch
- * is subscription-safe, so such a command is refused. Best-effort (not a full
- * shell parser): it scopes the flag check to the segment that names `claude`.
+ * Headless/non-interactive launch deny-list — agent-agnostic. Each entry pairs
+ * a `tool` pattern (which command the segment invokes; match-all for generic
+ * flags) with a `mode` pattern (the headless invocation of that tool). A shell
+ * command line is refused when any `&&`/`||`/`;`/`|`-separated segment matches
+ * both patterns of any entry. Subscription safety is a principle, not a Claude
+ * feature: the full deny-list applies regardless of the selected dispatch
+ * agent. Best-effort (not a full shell parser).
+ */
+const HEADLESS_LAUNCH_DENYLIST: ReadonlyArray<{ tool: RegExp; mode: RegExp }> = [
+  // Claude Code print mode: `claude -p` / `claude --print`.
+  { tool: /\bclaude\b/, mode: /(?:^|\s)(?:-p|--print)(?:\s|$)/ },
+  // Codex non-interactive mode: `codex exec` (and its `e` alias).
+  { tool: /\bcodex\b/, mode: /(?:^|\s)(?:exec|e)(?:\s|$)/ },
+  // Generic non-interactive flags, whatever the agent binary is called.
+  { tool: /./, mode: /(?:^|\s)--(?:headless|non-interactive)(?:\s|$)/ },
+];
+
+/**
+ * Whether a shell command line launches an agent in headless/non-interactive
+ * mode (`claude -p`/`--print`, `codex exec`, a generic `--headless`/
+ * `--non-interactive` flag) in any of its `&&`/`||`/`;`/`|`-separated segments.
+ * Dispatch is subscription-safe, so such a command is refused.
+ */
+export function commandUsesHeadlessMode(command: string): boolean {
+  return command
+    .split(/\|\||&&|[;|]/)
+    .some((seg) => HEADLESS_LAUNCH_DENYLIST.some((d) => d.tool.test(seg) && d.mode.test(seg)));
+}
+
+/**
+ * Legacy Claude-only guard, kept for back-compat.
+ * @deprecated Use {@link commandUsesHeadlessMode} — the agent-agnostic deny-list.
  */
 export function commandUsesClaudePrintMode(command: string): boolean {
   return command
@@ -125,9 +137,10 @@ export function commandUsesClaudePrintMode(command: string): boolean {
 
 /**
  * Decide what to run in the dispatch-opened worktree terminal. An empty template
- * means "do nothing"; a `claude -p`/`--print` command is refused with a warning
- * (launch an interactive chat instead); otherwise the template is rendered against
- * the dispatch context and returned to run.
+ * means "do nothing"; a headless/non-interactive agent command (`claude -p`/
+ * `--print`, `codex exec`, …) is refused with a warning (launch an interactive
+ * session instead); otherwise the template is rendered against the dispatch
+ * context and returned to run.
  */
 export function resolveTerminalLaunch(
   commandTemplate: string,
@@ -136,11 +149,11 @@ export function resolveTerminalLaunch(
   const template = commandTemplate.trim();
   if (!template) return { run: false };
   const command = renderDispatchPrompt(template, ctx);
-  if (commandUsesClaudePrintMode(command)) {
+  if (commandUsesHeadlessMode(command)) {
     return {
       run: false,
       warning:
-        "Taskwright dispatch skipped the terminal command: it runs 'claude -p'/'--print' (headless/metered). Use an interactive 'claude' chat to stay on your subscription.",
+        "Taskwright dispatch skipped the terminal command: it launches the agent in headless mode ('claude -p'/'--print', 'codex exec', or a --headless/--non-interactive flag), which is metered. Use an interactive session to stay on your subscription.",
     };
   }
   return { run: true, command };

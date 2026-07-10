@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_DISPATCH_TEMPLATE,
   commandUsesClaudePrintMode,
+  commandUsesHeadlessMode,
   dispatchBranchName,
   dispatchContextFromTask,
   formatChecklist,
@@ -147,6 +148,46 @@ describe('commandUsesClaudePrintMode', () => {
   });
 });
 
+describe('commandUsesHeadlessMode — agent-agnostic deny-list (TASK-93)', () => {
+  it('flags claude print mode like the legacy guard', () => {
+    expect(commandUsesHeadlessMode('claude -p "do it"')).toBe(true);
+    expect(commandUsesHeadlessMode('claude --print < file')).toBe(true);
+    expect(commandUsesHeadlessMode('claude "$(cat handoff.md)"')).toBe(false);
+  });
+
+  it('flags codex exec (and its e alias) as headless', () => {
+    expect(commandUsesHeadlessMode('codex exec "do it"')).toBe(true);
+    expect(commandUsesHeadlessMode('codex e "do it"')).toBe(true);
+    expect(commandUsesHeadlessMode('cd wt && codex exec --full-auto "go"')).toBe(true);
+  });
+
+  it('allows an interactive codex session seeded with a prompt', () => {
+    expect(commandUsesHeadlessMode('codex "$(cat handoff.md)"')).toBe(false);
+    expect(commandUsesHeadlessMode('codex --full-auto "go"')).toBe(false);
+    expect(commandUsesHeadlessMode('codex')).toBe(false);
+  });
+
+  it('scopes the subcommand check to the segment naming the agent', () => {
+    expect(commandUsesHeadlessMode('git exec-path && codex "go"')).toBe(false);
+    expect(commandUsesHeadlessMode('echo exec; codex "go"')).toBe(false);
+  });
+
+  it('does not trip on words merely containing the mode token', () => {
+    expect(commandUsesHeadlessMode('codex executive-summary.md')).toBe(false);
+    expect(commandUsesHeadlessMode('claude --printer lpr')).toBe(false);
+  });
+
+  it('flags generic non-interactive flags on any command', () => {
+    expect(commandUsesHeadlessMode('some-agent --headless "go"')).toBe(true);
+    expect(commandUsesHeadlessMode('other-agent --non-interactive')).toBe(true);
+  });
+
+  it('ignores unrelated commands', () => {
+    expect(commandUsesHeadlessMode('echo -p hello')).toBe(false);
+    expect(commandUsesHeadlessMode('npm run test')).toBe(false);
+  });
+});
+
 describe('DEFAULT_DISPATCH_TEMPLATE worktree isolation', () => {
   it('tells the session to LAUNCH inside its worktree (not cd from the root)', () => {
     expect(DEFAULT_DISPATCH_TEMPLATE).toContain('.worktrees/{{worktree}}');
@@ -190,6 +231,20 @@ describe('resolveTerminalLaunch', () => {
     expect(d.run).toBe(false);
     expect(d.command).toBeUndefined();
     expect(d.warning).toMatch(/--print|-p/);
+  });
+
+  it('refuses a codex exec command and returns a warning (TASK-93)', () => {
+    const d = resolveTerminalLaunch('codex exec "$(cat {{handoffFile}})"', ctx);
+    expect(d.run).toBe(false);
+    expect(d.command).toBeUndefined();
+    expect(d.warning).toMatch(/codex exec/);
+  });
+
+  it('runs an interactive codex session seeded from the handoff file', () => {
+    const d = resolveTerminalLaunch('codex "$(cat {{handoffFile}})"', ctx);
+    expect(d.run).toBe(true);
+    expect(d.command).toBe('codex "$(cat /repo/.taskwright/handoff/TASK-7.md)"');
+    expect(d.warning).toBeUndefined();
   });
 });
 

@@ -98,11 +98,24 @@
           "default": false,
           "markdownDescription": "Opt-in: when running \"Set Up Claude Code Integration\", also write a project-local `.mcp.json` and copy `scripts/taskwright-mcp.cjs` into the repo, so a Claude Code session opened in this repo gets the Taskwright MCP without the user-scope CLI registration. Off by default. The launcher resolves the primary Taskwright checkout's built server, so this is intended for Taskwright checkouts and their worktrees."
         },
+        "taskwright.dispatchAgent": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex"
+          ],
+          "enumDescriptions": [
+            "Claude Code — dispatch prompts address a Claude Code session and point at the /execute-task skill.",
+            "Codex — dispatch prompts address a Codex session and point at the /execute-task custom prompt installed by Taskwright."
+          ],
+          "default": "claude",
+          "markdownDescription": "Which coding agent a dispatched task targets. Selects the built-in dispatch profile: prompt template phrasing, the `/execute-task` entry-point wording, and the suggested interactive terminal command. A custom `#taskwright.dispatchTemplate#` always wins untouched. The headless-mode guardrail (`claude -p`/`--print`, `codex exec`, `--headless`/`--non-interactive`) applies regardless of the selected agent — subscription safety is a principle, not a per-agent feature."
+        },
         "taskwright.dispatchTemplate": {
           "type": "string",
           "editPresentation": "multilineText",
           "default": "",
-          "markdownDescription": "Template for the dispatch prompt copied to the clipboard. Supports `{{id}}`, `{{title}}`, `{{status}}`, `{{priority}}`, `{{labels}}`, `{{description}}`, `{{acceptanceCriteria}}`, `{{plan}}`, `{{worktree}}`, and `{{filePath}}`. Leave empty to use the built-in template."
+          "markdownDescription": "Template for the dispatch prompt copied to the clipboard. Supports `{{id}}`, `{{title}}`, `{{status}}`, `{{priority}}`, `{{labels}}`, `{{description}}`, `{{acceptanceCriteria}}`, `{{plan}}`, `{{worktree}}`, and `{{filePath}}`. Leave empty to use the built-in template for the selected `#taskwright.dispatchAgent#`."
         },
         "taskwright.dispatchCreateWorktree": {
           "type": "boolean",
@@ -117,7 +130,7 @@
         "taskwright.dispatchTerminalCommand": {
           "type": "string",
           "default": "",
-          "markdownDescription": "When a dispatch opens a worktree terminal (`taskwright.dispatchOpenTerminal`), run this command in it. Supports the dispatch placeholders, notably `{{handoffFile}}` (path to the saved prompt) plus `{{id}}`, `{{title}}`, `{{worktree}}`. Leave empty to just open the terminal. To auto-start a session, use an **interactive** Claude Code chat seeded from the handoff file — e.g. bash: `claude \"$(cat {{handoffFile}})\"`, PowerShell: `claude (Get-Content -Raw '{{handoffFile}}')`. Commands using `claude -p`/`--print` (headless/metered) are skipped with a warning."
+          "markdownDescription": "When a dispatch opens a worktree terminal (`taskwright.dispatchOpenTerminal`), run this command in it. Supports the dispatch placeholders, notably `{{handoffFile}}` (path to the saved prompt) plus `{{id}}`, `{{title}}`, `{{worktree}}`. Leave empty to just open the terminal. To auto-start a session, seed an **interactive** session of your `#taskwright.dispatchAgent#` from the handoff file — e.g. bash: `claude \"$(cat {{handoffFile}})\"` or `codex \"$(cat {{handoffFile}})\"`, PowerShell: `claude (Get-Content -Raw '{{handoffFile}}')`. Headless/non-interactive commands (`claude -p`/`--print`, `codex exec`, `--headless`/`--non-interactive`) are metered and are skipped with a warning."
         },
         "taskwright.intakeTemplate": {
           "type": "string",

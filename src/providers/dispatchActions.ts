@@ -7,12 +7,12 @@ import { writeActiveTask } from '../core/activeTask';
 import { clearCancellationMarker } from '../core/cancellationMarker';
 import { writeHandoff, handoffPath } from '../core/handoff';
 import {
-  DEFAULT_DISPATCH_TEMPLATE,
   dispatchBranchName,
   dispatchContextFromTask,
   renderDispatchPrompt,
   resolveTerminalLaunch,
 } from '../core/dispatchPrompt';
+import { resolveDispatchProfile } from '../core/dispatchProfiles';
 import { getTaskwrightConfig } from '../config';
 import { loadTreeStateFromParser } from '../core/treeDerived';
 import { blockedByMessage } from '../core/treeGate';
@@ -20,8 +20,10 @@ import { blockedByMessage } from '../core/treeGate';
 /**
  * Provider-layer glue for subscription-safe dispatch. Composes the pure cores
  * (prompt rendering, worktree creation, handoff/active-task writes) with VS Code
- * config, clipboard, and terminal. It never spawns `claude -p` — the output is a
- * paste-ready prompt the user drops into a fresh Claude Code session.
+ * config, clipboard, and terminal. It never spawns an agent headlessly
+ * (`claude -p`, `codex exec`, …) — the output is a paste-ready prompt the user
+ * drops into a fresh interactive session of the configured agent
+ * (`taskwright.dispatchAgent`, phrasing per `dispatchProfiles.ts`).
  */
 export interface DispatchResult {
   taskId: string;
@@ -46,9 +48,12 @@ interface DispatchSettings {
 }
 
 function readSettings(): DispatchSettings {
+  // A custom taskwright.dispatchTemplate always wins untouched; otherwise the
+  // selected agent's profile (taskwright.dispatchAgent) supplies the template.
   const template = getTaskwrightConfig<string>('dispatchTemplate', '').trim();
+  const profile = resolveDispatchProfile(getTaskwrightConfig<string>('dispatchAgent', 'claude'));
   return {
-    template: template || DEFAULT_DISPATCH_TEMPLATE,
+    template: template || profile.template,
     createWorktree: getTaskwrightConfig<boolean>('dispatchCreateWorktree', true),
     openTerminal: getTaskwrightConfig<boolean>('dispatchOpenTerminal', false),
     terminalCommand: getTaskwrightConfig<string>('dispatchTerminalCommand', ''),
@@ -122,12 +127,12 @@ export async function dispatchTask(
   let prompt = renderDispatchPrompt(settings.template, context);
 
   // No isolated worktree (opt-out via taskwright.dispatchCreateWorktree=false, or a
-  // creation failure fell back to the repo root). The DEFAULT_DISPATCH_TEMPLATE tells
+  // creation failure fell back to the repo root). Every built-in profile template tells
   // the session to launch inside `.worktrees/<branch>` and run `/execute-task` — but
   // /execute-task STOPs in the primary tree (no worktree). Prepend a NOTE so the pasted
   // prompt is coherent (work in place, manual TDD, no /execute-task) and warn the human.
-  // We touch only the rendered prompt here, never DEFAULT_DISPATCH_TEMPLATE (it is also
-  // the handoff source and the user-customizable `dispatchTemplate` setting).
+  // We touch only the rendered prompt here, never the profile templates (they are also
+  // the handoff source and the user-customizable `dispatchTemplate` setting wins as-is).
   if (!worktreePath) {
     const note =
       '> NOTE: No isolated worktree was created for this dispatch ' +

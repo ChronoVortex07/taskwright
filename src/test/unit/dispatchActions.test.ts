@@ -14,10 +14,14 @@ import type { Task } from '../../core/types';
 // Mutable dispatch settings so a single harness can drive both the no-worktree
 // opt-out (default) and the with-worktree path. Defaults to worktree-OFF so the
 // GAP-3 tests below seed into the repo root (the temp dir) with no git.
-const settings = vi.hoisted(() => ({ createWorktree: false }));
+const settings = vi.hoisted(() => ({ createWorktree: false, agent: '', template: '' }));
 vi.mock('../../config', () => ({
-  getTaskwrightConfig: (key: string, dflt: unknown) =>
-    key === 'dispatchCreateWorktree' ? settings.createWorktree : dflt,
+  getTaskwrightConfig: (key: string, dflt: unknown) => {
+    if (key === 'dispatchCreateWorktree') return settings.createWorktree;
+    if (key === 'dispatchAgent') return settings.agent || dflt;
+    if (key === 'dispatchTemplate') return settings.template || dflt;
+    return dflt;
+  },
 }));
 
 // Deterministic worktree creation for the with-worktree branch (no real git needed).
@@ -42,6 +46,8 @@ import * as vscodeMock from 'vscode';
 let root: string, backlogPath: string;
 beforeEach(() => {
   settings.createWorktree = false; // reset per-test
+  settings.agent = '';
+  settings.template = '';
   vi.clearAllMocks();
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'tw-dispatch-'));
   backlogPath = path.join(root, 'backlog');
@@ -127,5 +133,37 @@ describe('dispatchTask — no-worktree dispatch prepends a coherence NOTE (FIX 2
       .mocked(vscodeMock.window.showWarningMessage)
       .mock.calls.some((c) => String(c[0]).includes('without an isolated worktree'));
     expect(warned).toBe(false);
+  });
+});
+
+describe('dispatchTask — per-agent dispatch profiles (TASK-93)', () => {
+  it('defaults to the Claude Code profile', async () => {
+    const result = await dispatchTask('TASK-7', stubParser(makeTask()));
+    expect(result!.prompt).toContain('Claude Code session');
+    expect(result!.prompt).not.toMatch(/\bCodex\b/);
+  });
+
+  it('renders the Codex profile when taskwright.dispatchAgent is codex', async () => {
+    settings.agent = 'codex';
+    const result = await dispatchTask('TASK-7', stubParser(makeTask()));
+    expect(result!.prompt).toContain('Codex session');
+    expect(result!.prompt).not.toMatch(/\bClaude\b/);
+    // The workflow contract is agent-independent.
+    expect(result!.prompt).toContain('/execute-task');
+    expect(result!.prompt).toContain('request_merge');
+  });
+
+  it('a custom taskwright.dispatchTemplate wins untouched, regardless of agent', async () => {
+    settings.createWorktree = true; // with a worktree, no NOTE is prepended
+    settings.agent = 'codex';
+    settings.template = 'Custom template for {{id}}';
+    const result = await dispatchTask('TASK-7', stubParser(makeTask()));
+    expect(result!.prompt).toBe('Custom template for TASK-7');
+  });
+
+  it('falls back to the Claude profile on an unknown agent id', async () => {
+    settings.agent = 'copilot';
+    const result = await dispatchTask('TASK-7', stubParser(makeTask()));
+    expect(result!.prompt).toContain('Claude Code session');
   });
 });
