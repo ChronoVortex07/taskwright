@@ -210,12 +210,12 @@ export class BoardSyncScheduler {
 
 **Consumes:** `refTip`, `fetchRef`, `pushRef`, `isAncestor`, `mergeBaseOf`, `readRefFileMap`, `commitMergedTree`, `defaultBoardExec` (boardRef.ts); `mergeBoards` (boardMerge.ts); `boardWorktreePathFor` (Task 2); `boardTrackedPaths` (boardMigration.ts) for the pathspec.
 
-- [ ] **Step 1: Failing tests**: (a) `autoCommitBoard` fake-exec: exact `add -A --` pathspec args (the five dirs), commit args include identity `-c` flags; clean tree → committed:false. (b) `acquireSyncLock`: second acquire returns null; stale lock stolen (write lock dir, backdate mtime with `fs.utimesSync`). (c) `BoardSyncScheduler` with fake timers: three `noteWrite()` → one `run`; `requestSync` during a run → exactly one queued follow-up. (d) `runBoardAutoSync` fake-exec: remote-ahead path issues merge + `reset --keep` and never `reset --hard`; fetch failure returns outcome with error, no throw.
-- [ ] **Step 2: Run** `bun run test -- autoSync` — FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** — PASS.
-- [ ] **Step 5: Integration** (in `gitAutoIntegration.test.ts`, Task 11 file, may stub now): two clones round-trip. Defer to Task 11 if the harness pieces aren't ready; unit coverage suffices here.
-- [ ] **Step 6: Commit** `feat(sync): event-driven auto-sync engine (TASK-91)`.
+- [x] **Step 1: Failing tests**: (a) `autoCommitBoard` fake-exec: exact `add -A --` pathspec args (the five dirs), commit args include identity `-c` flags; clean tree → committed:false. (b) `acquireSyncLock`: second acquire returns null; stale lock stolen (write lock dir, backdate mtime with `fs.utimesSync`). (c) `BoardSyncScheduler` with fake timers: three `noteWrite()` → one `run`; `requestSync` during a run → exactly one queued follow-up. (d) `runBoardAutoSync` fake-exec: remote-ahead path issues merge + `reset --keep` and never `reset --hard`; fetch failure returns outcome with error, no throw.
+- [x] **Step 2: Run** `bun run test -- autoSync` — FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run** — PASS.
+- [x] **Step 5: Integration** (in `gitAutoIntegration.test.ts`, Task 11 file, may stub now): two clones round-trip. Defer to Task 11 if the harness pieces aren't ready; unit coverage suffices here.
+- [x] **Step 6: Commit** `feat(sync): event-driven auto-sync engine (TASK-91)`.
 
 ---
 
