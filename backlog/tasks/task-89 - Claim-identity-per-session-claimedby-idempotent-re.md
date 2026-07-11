@@ -11,8 +11,7 @@ labels: []
 milestone: Pipeline Refinement & Multi-Agent Support
 dependencies: []
 priority: medium
-category: Core Board
-  task-89-claim-identity-per-session-claimed-by-idempotent-re-claim-for-the-same-claimant
+category: 'Core Board'
 ---
 
 ## Description
