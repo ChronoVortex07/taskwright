@@ -2,17 +2,14 @@
 id: TASK-99
 title: Sanitize rendered Markdown links and raw HTML
 type: bug
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-11 02:35'
-updated_date: '2026-07-11 09:20'
+updated_date: '2026-07-11 09:22'
 labels: []
 dependencies: []
 priority: high
 category: Core Board
-claimed_by: '@agent/main'
-worktree: main
-claimed_at: '2026-07-11 16:58'
 ---
 
 ## Description
