@@ -22,6 +22,8 @@ const defaultExec: GitExecFn = (cwd, args) => execFileAsync('git', args, { cwd, 
 export interface CreateWorktreeDeps {
   exec?: GitExecFn;
   pathExists?: (p: string) => boolean;
+  readDir?: (p: string) => string[];
+  removeDir?: (p: string) => void;
 }
 
 export interface WorktreeResult {
@@ -48,6 +50,24 @@ export function buildWorktreeAddArgs(
     : ['worktree', 'add', '-b', branch, worktreePath];
 }
 
+function normalizedWorktreePath(value: string, caseInsensitive: boolean): string {
+  const normalized = path.posix.normalize(value.replace(/\\/g, '/')).replace(/\/$/, '');
+  return caseInsensitive ? normalized.toLowerCase() : normalized;
+}
+
+/** Whether `git worktree list --porcelain` contains the requested absolute path. */
+export function worktreeListContainsPath(
+  porcelain: string,
+  targetPath: string,
+  caseInsensitive: boolean = process.platform === 'win32'
+): boolean {
+  const target = normalizedWorktreePath(targetPath, caseInsensitive);
+  return porcelain.split(/\r?\n/).some((line) => {
+    if (!line.startsWith('worktree ')) return false;
+    return normalizedWorktreePath(line.slice('worktree '.length), caseInsensitive) === target;
+  });
+}
+
 async function branchExists(repoRoot: string, branch: string, exec: GitExecFn): Promise<boolean> {
   try {
     await exec(repoRoot, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]);
@@ -58,9 +78,11 @@ async function branchExists(repoRoot: string, branch: string, exec: GitExecFn): 
 }
 
 /**
- * Create (or reuse) a worktree for `branch` under `<repoRoot>/.worktrees/`. If
- * the directory already exists it is reused as-is; otherwise a worktree is added,
- * creating the branch when it does not already exist.
+ * Create (or reuse) a worktree for `branch` under `<repoRoot>/.worktrees/`.
+ * Existing directories are reused only when Git confirms their registration.
+ * Windows can leave an empty directory behind after removing the worktree that
+ * contains the running process's cwd; that empty orphan is safe to remove and
+ * recreate. A non-empty orphan fails closed to protect user files.
  */
 export async function createWorktree(
   repoRoot: string,
@@ -69,10 +91,31 @@ export async function createWorktree(
 ): Promise<WorktreeResult> {
   const exec = deps.exec ?? defaultExec;
   const pathExists = deps.pathExists ?? fs.existsSync;
+  const readDir = deps.readDir ?? fs.readdirSync;
+  const removeDir = deps.removeDir ?? fs.rmdirSync;
   const worktreePath = worktreePathFor(repoRoot, branch);
 
   if (pathExists(worktreePath)) {
-    return { path: worktreePath, branch, created: false };
+    let porcelain: string;
+    try {
+      ({ stdout: porcelain } = await exec(repoRoot, ['worktree', 'list', '--porcelain']));
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`Could not verify the existing worktree at ${worktreePath}: ${detail}`, {
+        cause: error,
+      });
+    }
+    if (worktreeListContainsPath(porcelain, worktreePath)) {
+      return { path: worktreePath, branch, created: false };
+    }
+
+    if (readDir(worktreePath).length > 0) {
+      throw new Error(
+        `${worktreePath} is not a registered Git worktree and is not empty. ` +
+          'Move or remove it manually before starting this task.'
+      );
+    }
+    removeDir(worktreePath);
   }
   const exists = await branchExists(repoRoot, branch, exec);
   await exec(repoRoot, buildWorktreeAddArgs(worktreePath, branch, exists));
