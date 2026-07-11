@@ -2,17 +2,14 @@
 id: TASK-100
 title: Remediate dependency vulnerabilities and add an audit gate
 type: bug
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-11 02:35'
-updated_date: '2026-07-11 08:16'
+updated_date: '2026-07-11 08:17'
 labels: []
 dependencies: []
 priority: high
 category: Misc
-claimed_by: '@agent/main'
-worktree: main
-claimed_at: '2026-07-11 15:55'
 ---
 
 ## Description
