@@ -22,9 +22,11 @@ import {
   createCategoryHandler,
   createMilestoneHandler,
   listMilestonesHandler,
+  makePrimaryBoard,
 } from '../../mcp/handlers';
 import type { McpHandlerDeps } from '../../mcp/handlers';
 import { writeActiveTask } from '../../core/activeTask';
+import { boardHomeFor, boardWorktreePathFor } from '../../core/boardRoot';
 
 let root: string;
 let backlogPath: string;
@@ -607,5 +609,63 @@ describe('createMilestoneHandler', () => {
       .find((f) => /^m-0 - gamma/.test(f))!;
     const content = fs.readFileSync(path.join(backlogPath, 'milestones', file), 'utf-8');
     expect(content).toContain('Third age notes.');
+  });
+});
+
+describe('makePrimaryBoard (git-auto board home, TASK-91)', () => {
+  it('resets task files in the board worktree when the home is git-auto', async () => {
+    const primary = fs.mkdtempSync(path.join(os.tmpdir(), 'taskwright-mpb-'));
+    try {
+      const boardWorktree = boardWorktreePathFor(primary);
+      const tasksDir = path.join(boardWorktree, 'backlog', 'tasks');
+      fs.mkdirSync(tasksDir, { recursive: true });
+      const taskFile = path.join(tasksDir, 'task-3 - X.md');
+      fs.writeFileSync(
+        taskFile,
+        "---\nid: TASK-3\ntitle: X\nstatus: To Do\nassignee: []\ncreated_date: '2026-07-11'\nlabels: []\ndependencies: []\n---\n"
+      );
+
+      const calls: Array<{ cwd: string; args: string[] }> = [];
+      const exec = async (cwd: string, args: string[]) => {
+        calls.push({ cwd, args });
+        return { stdout: '', stderr: '' };
+      };
+
+      const board = makePrimaryBoard(primary, exec, boardHomeFor(primary, 'git-auto'));
+      await board.resetTaskFile('TASK-3');
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].cwd).toBe(boardWorktree);
+      expect(calls[0].args).toEqual(['checkout', '--', path.relative(boardWorktree, taskFile)]);
+    } finally {
+      fs.rmSync(primary, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the primary-tree checkout in off/git modes (no home)', async () => {
+    const primary = fs.mkdtempSync(path.join(os.tmpdir(), 'taskwright-mpb-'));
+    try {
+      const tasksDir = path.join(primary, 'backlog', 'tasks');
+      fs.mkdirSync(tasksDir, { recursive: true });
+      const taskFile = path.join(tasksDir, 'task-4 - Y.md');
+      fs.writeFileSync(
+        taskFile,
+        "---\nid: TASK-4\ntitle: Y\nstatus: To Do\nassignee: []\ncreated_date: '2026-07-11'\nlabels: []\ndependencies: []\n---\n"
+      );
+
+      const calls: Array<{ cwd: string; args: string[] }> = [];
+      const exec = async (cwd: string, args: string[]) => {
+        calls.push({ cwd, args });
+        return { stdout: '', stderr: '' };
+      };
+
+      const board = makePrimaryBoard(primary, exec);
+      await board.resetTaskFile('TASK-4');
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].cwd).toBe(primary);
+    } finally {
+      fs.rmSync(primary, { recursive: true, force: true });
+    }
   });
 });

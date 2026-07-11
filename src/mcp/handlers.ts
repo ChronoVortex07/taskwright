@@ -44,6 +44,8 @@ import {
 } from '../core/mergeQueue';
 import { DEFAULT_VERIFY_TIMEOUT_MS, mergeConfigPath, readMergeConfig } from '../core/mergeConfig';
 import { readSyncConfig, syncConfigPath, type SyncMode } from '../core/syncConfig';
+import { boardHomeFor, boardWorktreePathFor, type BoardHome } from '../core/boardRoot';
+import { runBoardAutoSync } from '../core/autoSync';
 import {
   pushBoard,
   pullBoard,
@@ -288,12 +290,22 @@ async function gitFacts(exec: GitExecFn, cwd: string): Promise<GitFacts> {
   return { gitDir, commonDir, primaryRoot: path.dirname(commonDir), branch };
 }
 
-/** A BoardOps bound to the PRIMARY tree's board (what the human watches). */
-export function makePrimaryBoard(primaryRoot: string, exec: GitExecFn): BoardOps {
-  const backlogPath = path.join(primaryRoot, 'backlog');
-  const parser = new BacklogParser(backlogPath);
+/** A BoardOps bound to the ONE physical board (what the human watches). */
+export function makePrimaryBoard(
+  primaryRoot: string,
+  exec: GitExecFn,
+  home?: BoardHome
+): BoardOps {
+  const backlogPath = home?.backlogPath ?? path.join(primaryRoot, 'backlog');
+  const configYml = home ? path.join(home.configRoot, 'config.yml') : undefined;
+  const parser = new BacklogParser(backlogPath, configYml, undefined, primaryRoot);
   const writer = new BacklogWriter();
   const claims = new ClaimService();
+  // In git-auto the board worktree is a real checkout of the board branch, so
+  // `git checkout --` runs there (in the primary tree board files are ignored/
+  // untracked and the checkout would be a no-op).
+  const checkoutCwd =
+    home?.mode === 'git-auto' ? boardWorktreePathFor(primaryRoot) : primaryRoot;
   return {
     async setStatus(taskId, status) {
       await writer.updateTask(taskId, { status } as Partial<Task>, parser);
@@ -304,9 +316,9 @@ export function makePrimaryBoard(primaryRoot: string, exec: GitExecFn): BoardOps
     async resetTaskFile(taskId) {
       const task = await parser.getTask(taskId);
       if (!task) return;
-      const rel = path.relative(primaryRoot, task.filePath);
+      const rel = path.relative(checkoutCwd, task.filePath);
       try {
-        await exec(primaryRoot, ['checkout', '--', rel]);
+        await exec(checkoutCwd, ['checkout', '--', rel]);
       } catch {
         // best-effort: if it fails, the ff-merge will abort cleanly on the dirty file
       }
@@ -488,7 +500,33 @@ export async function requestMergeHandler(
   }
   const config = { ...baseConfig, verifyTimeoutMs };
 
-  const board = deps.board ?? makePrimaryBoard(facts.primaryRoot, exec);
+  // git-auto (TASK-91): bind the board ops to the hidden-worktree home (only
+  // once it actually exists — pre-bootstrap falls back to the primary shape),
+  // and run a best-effort sync at both merge boundaries so headless
+  // orchestration stays fresh without VS Code open. Sync NEVER affects the
+  // merge result (spec §3: degrade, never block).
+  const syncCfg = readSyncConfig(syncConfigPath(facts.commonDir), fsDeps);
+  const homeCandidate = boardHomeFor(facts.primaryRoot, syncCfg.mode);
+  const home =
+    syncCfg.mode === 'git-auto' && fs.existsSync(homeCandidate.backlogPath)
+      ? homeCandidate
+      : undefined;
+  const board = deps.board ?? makePrimaryBoard(facts.primaryRoot, exec, home);
+
+  const boundarySync = async (): Promise<void> => {
+    if (!home) return;
+    try {
+      await runBoardAutoSync({
+        primaryRoot: facts.primaryRoot,
+        ref: syncCfg.ref,
+        remote: syncCfg.remote,
+        exec: deps.boardExec,
+      });
+    } catch (err) {
+      console.error('[taskwright-mcp] merge-boundary board sync failed:', err);
+    }
+  };
+  await boundarySync();
 
   // TASK-88: a non-negative finite waitMinutes bounds the queue wait (0 = check
   // once); anything else keeps the fully-blocking default.
@@ -499,7 +537,7 @@ export async function requestMergeHandler(
       ? args.waitMinutes
       : undefined;
 
-  return requestMerge(
+  const result = await requestMerge(
     {
       root,
       primaryRoot: facts.primaryRoot,
@@ -519,6 +557,10 @@ export async function requestMergeHandler(
       ? { waitMinutes, ticket: args.ticket }
       : undefined
   );
+
+  // Publish the Done flip (and anything else the merge wrote) to the remote.
+  await boundarySync();
+  return result;
 }
 
 /**
@@ -569,6 +611,34 @@ export async function pushBoardHandler(deps: McpHandlerDeps): Promise<PushBoardR
       message: syncOffMessage(),
     };
   }
+  if (syncCfg.mode === 'git-auto') {
+    // The manual escape hatch enqueues the same sync pass the events run.
+    const outcome = await runBoardAutoSync({
+      primaryRoot: facts.primaryRoot,
+      ref: syncCfg.ref,
+      remote: syncCfg.remote,
+      exec: deps.boardExec,
+    });
+    if ('skipped' in outcome) {
+      return {
+        pushed: false,
+        ref: syncCfg.ref,
+        remote: syncCfg.remote,
+        commit: '',
+        conflicts: [],
+        message: 'Another session is syncing the board right now — try again in a moment.',
+      };
+    }
+    return {
+      pushed: outcome.pushed,
+      ref: syncCfg.ref,
+      remote: syncCfg.remote,
+      commit: outcome.localTip ?? '',
+      rejected: outcome.rejected,
+      conflicts: outcome.conflicts,
+      message: outcome.pushed ? undefined : outcome.error,
+    };
+  }
   return pushBoard({
     cwd: deps.root,
     ref: syncCfg.ref,
@@ -597,6 +667,37 @@ export async function pullBoardHandler(deps: McpHandlerDeps): Promise<PullBoardR
       files: [],
       conflicts: [],
       message: syncOffMessage(),
+    };
+  }
+  if (syncCfg.mode === 'git-auto') {
+    // Same sync pass as push — in git-auto the board worktree IS the live
+    // board, so a successful fold already materialized everything.
+    const outcome = await runBoardAutoSync({
+      primaryRoot: facts.primaryRoot,
+      ref: syncCfg.ref,
+      remote: syncCfg.remote,
+      exec: deps.boardExec,
+    });
+    if ('skipped' in outcome) {
+      return {
+        pulled: false,
+        ref: syncCfg.ref,
+        remote: syncCfg.remote,
+        files: [],
+        conflicts: [],
+        message: 'Another session is syncing the board right now — try again in a moment.',
+      };
+    }
+    return {
+      pulled: outcome.remoteTip !== null && outcome.error === undefined,
+      ref: syncCfg.ref,
+      remote: syncCfg.remote,
+      files: [],
+      conflicts: outcome.conflicts,
+      message:
+        outcome.remoteTip === null
+          ? `Remote "${syncCfg.remote}" has no "${syncCfg.ref}" ref yet — push first.`
+          : outcome.error,
     };
   }
   return pullBoard({

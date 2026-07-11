@@ -384,9 +384,9 @@ export function makePrimaryBoard(primaryRoot: string, exec: GitExecFn, home?: Bo
 - Modify push/pull handlers (`handlers.ts:561,591`): when mode is `git-auto`, route to `runBoardAutoSync` (push → outcome mapped `{ pushed, commit?, rejected, conflicts }`; pull → same call, mapped to the pull result with `files: []` and a note the board worktree IS the live board); v2 `git` path untouched.
 - Test: `src/test/unit/mcpWriteHandlers.test.ts` / `mcpReadHandlers.test.ts` — extend `makePrimaryBoard` test (exists per TASK-82 coverage) for the git-auto checkout cwd; handler-routing unit tests with injected sync config.
 
-- [ ] **Step 1: Failing tests** for `makePrimaryBoard` git-auto cwd + push handler routing.
-- [ ] **Step 2:** FAIL. **Step 3: Implement.** **Step 4:** PASS (`bun run test -- mcp`).
-- [ ] **Step 5: Commit** `feat(mcp): git-auto board home in server root, primary board ops, merge-boundary sync (TASK-91)`.
+- [x] **Step 1: Failing tests** for `makePrimaryBoard` git-auto cwd + push handler routing.
+- [x] **Step 2:** FAIL. **Step 3: Implement.** **Step 4:** PASS (`bun run test -- mcp`).
+- [x] **Step 5: Commit** `feat(mcp): git-auto board home in server root, primary board ops, merge-boundary sync (TASK-91)`.
 
 ---
 

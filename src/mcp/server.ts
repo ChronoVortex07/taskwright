@@ -78,19 +78,28 @@ async function main(): Promise<void> {
   console.log = (...args: unknown[]): void => console.error(...args);
 
   // `root` stays worktree-local (session identity: `.taskwright/active-task.json`,
-  // merge-queue lookups). `backlogPath` is the ONE physical board (Board Sync v2
-  // §2.1) — the primary worktree's `backlog/` — so an agent working from a
+  // merge-queue lookups). `backlogPath` is the ONE physical board — the primary
+  // worktree's `backlog/` (Board Sync v2 §2.1), or in git-auto mode the hidden
+  // board worktree's `backlog/` (TASK-91) — so an agent working from a
   // `.worktrees/<branch>` checkout (which has no local `backlog/` at all; it's
   // git-ignored and `git worktree add` never populates it) still reads/writes
-  // the real board instead of a nonexistent local one.
+  // the real board instead of a nonexistent local one. Resolved ONCE at launch:
+  // a sync-mode flip requires an MCP restart (the migration prompts a reload).
+  // In git-auto with the worktree not yet bootstrapped (fresh clone before the
+  // extension's first activation), this falls back to the primary shape.
   const root = process.env.TASKWRIGHT_ROOT?.trim() || process.cwd();
-  const backlogPath =
-    (await resolveWorkspaceBacklogRoot(root)).backlogPath || path.join(root, 'backlog');
+  const resolution = await resolveWorkspaceBacklogRoot(root);
+  const backlogPath = resolution.backlogPath || path.join(root, 'backlog');
+  // Pass the folder config through so the git-auto split root still reads
+  // config.yml from the repo backlog/; a root-level backlog.config.yml keeps
+  // the parser's own discovery (behavior identical to v2).
+  const resolvedConfigPath =
+    resolution.configSource === 'folder' ? (resolution.configPath ?? undefined) : undefined;
 
   const deps: McpHandlerDeps = {
     root,
     backlogPath,
-    parser: new BacklogParser(backlogPath),
+    parser: new BacklogParser(backlogPath, resolvedConfigPath, undefined, resolution.primaryRoot),
     writer: new BacklogWriter(),
     claimService: new ClaimService(),
     planService: new PlanService(),
