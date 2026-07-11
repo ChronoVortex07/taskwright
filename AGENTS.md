@@ -15,13 +15,24 @@ external CLI. At the start of a task session:
    `scripts/taskwright-mcp.cjs`), so if your task edits the MCP server itself,
    those changes only take effect after the task is merged and the primary is
    rebuilt.
-3. `claim_task` — mark it in progress (advisory; prevents cross-worktree collisions).
+3. `claim_task` — mark it in progress (advisory; prevents cross-worktree collisions). The claim
+   records a per-session identity derived from your worktree (`@agent/<branch>`): re-claiming your
+   own task is an idempotent no-op, while a task live-claimed by a different session returns
+   `surrendered`/`heldBy` — pick a different task instead of overriding.
 4. Do the work. Use `create_task` / `edit_task` to add or update tasks, and `create_subtask` for
    breakdowns. Record progress with `edit_task` (implementationNotes / finalSummary). Do **not** call
    `complete_task` as part of the normal flow — `request_merge` marks the task **Done** on the board,
    and it stays there. (`complete_task` files a task away into `backlog/completed/`, which removes it
    from the board; it is an opt-in archival action, not the way a merged task reaches Done.)
 5. **Close with `request_merge`.** When the task is committed and your worktree is clean, call `request_merge` from inside your worktree and wait for it to return. It rebases onto the base branch, runs the verify commands, waits for its turn in the shared merge queue (and, in manual-review mode, for your human's approval on the board), then fast-forward-merges to the base branch (or opens a PR), marks the task **Done** on the board (leaving it in `tasks/`), and removes your worktree. Do not merge, commit, or push from the repo root yourself. (`release_task` is called for you as part of cleanup; call it directly only if you hand off without integrating.)
+   If a long wait is likely you may pass `waitMinutes`: on expiry the call returns
+   `{ status: "pending", queuePosition, ticket }` — **not a failure**. Your work is verified and the
+   queue entry and board status are kept; resume by calling `request_merge` again with the same task
+   ID (+ the returned `ticket`), or park and report the ticket so a later session finishes the merge.
+   A `sent_back` on resume means a reviewer sent the task back while you were parked. Never treat
+   `pending` as an error, and never fall back to merging from the repo root. If verification is
+   killed for time (abort code `verify_timeout`), raise `taskwright.mergeVerifyTimeoutMinutes` or
+   pass `verifyTimeoutMinutes` per call — don't shrink the suite to fit the clock.
 
 Generated task files stay byte-for-byte compatible with Backlog.md, so the board remains
 readable by the upstream tools if they are installed.

@@ -273,6 +273,71 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   checkouts and their worktrees; user-scope registration remains the general path.
   Coverage: `src/test/unit/{agentConvention,skillInstaller,mcpProjectConfig}.test.ts`.
   Plan: `docs/superpowers/plans/2026-07-08-broaden-claude-integration-scaffolding.md`.
+- **Merge-gate configurability + resumable `request_merge` (m-10: TASK-84/85/86/87/88)** ✅: the merge
+  gate is tunable, durable, observable, and resumable. **Timeout + abort codes (84):** `MergeConfig`
+  gained `verifyTimeoutMs` (default 10 min, was a hardcoded cap) + optional `verifyTimeoutMaxMs`,
+  published from `taskwright.mergeVerifyTimeoutMinutes` / `mergeVerifyTimeoutMaxMinutes`; the
+  `request_merge` tool accepts a per-call `verifyTimeoutMinutes` (clamped to the repo max); a killed
+  verify aborts with an actionable "verify timed out…" reason, and every abort carries a
+  machine-readable `code` (`verify_timeout | verify_failed | dirty_worktree | dirty_primary |
+rebase_conflict`) so `/orchestrate-board` branches without parsing prose. **Durable merge-config
+  (85):** `syncMergeConfig` republishes only explicitly-set settings (`cfg.inspect()` via the pure
+  `publishMergeConfig`/`explicitSettingValue` in `src/core/mergeConfig.ts`, explicit > file > default),
+  so agent/CLI fixes to `merge-config.json` survive restarts; missing/corrupt files still materialize
+  defaults. **Verify doctor (86):** pure `src/core/verifyDoctor.ts` classifies the repo
+  (node/python/rust/go) and flags only provably-unrunnable script commands, suggesting runnable
+  replacements; surfaced at activation + setup with one-click "Apply suggested commands" — never a
+  silent rewrite. **Friction fixes (87):** the queue-head re-verify is skipped when the post-wait
+  rebase is a no-op (verified-HEAD-SHA comparison — halves merge wall-time), and the primary-dirty
+  abort blocks only porcelain paths intersecting the merge footprint (`collidingWipPaths`), naming the
+  exact blockers. **Unpinned close (88):** the MCP server forwards `MergeProgress` as
+  `notifications/progress` (verify command/elapsed, queue position/approval) when the client sends a
+  progressToken, and `request_merge` accepts `waitMinutes` — on expiry it returns
+  `{ status: 'pending', queuePosition, ticket }` keeping the queue entry; a later call resumes
+  idempotently (`verifiedHeadSha` persisted on the entry skips duplicate verify; `sent_back` detects a
+  reviewer send-back while parked). Blocking default unchanged; `/execute-task` + `/orchestrate-board`
+  document poll-or-park. Coverage:
+  `src/test/unit/{mergeConfig,verifyDoctor,finishTaskActions,requestMerge,mergeQueue,mcpMergeHandlers}.test.ts`.
+- **Claim identity — per-session `claimed_by` (TASK-89)** ✅: `claim_task` derives a stable
+  `@agent/<branch>` identity from the worktree (explicit arg > `.worktrees/<branch>` segment > git
+  branch; pure `src/core/claimIdentity.ts` — `agentClaimIdentity`/`worktreeBranchFromPath`/
+  `shortClaimIdentity`), so a restarted session can tell "my claim" from a foreign one: re-claiming
+  your own task is an idempotent no-op, a live foreign claim returns `surrendered`/`heldBy`, legacy
+  `@agent` claims upgrade in place (`claimResolution.ts`). Same PR fixed the **folded-scalar claim
+  corruption**: removal is continuation-safe (`removeFieldLines`, `src/core/frontmatterEdit.ts`) and
+  `BacklogWriter` collapses the surgical keys (`claimed_by`/`worktree`/`claimed_at`/`plan`) back to
+  one line on rewrite (`collapseFoldedSurgicalFields`) — no more orphaned continuations mangling
+  `category`. Reopened scope hardened every kanban indicator badge (claim/merge/active/readonly)
+  against flex `min-width:auto` overflow and repointed the DetailPopover "Claimed by" line at
+  `shortClaimIdentity` (full identity + worktree in the tooltip). Identity is agent-brand-neutral —
+  it comes from the worktree, not the tool. Coverage: claims/claimIdentity/claimResolution unit
+  tests + `e2e/board-indicators.spec.ts`, `e2e/tree-popover.spec.ts`.
+- **Board doctor (TASK-90)** ✅: pure `src/core/boardDoctor.ts` — `diagnoseBoard` returns typed
+  findings (dangling-active-task, stale-handoff, orphaned-worktree, in-flight-no-claim,
+  claim-worktree-vanished, malformed-category, dangling-continuation), each with a declared repair;
+  `gatherDoctorFacts` reads `.taskwright/` + `.worktrees/`; one shared `runBoardDoctor` assembly for
+  extension and MCP (parity). Glue `src/providers/doctorActions.ts`: silent-when-clean activation
+  check, warning → multi-select quick-pick, repairs routed through the existing writers
+  (activeTask/claimActions/TreeFieldService/marker-first `removeWorktree`; strip-continuations is a
+  CRLF-safe surgical rewrite) — nothing deleted without confirmation. On-demand via the
+  `taskwright.doctor` command; read-only via the `board_doctor` MCP tool so `/orchestrate-board` can
+  pre-flight. Coverage: `src/test/unit/boardDoctor.test.ts` + `mcpReadHandlers.test.ts`.
+- **Multi-agent scaffolding — Codex + agent-agnostic dispatch (TASK-92/93)** ✅: Taskwright is no
+  longer Claude-only. **Codex integration (92):** `setUpAgentIntegration` dispatches per-agent
+  adapters `{claude, codex}`; the Codex adapter upserts `[mcp_servers.taskwright]` into
+  `$CODEX_HOME/config.toml` (pure `src/core/codexConfig.ts`, idempotent + content-preserving,
+  absolute path to `scripts/taskwright-mcp.cjs` so worktrees resolve the primary build) and renders
+  the four user-facing skills as Codex custom prompts from the same bundled SKILL.md sources
+  (`src/core/codexPrompts.ts`, mirrors `skillInstaller.ts`); `AgentIntegrationDetector` gained
+  `~/.codex` detection; new `taskwright.setupCodexIntegration` command + one-time activation offer;
+  the AGENTS.md convention block is agent-neutral. **Agent-agnostic dispatch (93):** dispatch
+  profiles are DATA (`src/core/dispatchProfiles.ts` — `DISPATCH_PROFILES`, `resolveDispatchProfile`;
+  `taskwright.dispatchAgent` setting, default `claude`), both templates carrying the identical
+  worktree/`bun install`/no-root-commit/`request_merge` contract (contract-marker test); the terminal
+  guardrail generalized to `commandUsesHeadlessMode` (deny-list: `claude -p`/`--print`, `codex exec`,
+  generic `--headless`/`--non-interactive`) applied regardless of agent — subscription safety is a
+  principle, not a Claude feature. A custom `taskwright.dispatchTemplate` still wins untouched.
+  Coverage: `src/test/unit/{codexConfig,codexPrompts,AgentIntegrationDetector,dispatchProfiles,dispatchPrompt,dispatchActions}.test.ts`.
 
 ## Conventions
 

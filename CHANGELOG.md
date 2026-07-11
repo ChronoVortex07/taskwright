@@ -4,6 +4,103 @@ All notable changes to Taskwright are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] — 2026-07-11
+
+The **Pipeline Refinement & Multi-Agent Support** release: a tunable, observable, resumable merge
+gate; health checks with one-click repairs for the board and the verify commands; per-session claim
+identity; and first-class Codex support alongside Claude Code.
+
+### Added
+
+- **Configurable verify timeout + machine-readable merge aborts.** The merge gate's hardcoded
+  10-minute verify cap is now the `taskwright.mergeVerifyTimeoutMinutes` setting (default 10), and an
+  agent that measured its suite can raise it per call via the `request_merge` tool's
+  `verifyTimeoutMinutes` parameter (clamped by `taskwright.mergeVerifyTimeoutMaxMinutes`, default
+  uncapped). A killed command now aborts with an actionable reason — "verify timed out after Ns on
+  `cmd` (raise `taskwright.mergeVerifyTimeoutMinutes` or pass `verifyTimeoutMinutes`)" — never a
+  generic "Verification failed". Every `request_merge` abort also carries a machine-readable `code`
+  (`verify_timeout` | `verify_failed` | `dirty_worktree` | `dirty_primary` | `rebase_conflict`) so
+  `/orchestrate-board` can branch on outcomes instead of parsing prose.
+- **Verify-command doctor.** A pure core (`src/core/verifyDoctor.ts`) detects the repo type (node
+  with package manager and scripts, python with uv, rust, go) and flags configured verify commands
+  that provably cannot run (`bun run test` with no such script), suggesting runnable replacements
+  (`<pm> run test|lint|typecheck` from existing scripts, `uv run pytest -q`, `cargo test`,
+  `go test ./...`). Runs at activation (notifies only when the gate is misconfigured) and from the
+  setup command (confirms a healthy gate out loud); a one-click "Apply suggested commands" persists
+  durably — the doctor never rewrites anything silently.
+- **`request_merge` unpinned from the agent process.** The MCP server now emits progress
+  notifications during verify (command name, i/n, elapsed) and the queue wait (position, approval
+  state) so clients that reset tool timeouts on progress survive long suites and slow reviews. A new
+  `waitMinutes` parameter bounds the wait: on expiry the call returns
+  `{ status: "pending", queuePosition, ticket }` instead of blocking forever — the queue entry and
+  board status are kept, and a later `request_merge` for the same task (+ `ticket`) resumes
+  idempotently (no re-enqueue, no duplicate verify when the base didn't move; a reviewer Send-back
+  while parked returns `sent_back`). The fully-blocking default is unchanged, and the `/execute-task`
+  and `/orchestrate-board` skills document the poll-or-park handling of `pending`.
+- **Per-session claim identity.** `claim_task` derives a stable `@agent/<branch>` identity from the
+  worktree instead of the generic `@agent`, so after a restart a session can tell "my claim" from
+  someone else's: re-claiming your own task is an idempotent no-op, a live foreign claim returns
+  `surrendered`/`heldBy` instead of silently overwriting, and legacy `@agent` claims upgrade in
+  place. The kanban badge and tree popover show the short identity (full identity + worktree in the
+  tooltip). Works for any agent brand — identity comes from the worktree, not the tool.
+- **Board doctor.** `diagnoseBoard` (`src/core/boardDoctor.ts`) detects accumulated board drift —
+  dangling active-task pointer, stale handoff files for Done tasks, orphaned worktree dirs, in-flight
+  tasks with no claim and no worktree, claims whose worktree vanished, mangled category values, and
+  dangling folded-frontmatter continuation lines — and offers per-finding one-click repairs routed
+  through the existing writers (nothing is deleted without confirmation). Runs silently-when-clean at
+  activation, on demand via the new **`taskwright.doctor`** command, and read-only via the new
+  **`board_doctor`** MCP tool so `/orchestrate-board` can pre-flight the board.
+- **Codex integration scaffolding.** The new **`taskwright.setupCodexIntegration`** command registers
+  the Taskwright MCP server in Codex's `~/.codex/config.toml` (idempotent, content-preserving upsert;
+  reuses the same `scripts/taskwright-mcp.cjs` launcher so worktrees resolve the primary build
+  exactly as with Claude) and installs the four user-facing skills (create-task, execute-task,
+  index-codebase, orchestrate-board) as Codex custom prompts rendered from the same SKILL.md sources.
+  The AGENTS.md convention block is now agent-neutral and names both registration surfaces.
+- **Agent-agnostic dispatch.** The new `taskwright.dispatchAgent` setting (`claude` | `codex`,
+  default `claude`) selects a dispatch profile — per-agent prompt template and suggested terminal
+  command, kept as data (`src/core/dispatchProfiles.ts`), never a fork of the pipeline; both
+  templates carry the identical worktree / `bun install` / no-root-commit / `request_merge` contract.
+  The terminal-launch guardrail generalizes from `claude -p` only to a headless deny-list
+  (`claude -p`/`--print`, `codex exec`, generic `--headless`/`--non-interactive`) applied regardless
+  of the selected agent — subscription safety is a principle, not a Claude feature. A custom
+  `taskwright.dispatchTemplate` still wins untouched.
+
+### Changed
+
+- **Queue-head re-verify is skipped when the base didn't move.** The verify suite used to run twice
+  per merge — pre-enqueue and again at queue head — even when `main` never advanced during the wait.
+  The pre-enqueue verify now records the worktree HEAD SHA (persisted on the queue entry, so the skip
+  also works across a `pending` resume); at queue head, an unchanged HEAD after the post-wait rebase
+  proves the verified tree is byte-identical to the tree being merged and the second run is skipped.
+  Halves merge wall-time in the common single-agent case; any unresolvable HEAD fail-safes to
+  re-verify.
+- **Primary-dirty abort relaxed to real collisions.** `request_merge` used to abort on ANY
+  uncommitted change in the primary tree outside `backlog/` — including unrelated untracked files —
+  which drove agents to stash WIP or hand-edit git excludes. It now blocks only files that actually
+  intersect the merge footprint (`git diff --name-only base..branch` vs the primary's porcelain
+  paths), names exactly which files block, and merges cleanly past unrelated WIP. A failed footprint
+  diff falls back to the previous strict check.
+
+### Fixed
+
+- **`merge-config.json` no longer clobbered on activation.** `syncMergeConfig` rewrote the shared
+  `<commonDir>/taskwright/merge-config.json` wholesale from VS Code settings on every activation —
+  `cfg.get()` returns package.json defaults for unset keys, so any agent/CLI fix (e.g. corrected
+  verify commands in a non-bun repo) was silently reverted on the next extension restart. It now
+  republishes only keys the user explicitly set (via `cfg.inspect()`), merged over the existing file
+  (explicit setting > file > default); missing/corrupt files still materialize full defaults.
+- **Folded-scalar claim corruption.** A full task rewrite (gray-matter, `lineWidth` 80) could fold a
+  long `worktree:` value into a `>-` block, and the surgical claim removers only filtered the key
+  line — orphaning the indented continuation onto the next frontmatter field (observed as mangled
+  `category` values). Removal is now continuation-safe (`removeFieldLines` sweeps folded scalars and
+  block sequences), and the writer collapses the Taskwright surgical keys (`claimed_by` / `worktree`
+  / `claimed_at` / `plan`) back to a single line on rewrite. The board doctor detects and repairs the
+  historical damage.
+- **Indicator-badge overflow at long claim identities.** A 95-char `claimed_by` could spill past the
+  kanban card: every indicator badge (claim / merge / active / readonly) now clips and its label
+  shrink-ellipsizes, and the tree DetailPopover shows the short claim identity instead of a 4-line
+  raw identity + worktree blob (full identity in the tooltip). Pinned by Playwright regression tests.
+
 ## [1.2.1] — 2026-07-08
 
 ### Fixed
