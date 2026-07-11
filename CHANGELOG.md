@@ -4,6 +4,81 @@ All notable changes to Taskwright are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] — 2026-07-11
+
+The **Cross-Agent Skills & Security-Hardening** release: Taskwright's workflow skills now install as
+native, progressively-disclosed skill packages for both Claude Code and Codex (with a distributable
+Codex plugin); the rendered-Markdown surfaces neutralize unsafe link/image targets; a reviewed-baseline
+dependency-audit gate guards CI against regressions; and the dev/release automation is fully
+cross-platform with a Windows + Linux CI matrix.
+
+### Added
+
+- **Native cross-agent skills + `.codex-plugin` bundle.** The four user-facing workflow skills
+  (`create-task`, `execute-task`, `index-codebase`, `orchestrate-board`) now render for **both agents
+  from one versioned source** (`dist/skills`): Claude Code keeps its `.claude/skills` install, and Codex
+  now receives them as native `SKILL.md` packages under `<root>/.agents/skills/<name>/` — its canonical
+  progressive-disclosure discovery surface — replacing the capability-reducing "custom prompt"
+  approximation. A new pure core (`src/core/agentSkills.ts`: `installAgentSkills` / `discoverAgentSkills` /
+  scoped `uninstallAgentSkills`) drives the Codex install, and `setUpCodexIntegration` now installs skills
+  (its command is retitled "MCP + skills"). A new **distributable Codex plugin** is built to
+  `dist/codex-plugin/` (`src/core/codexPlugin.ts` + `scripts/build.ts` `bundleCodexPlugin`): a valid
+  `.codex-plugin/plugin.json` manifest, the plugin's own bare-map `.mcp.json`, and a repo-scoped
+  marketplace descriptor, bundling the skills alongside the Taskwright MCP server so a teammate can
+  install the whole workflow in one step. It ships as a **separate distribution artifact** (excluded from
+  the VSIX). New `docs/codex-plugin.md` documents the install/update/uninstall flows.
+
+### Security
+
+- **Centralized Markdown URL sanitization.** Every rendered task/document Markdown surface now routes
+  through one dependency-free policy (`src/core/sanitizeUrl.ts`) that neutralizes unsafe link and image
+  targets — `javascript:`, `data:`, and `vbscript:` schemes, including mixed-case, whitespace-,
+  control-char-, and HTML-entity-obfuscated variants — while preserving safe `http`/`https`/`mailto` and
+  workspace-relative links. The choke point runs in `parseMarkdown.ts` after `marked.parse` (unsafe
+  `href`/`src` attributes are dropped, leaving inert text), raw HTML stays disabled, and the three webview
+  markdown click handlers import the **same** policy for defense-in-depth at click time — one policy, no
+  drift. Covered by 24 adversarial unit cases plus end-to-end and Playwright link-activation tests.
+- **Reviewed-baseline dependency-audit CI gate.** A new gate (`src/core/auditGate.ts` +
+  `scripts/audit-gate.ts` + `security/audit-allowlist.json`) fails CI on any non-allowlisted advisory at
+  or above the `high` threshold, or on any expired exception, while reporting lower-severity findings
+  only. It is **churn-resilient**: the green baseline is the curated, time-bounded allowlist rather than a
+  raw `bun audit` count, so a genuinely new high/critical advisory forces human triage instead of silently
+  flipping a number. The accompanying triage (`security/dependency-audit.md`) confirmed the shipped VSIX
+  carries only bundled `dist/` (no `node_modules`), so every current advisory is a dev/build/test
+  transitive that never reaches users; no dependency versions changed. Wired into
+  `.github/workflows/ci.yml` and the `audit` / `audit:gate` / `ci` scripts.
+
+### Changed
+
+- **Cross-platform dev & release automation + Windows/Linux CI matrix.** The five bash tooling wrappers
+  (license generation/check, e2e, CDP, screenshots) are ported to portable `bun`-run TypeScript
+  (`scripts/*.ts` with shared `scripts/lib/{platform,run}.ts`), so no `package.json` script shells out to
+  `bash` anymore. A detection bug that funnelled Git-Bash/Windows into `xvfb` is fixed — `xvfb-run` now
+  wraps display-driven suites on **headless Linux only**. CI's portable verification core (install,
+  engines, lint, typecheck, depcheck, audit, test, build, license check) now runs on **`ubuntu-24.04` and
+  `windows-latest`**, with the display / apt / VS-Code-download suites kept Linux-only. The docs gain a
+  Platform-support / prerequisites section and drop the stale "≈22 POSIX tests fail on Windows" note.
+
+### Fixed
+
+- **Repository formatting & webview accessibility debt.** The whole repo is back under `prettier --check`
+  (68 pre-existing debt files reformatted; `.prettierrc` uses `endOfLine: auto` to avoid CRLF/LF churn).
+  Webview accessibility oversights are resolved without changing intended visuals: a global
+  `:focus-visible` outline restores the focus ring for the many `all: unset` controls; `aria-label`s were
+  added to title-/placeholder-only icon buttons and form controls across the board (tabs, tree-canvas
+  zoom, popovers, checklists, config, list filters, create-task, task header); modals and menus became
+  proper `role=dialog` / `role=group` with focus management and Escape handling; and drag-only mutations
+  retain keyboard equivalents. The webview build now emits **0 accessibility warnings**, guarded by a new
+  `e2e/accessibility.spec.ts`.
+- **Documentation & release-metadata drift reconciled.** Codex now installs the workflow skills as
+  native `.agents/skills/` SKILL.md packages, so the README, the `taskwright.dispatchAgent` setting
+  description, the Codex setup prompt/comments, and the Codex dispatch template no longer describe the
+  retired "custom prompt" mechanism. The Marketplace `description`/`keywords` now name Codex alongside
+  Claude Code. The MCP server advertises the real package version (was a stale `0.0.1` placeholder)
+  by deriving it from `package.json`. A new `releaseMetadata` unit test keeps the CHANGELOG's newest
+  version, the MCP server version, and the agent keywords reconciled with `package.json`
+  automatically.
+
 ## [1.4.0] — 2026-07-11
 
 The **Hidden-Worktree Board Home** release: an opt-in third sync mode, `git-auto`, that moves the
@@ -54,17 +129,6 @@ every prior board state.
 - **Known divergence (documented):** upstream Backlog.md CLI tools expect `backlog/tasks` at the
   repo root and therefore do not see the board while `git-auto` is active; `off`/`git` keep full
   upstream compatibility.
-
-### Fixed
-
-- **Documentation & release-metadata drift reconciled.** Codex now installs the workflow skills as
-  native `.agents/skills/` SKILL.md packages, so the README, the `taskwright.dispatchAgent` setting
-  description, the Codex setup prompt/comments, and the Codex dispatch template no longer describe the
-  retired "custom prompt" mechanism. The Marketplace `description`/`keywords` now name Codex alongside
-  Claude Code. The MCP server advertises the real package version (was a stale `0.0.1` placeholder)
-  by deriving it from `package.json`. A new `releaseMetadata` unit test keeps the CHANGELOG's newest
-  version, the MCP server version, and the agent keywords reconciled with `package.json`
-  automatically.
 
 ## [1.3.0] — 2026-07-11
 

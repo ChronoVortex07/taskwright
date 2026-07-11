@@ -157,6 +157,16 @@ bunx @vscode/vsce publish major    # 1.0.0 → 2.0.0
 See **[`docs/building-and-publishing.md`](docs/building-and-publishing.md)** for the full build,
 install, and Marketplace-publishing guide.
 
+### Quality gates
+
+The dev and release automation is fully cross-platform — no script shells out to `bash` — and the
+portable verification core (lint, typecheck, unused-dependency check, unit tests, build, and license
+check) runs on both **Linux and Windows** in CI. A **dependency-audit gate** (`bun run audit:gate`)
+fails the build on any new advisory at or above `high` severity that isn't in a reviewed, time-bounded
+allowlist, so a security regression surfaces as human triage rather than silently sliding in; lower
+findings are reported only. Every rendered task/document Markdown surface is sanitized against unsafe
+link/image schemes (`javascript:` / `data:` / `vbscript:`) through one shared policy.
+
 ## Attribution
 
 Taskwright is a derivative of **[vscode-backlog-md](https://github.com/ysamlan/vscode-backlog-md)**
