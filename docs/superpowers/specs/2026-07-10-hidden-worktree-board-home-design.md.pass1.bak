@@ -1,0 +1,131 @@
+# Hidden-Worktree Board Home — sync.mode `git-auto` (design)
+
+**Status:** Draft — awaiting human review · **Date:** 2026-07-10 · **Task:** TASK-91
+
+Extends Board Sync v2 (`2026-07-04-board-sync-v2-single-shared-board-design.md`). Does **not**
+supersede it: modes `off` and `git` keep their exact v2 semantics; `git-auto` is a third, opt-in
+mode.
+
+## 1. Problem
+
+Board Sync v2 fixed the v1 failure class (N copies + live reconcile loop) by collapsing to one
+physical board and making sharing a discrete `push_board`/`pull_board` step. Transcript forensics
+across all repos show the discrete step is **essentially never invoked** (~0 real calls vs 215
+`create_task` / 77 `request_merge`), so in practice nothing is shared or versioned. Meanwhile the
+board living inside the primary code tree still causes real damage:
+
+- Task files tracked on code branches (3 of 5 consuming repos) produce **rebase conflicts inside
+  `request_merge`** (observed: `backlog/tasks/task-5 - ….md`) and require the fenced `.gitignore`
+  migration to be run — which most repos never do.
+- `ffMergeToBase` needs a permanent special case ("dirty outside `backlog/` blocks the merge").
+- Wrongly tracked task files are always one `git add -A` away.
+
+Goal: keep exactly **one physical board** (the v2 invariant) while making versioning + sharing
+automatic, and making "board files wrongly tracked in the code tree" structurally impossible.
+
+## 2. Approach
+
+Move the board's one physical home out of the code working tree into a dedicated **linked
+worktree of the `taskwright-board` branch**, and run a small, event-driven auto-sync on it.
+
+### 2.1 Location and layout
+
+- Worktree path: **`<primaryRoot>/.taskwright/board/`** — inside the already git-ignored
+  `.taskwright/` dir, mirroring the established `.worktrees/<branch>` pattern. (Alternative
+  considered: under `<git-common-dir>/taskwright/` — survives `git clean -dfx`, but nesting a
+  working tree inside `$GIT_DIR` is unusual and riskier with git tooling; rejected. `git clean
+  -dfx` damage is recoverable — see §2.5.)
+- The worktree checks out the local branch **`taskwright-board`** (created from the existing
+  `taskwright-board` ref when present, else seeded from the current board — reusing v2's
+  `snapshotBoardRoot`). Its tree keeps the existing ref layout: `backlog/tasks/`, `drafts/`,
+  `completed/`, `archive/`, `milestones/` — so existing refs, `boardMerge.ts`, and remote clones
+  on plain `git` mode stay interoperable.
+- **What moves / what stays:** only the five board-state dirs (`tasks`, `drafts`, `completed`,
+  `archive`, `milestones` — v2's `boardTrackedPaths`) live on the board branch. `backlog/config.yml`
+  and `backlog/docs|decisions/` stay in the code repo (they version with the code). The parser gains
+  a split root: *state root* (the board worktree) + *config root* (repo `backlog/`).
+
+### 2.2 Root resolution
+
+`resolveBoardRoot()` becomes mode-aware: in `git-auto` it returns
+`<primaryRoot>/.taskwright/board/backlog`; in `off`/`git` it returns the primary `backlog/`
+unchanged. Both the MCP server and the extension host already route every board read/write through
+this one function, so the live layer stays **one copy, zero reconciliation** — identical shape to
+v2. The MCP server resolves its root at launch (unchanged); a mode flip therefore requires a window
+reload + MCP restart, which the migration command performs/announces.
+
+### 2.3 Auto-sync engine (the only new moving part)
+
+A deliberately small state machine, **never** a poll loop:
+
+1. **Commit (local capture).** Debounced 5–10 s after the last board write (MCP or UI):
+   `git -C .taskwright/board add -A && commit` (no-op when clean). Uses the worktree's real index —
+   the v2 isolated-index plumbing is no longer needed for capture.
+2. **Sync (fold remote).** Triggered by **events only**: activation, `enableSync`/mode flip,
+   before + after `request_merge`, after a commit in (1), and the manual push/pull commands.
+   Under a **single-flight mutex** (queued events coalesce): commit-if-dirty → fetch
+   `origin/taskwright-board` (explicit refspec — FETCH_HEAD-race lesson) → if remote has new
+   commits, three-way **union-merge via the existing `mergeBoards()`** (base = merge-base) →
+   commit the merged tree with two parents → `git -C … checkout`/`reset --keep` the worktree to
+   the merged tip → push (best-effort).
+3. **Degrade, never block.** No remote / offline / push rejected → local commits accumulate,
+   status-bar shows the pending state; a later event retries. Sync failure **never** fails a board
+   write or a git operation. Conflicts surface exactly as v2 does (status bar + notification with
+   Open action) — same-task both-sides edits resolve by newer `updated_date`, never silently.
+
+Invariants carried from the v1 postmortem: **one copy** (writes and sync target the same
+directory); **no background interval** (events only); **never `reset --hard` over uncommitted
+edits** (the commit step always runs first under the same mutex); milestones included by
+construction (the whole tree syncs, no path list).
+
+### 2.4 Config, migration, hygiene
+
+- `taskwright.sync.mode`: `off` | `git` | `git-auto` (`syncConfig.ts` migration; existing values
+  untouched). `push_board` / `pull_board` MCP tools + commands remain the manual escape hatch in
+  `git-auto` (they enqueue the same sync event).
+- `enableSync` (repurposed again, idempotently): with `git-auto` selected it seeds/creates the
+  branch + worktree, **moves** the five state dirs into it (one-time, with a pre-move safety
+  snapshot to the ref), keeps the v2 `.gitignore` fenced block for legacy stragglers, ensures
+  `.taskwright/` + `.worktrees/` are excluded, and prompts for the reload.
+- Auto-hygiene regardless of mode (folds the review's "always configure gitignore" ask): activation
+  ensures the fenced block + `git rm --cached` migration when board files are found **tracked** on
+  a code branch, surfacing what it did (one notification, idempotent).
+
+### 2.5 Failure recovery
+
+The board branch is the durable store; the worktree is reproducible. If the worktree dir is
+deleted (`git clean -dfx`, manual rm): `git worktree prune` + re-add from `taskwright-board` and
+materialize — offered as a one-click repair (board-doctor finding `board_worktree_missing`).
+Un-pushed local commits lost with a deleted worktree are bounded by the debounce window (seconds)
+plus un-synced history — the same exposure v2 has between explicit pushes, but typically smaller.
+
+## 3. Components
+
+| Unit | Responsibility | Purity |
+|---|---|---|
+| `boardWorktree.ts` (new) | create/repair/locate the board worktree; seed from ref | git plumbing |
+| `resolveBoardRoot()` (mod) | mode-aware root: worktree `backlog/` in `git-auto` | pure |
+| parser/writer split root (mod) | state root vs config root | wiring |
+| `autoSync.ts` (new) | debounce, event queue, single-flight mutex, commit→fetch→merge→push | core + git |
+| `mergeBoards()` (reused) | unchanged conflict model | pure |
+| `enableSync` migration (mod) | seed branch/worktree, move state dirs, reload prompt | wiring |
+| status-bar UX (mod) | mode, last-sync, pending/conflict state | UI |
+
+## 4. Testing
+
+- **Unit:** mode-aware root resolution; sync-step planner (given dirty/clean × remote-ahead/behind
+  /diverged → expected git ops); debounce/mutex coalescing (fake timers).
+- **Integration (real temp git, two clones):** write→auto-commit→push→pull round-trip; divergence
+  → union-merge with surfaced conflict; offline accumulation + later push; worktree deleted →
+  repair; migration idempotence (run `enableSync` twice).
+- **Windows:** byte-exact blobs (`core.autocrlf=false` reused from `boardRef.ts`); paths with
+  spaces; `git clean` recovery.
+
+## 5. Non-goals
+
+- No live/interval polling, no CAS, no per-worktree copies — ever (v1 postmortem is binding).
+- No automatic conflict resolution beyond v2's last-writer-wins + surface.
+- Upstream Backlog.md CLI compatibility (root-level `backlog/tasks`) is **dropped in `git-auto`
+  mode only** — documented; `off`/`git` keep it. No junction/symlink shim (rejected: reparse-point
+  hazards on Windows).
+- Real-time multi-user editing. Sharing is still git-native and asynchronous, just automatic.
