@@ -43,7 +43,7 @@ import {
   type QueueFsDeps,
 } from '../core/mergeQueue';
 import { DEFAULT_VERIFY_TIMEOUT_MS, mergeConfigPath, readMergeConfig } from '../core/mergeConfig';
-import { readSyncConfig, syncConfigPath } from '../core/syncConfig';
+import { readSyncConfig, syncConfigPath, type SyncMode } from '../core/syncConfig';
 import {
   pushBoard,
   pullBoard,
@@ -1170,8 +1170,18 @@ export interface BoardDoctorResult {
  * to pre-flight the board before orchestrating.
  */
 export async function boardDoctorHandler(deps: McpHandlerDeps): Promise<BoardDoctorResult> {
-  const repoRoot = path.dirname(deps.backlogPath);
-  const findings = await runBoardDoctor(deps.parser, repoRoot);
+  // getPrimaryRoot, not dirname(backlogPath): in git-auto the backlog path is
+  // inside .taskwright/board, whose dirname is NOT the repo root.
+  const repoRoot = deps.parser.getPrimaryRoot();
+  let opts: { syncMode?: SyncMode; ref?: string } = {};
+  try {
+    const facts = await gitFacts(deps.gitExec ?? defaultGitExec, deps.root);
+    const syncCfg = readSyncConfig(syncConfigPath(facts.commonDir), deps.fsDeps ?? nodeQueueFs);
+    opts = { syncMode: syncCfg.mode, ref: syncCfg.ref };
+  } catch {
+    // Not a git repo — the base checks still run; the board-home checks stay off.
+  }
+  const findings = await runBoardDoctor(deps.parser, repoRoot, opts);
   return { healthy: findings.length === 0, findings };
 }
 

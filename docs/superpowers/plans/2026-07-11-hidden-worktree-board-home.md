@@ -347,9 +347,9 @@ private contentRoot(): string {
   - `fold-primary-strays` → read primary + board maps (`readBoardDirFileMap`), `mergeBoards(undefined, boardMap, primaryMap)`, write merged files into the board worktree (plain `fs.writeFileSync` per file + `autoCommitBoard`), then `executeVerifiedMove` to clear the strays; surface conflicts via the existing conflict notification.
   - `restore-board-to-primary` → `materializeRefToWorktree({ repoRoot: primaryRoot, ref, indexFile })`.
 
-- [ ] **Step 1: Failing doctor unit tests** — one per new check (positive + a git-auto-off negative each), asserting type/repair/message shape.
-- [ ] **Step 2:** FAIL. **Step 3: Implement** (types, checks, facts, labels `'Repair the board worktree' / 'Fold stray board files into the board' / 'Restore the board into backlog/'`, applyRepair cases, MCP description). **Step 4:** PASS (`bun run test -- boardDoctor`).
-- [ ] **Step 5: Commit** `feat(doctor): board-worktree health findings + repairs (TASK-91)`.
+- [x] **Step 1: Failing doctor unit tests** — one per new check (positive + a git-auto-off negative each), asserting type/repair/message shape.
+- [x] **Step 2:** FAIL. **Step 3: Implement** (types, checks, facts, labels `'Repair the board worktree' / 'Fold stray board files into the board' / 'Restore the board into backlog/'`, applyRepair cases, MCP description). **Step 4:** PASS (`bun run test -- boardDoctor`).
+- [x] **Step 5: Commit** `feat(doctor): board-worktree health findings + repairs (TASK-91)`.
 
 ---
 

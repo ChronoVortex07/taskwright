@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { BacklogParser } from '../core/BacklogParser';
@@ -22,6 +23,13 @@ import {
   type DoctorFinding,
 } from '../core/boardDoctor';
 import { releaseTaskClaim } from './claimActions';
+import { ensureBoardWorktree } from '../core/boardWorktree';
+import { boardWorktreePathFor } from '../core/boardRoot';
+import { readBoardDirFileMap, executeVerifiedMove } from '../core/boardHomeMigration';
+import { autoCommitBoard } from '../core/autoSync';
+import { mergeBoards } from '../core/boardMerge';
+import { materializeRefToWorktree } from '../core/boardRef';
+import { formatConflictMessage } from '../core/boardSyncUx';
 
 /**
  * Board-doctor UX glue (TASK-90): run the pure `runBoardDoctor` core, surface
@@ -65,6 +73,12 @@ export function repairLabel(finding: DoctorFinding): string {
       return finding.suggestion ? `Set category to "${finding.suggestion}"` : 'Clear the category';
     case 'strip-continuations':
       return 'Strip the dangling lines';
+    case 'repair-board-worktree':
+      return 'Repair the board worktree';
+    case 'fold-primary-strays':
+      return 'Fold the stray files into the board';
+    case 'restore-board-to-primary':
+      return 'Restore the board into backlog/';
   }
 }
 
@@ -131,6 +145,51 @@ async function applyRepair(deps: DoctorFlowDeps, finding: DoctorFinding): Promis
       const updated = stripDanglingContinuations(normalizeToLF(raw));
       atomicWriteFileSync(task.filePath, restoreLineEndings(updated, hasCRLF));
       parser.invalidateTaskCache(task.filePath);
+      return true;
+    }
+    case 'repair-board-worktree': {
+      const cfg = vscode.workspace.getConfiguration('taskwright');
+      await ensureBoardWorktree({
+        primaryRoot: repoRoot,
+        ref: cfg.get<string>('sync.ref')?.trim() || 'taskwright-board',
+        remote: cfg.get<string>('sync.remote')?.trim() || 'origin',
+      });
+      parser.invalidateTaskCache();
+      return true;
+    }
+    case 'fold-primary-strays': {
+      const boardWorktree = boardWorktreePathFor(repoRoot);
+      const primaryMap = readBoardDirFileMap(repoRoot);
+      const boardMap = readBoardDirFileMap(boardWorktree);
+      // ours = the board (current truth), theirs = the strays; a same-task
+      // edit on both sides resolves by newer updated_date and is surfaced.
+      const { merged, conflicts } = mergeBoards(undefined, boardMap, primaryMap);
+      for (const [rel, content] of Object.entries(merged)) {
+        const abs = path.join(boardWorktree, ...rel.split('/'));
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.writeFileSync(abs, content);
+      }
+      await autoCommitBoard(boardWorktree);
+      await executeVerifiedMove({
+        primaryRoot: repoRoot,
+        boardWorktree,
+        conflictPaths: new Set(conflicts.map((c) => c.path)),
+      });
+      if (conflicts.length > 0) {
+        void vscode.window.showWarningMessage(formatConflictMessage('pulled', conflicts));
+      }
+      parser.invalidateTaskCache();
+      return true;
+    }
+    case 'restore-board-to-primary': {
+      const cfg = vscode.workspace.getConfiguration('taskwright');
+      await materializeRefToWorktree({
+        repoRoot,
+        ref: cfg.get<string>('sync.ref')?.trim() || 'taskwright-board',
+        indexFile: path.join(repoRoot, '.taskwright', 'board.index'),
+        backlogDir: 'backlog',
+      });
+      parser.invalidateTaskCache();
       return true;
     }
   }

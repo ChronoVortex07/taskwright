@@ -252,6 +252,68 @@ describe('diagnoseBoard', () => {
     });
     expect(diagnoseBoard(input)).toEqual([]);
   });
+
+  describe('git-auto board home checks (TASK-91)', () => {
+    it('flags a missing/broken board worktree in git-auto', () => {
+      const findings = diagnoseBoard(
+        makeInput({ syncMode: 'git-auto', boardWorktreeOk: false, boardWorktreePresent: false })
+      );
+      expect(findings).toHaveLength(1);
+      expect(findings[0].type).toBe('board-worktree-missing');
+      expect(findings[0].repair).toBe('repair-board-worktree');
+    });
+
+    it('does not flag the worktree outside git-auto, or when healthy', () => {
+      expect(
+        diagnoseBoard(makeInput({ syncMode: 'git', boardWorktreeOk: false }))
+      ).toEqual([]);
+      expect(
+        diagnoseBoard(makeInput({ syncMode: 'git-auto', boardWorktreeOk: true }))
+      ).toEqual([]);
+    });
+
+    it('flags stray state dirs in the primary backlog/ under git-auto', () => {
+      const findings = diagnoseBoard(
+        makeInput({
+          syncMode: 'git-auto',
+          boardWorktreeOk: true,
+          primaryStateDirs: ['tasks', 'drafts'],
+        })
+      );
+      expect(findings).toHaveLength(1);
+      expect(findings[0].type).toBe('board-strays-in-primary');
+      expect(findings[0].repair).toBe('fold-primary-strays');
+      expect(findings[0].detail).toBe('tasks, drafts');
+    });
+
+    it('does not flag strays outside git-auto', () => {
+      expect(
+        diagnoseBoard(makeInput({ syncMode: 'off', primaryStateDirs: ['tasks'] }))
+      ).toEqual([]);
+    });
+
+    it('flags a hand-flipped mode: off/git with no tasks dir but a leftover board worktree', () => {
+      const findings = diagnoseBoard(
+        makeInput({ syncMode: 'off', primaryTasksPresent: false, boardWorktreePresent: true })
+      );
+      expect(findings).toHaveLength(1);
+      expect(findings[0].type).toBe('board-mode-mismatch');
+      expect(findings[0].repair).toBe('restore-board-to-primary');
+    });
+
+    it('does not flag mode-mismatch when tasks exist or no board worktree lingers', () => {
+      expect(
+        diagnoseBoard(
+          makeInput({ syncMode: 'git', primaryTasksPresent: true, boardWorktreePresent: true })
+        )
+      ).toEqual([]);
+      expect(
+        diagnoseBoard(
+          makeInput({ syncMode: 'off', primaryTasksPresent: false, boardWorktreePresent: false })
+        )
+      ).toEqual([]);
+    });
+  });
 });
 
 describe('findDanglingContinuations / stripDanglingContinuations', () => {

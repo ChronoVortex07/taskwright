@@ -22,6 +22,10 @@ import { normalizeToLF } from './BacklogWriter';
 import { dispatchBranchName } from './dispatchPrompt';
 import { readActiveTask } from './activeTask';
 import { splitFrontmatter } from './frontmatterEdit';
+import type { SyncMode } from './syncConfig';
+import { BOARD_SUBDIRS } from './boardRef';
+import { boardWorktreePathFor } from './boardRoot';
+import { boardWorktreeStatusOf } from './boardWorktree';
 
 export type DoctorFindingType =
   | 'dangling-active-task'
@@ -30,7 +34,10 @@ export type DoctorFindingType =
   | 'in-flight-no-claim'
   | 'claim-worktree-vanished'
   | 'malformed-category'
-  | 'dangling-continuation';
+  | 'dangling-continuation'
+  | 'board-worktree-missing'
+  | 'board-strays-in-primary'
+  | 'board-mode-mismatch';
 
 /** The one-click repair a finding calls for; the caller confirms + executes. */
 export type DoctorRepair =
@@ -40,7 +47,10 @@ export type DoctorRepair =
   | 'reset-status'
   | 'release-claim'
   | 'fix-category'
-  | 'strip-continuations';
+  | 'strip-continuations'
+  | 'repair-board-worktree'
+  | 'fold-primary-strays'
+  | 'restore-board-to-primary';
 
 export interface DoctorFinding {
   type: DoctorFindingType;
@@ -84,6 +94,16 @@ export interface BoardDoctorInput {
   /** Additional known task IDs (drafts/completed/archived) that keep an
    *  active-task pointer valid even though they are not on the active board. */
   extraKnownTaskIds?: string[];
+  /** Current sync mode; the board-home checks (8–10) only run when provided. */
+  syncMode?: SyncMode;
+  /** git-auto: the hidden board worktree is healthy (`boardWorktreeStatusOf` === 'ok'). */
+  boardWorktreeOk?: boolean;
+  /** The `.taskwright/board` directory exists at all (registered or not). */
+  boardWorktreePresent?: boolean;
+  /** git-auto: state-dir names found straying under the primary `backlog/`. */
+  primaryStateDirs?: string[];
+  /** off/git: the primary `backlog/tasks` directory exists. */
+  primaryTasksPresent?: boolean;
 }
 
 /** Facts gathered from the filesystem for {@link diagnoseBoard}. */
@@ -311,7 +331,78 @@ export function diagnoseBoard(input: BoardDoctorInput): DoctorFinding[] {
     });
   }
 
+  // 8. git-auto: the hidden board worktree is missing/broken (e.g. git clean
+  // -dfx). The branch — the durable store — still holds the data; repair is
+  // a prune + re-add, with loss bounded by the debounce window.
+  if (input.syncMode === 'git-auto' && input.boardWorktreeOk === false) {
+    findings.push({
+      type: 'board-worktree-missing',
+      repair: 'repair-board-worktree',
+      message:
+        'sync.mode is git-auto but the hidden board worktree (.taskwright/board) is missing or broken — the taskwright-board branch still holds the data',
+    });
+  }
+
+  // 9. git-auto: stray state dirs under the primary backlog/ — a stale
+  // pre-reload writer recreated them (the split-brain window, spec §5.3).
+  if (input.syncMode === 'git-auto' && (input.primaryStateDirs?.length ?? 0) > 0) {
+    findings.push({
+      type: 'board-strays-in-primary',
+      repair: 'fold-primary-strays',
+      detail: input.primaryStateDirs!.join(', '),
+      message: `Stray board files found under the repo backlog/ (${input.primaryStateDirs!.join(', ')}) while the board lives in its hidden worktree — fold them in`,
+    });
+  }
+
+  // 10. off/git: the board looks empty because sync.mode was flipped away
+  // from git-auto by hand — the leftover .taskwright/board dir is the residue.
+  if (
+    input.syncMode !== undefined &&
+    input.syncMode !== 'git-auto' &&
+    input.primaryTasksPresent === false &&
+    input.boardWorktreePresent === true
+  ) {
+    findings.push({
+      type: 'board-mode-mismatch',
+      repair: 'restore-board-to-primary',
+      message: `sync.mode is "${input.syncMode}" but backlog/tasks is missing while a hidden board worktree exists — the board looks empty because the mode was switched without migrating back`,
+    });
+  }
+
   return findings;
+}
+
+/** Facts for the board-home checks (8–10). Never throws — failures mean "unknown", which disables the checks. */
+export async function gatherBoardHomeFacts(
+  repoRoot: string,
+  syncMode: SyncMode,
+  ref: string
+): Promise<
+  Pick<
+    BoardDoctorInput,
+    'syncMode' | 'boardWorktreeOk' | 'boardWorktreePresent' | 'primaryStateDirs' | 'primaryTasksPresent'
+  >
+> {
+  try {
+    const boardDir = boardWorktreePathFor(repoRoot);
+    const primaryStateDirs = BOARD_SUBDIRS.filter((sub) => {
+      try {
+        const abs = path.join(repoRoot, 'backlog', sub);
+        return fs.existsSync(abs) && fs.readdirSync(abs).length > 0;
+      } catch {
+        return false;
+      }
+    });
+    return {
+      syncMode,
+      boardWorktreeOk: (await boardWorktreeStatusOf(repoRoot, ref)) === 'ok',
+      boardWorktreePresent: fs.existsSync(boardDir),
+      primaryStateDirs,
+      primaryTasksPresent: fs.existsSync(path.join(repoRoot, 'backlog', 'tasks')),
+    };
+  } catch {
+    return {};
+  }
 }
 
 /**
@@ -357,7 +448,8 @@ export function gatherDoctorFacts(repoRoot: string): DoctorFacts {
  */
 export async function runBoardDoctor(
   parser: BacklogParser,
-  repoRoot: string
+  repoRoot: string,
+  opts: { syncMode?: SyncMode; ref?: string } = {}
 ): Promise<DoctorFinding[]> {
   const [tasks, statuses, config, drafts, completed] = await Promise.all([
     parser.getTasks(),
@@ -389,5 +481,8 @@ export async function runBoardDoctor(
     categories: config.categories ?? [],
     extraKnownTaskIds: [...drafts, ...completed].map((t) => t.id),
     ...gatherDoctorFacts(repoRoot),
+    ...(opts.syncMode
+      ? await gatherBoardHomeFacts(repoRoot, opts.syncMode, opts.ref ?? 'taskwright-board')
+      : {}),
   });
 }
