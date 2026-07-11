@@ -67,14 +67,9 @@ async function repoWithBoard(): Promise<TempRepo> {
   return repo;
 }
 
-function bareRemoteFor(repo: TempRepo): string {
+async function initBareRemote(repo: TempRepo): Promise<string> {
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'taskwright-bare-'));
   cleanups.push(() => fs.rmSync(bare, { recursive: true, force: true }));
-  return bare;
-}
-
-async function initBareRemote(repo: TempRepo): Promise<string> {
-  const bare = bareRemoteFor(repo);
   await execFileAsync('git', ['init', '--bare', '-q', bare]);
   await repo.git(['remote', 'add', REMOTE, bare]);
   return bare;

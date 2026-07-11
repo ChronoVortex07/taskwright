@@ -44,15 +44,26 @@ direct surgical writes to it; a claim only fails if another session already hold
 MCP write tools. Cross-branch scanning is inert (nothing to scan), so there are no read-only "ghost"
 cards regardless of `check_active_branches`.
 
-Git-native **sharing** is a separate, opt-in, discrete step — never a live sync. `taskwright.sync.mode`
-is `off` (default) or `git`; when `git`, call `push_board` / `pull_board` (MCP tools, or the
-`taskwright.pushBoard` / `taskwright.pullBoard` commands / status-bar button) to snapshot the board
-onto the `taskwright-board` ref and union-merge it with the remote. A same-task edit on both sides
-resolves by newer `updated_date` and is always surfaced as a conflict — never silently dropped. If
-`push_board` reports `rejected: true` (the remote moved again), just call it again; nothing is lost.
-Run `taskwright.enableSync` once first to turn sync on. Opt-in `pre-push`/`post-merge` git hooks can
-automate this (`taskwright.sync.installHooks`), but board sync never blocks or fails your actual git
-operation.
+Git-native **sharing** is a separate, opt-in step — never a live poll loop. `taskwright.sync.mode`
+is `off` (default), `git`, or `git-auto`; when `git`, call `push_board` / `pull_board` (MCP tools, or
+the `taskwright.pushBoard` / `taskwright.pullBoard` commands / status-bar button) to snapshot the
+board onto the `taskwright-board` ref and union-merge it with the remote. A same-task edit on both
+sides resolves by newer `updated_date` and is always surfaced as a conflict — never silently
+dropped. If `push_board` reports `rejected: true` (the remote moved again), just call it again;
+nothing is lost. Run `taskwright.enableSync` once first to turn sync on. Opt-in
+`pre-push`/`post-merge` git hooks can automate this (`taskwright.sync.installHooks`), but board sync
+never blocks or fails your actual git operation.
+
+**`git-auto` (TASK-91).** In this mode the board's one physical home is a hidden worktree of the
+`taskwright-board` branch at `<primary>/.taskwright/board/` (the repo `backlog/` keeps only
+`config.yml`, `docs/`, `decisions/`), and versioning/sharing is automatic: board writes are
+debounce-committed and synced on events (activation, write bursts, `request_merge` boundaries).
+Nothing changes for you as an agent — keep using the MCP tools exactly as above; `push_board` /
+`pull_board` still work as the manual escape hatch (they run the same sync pass). Never edit board
+files by hand, never touch `.taskwright/board/` with git commands, and never flip
+`taskwright.sync.mode` in settings yourself — mode changes go through the `taskwright.enableSync`
+migration, which moves the board safely (verify-before-delete, snapshot first). Upstream Backlog.md
+CLI tools that expect `backlog/tasks` at the repo root do not see the board in this mode.
 
 </CRITICAL_INSTRUCTION>
 

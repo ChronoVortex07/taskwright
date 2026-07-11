@@ -115,6 +115,31 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   `docs/superpowers/plans/2026-07-04-board-sync-v2-execution-handoff.md`. The prior GitHub-only CAS
   design (`docs/superpowers/specs/2026-07-01-github-synced-board-design.md` and its
   `2026-07-01-synced-board-phase-{1..4}-*.md` plans) is superseded — kept for history only.
+- **Hidden-worktree board home — sync.mode `git-auto` (TASK-91)** ✅: a third, opt-in mode. The
+  board's ONE physical home moves out of the code tree into a linked worktree of the
+  `taskwright-board` branch at `<primary>/.taskwright/board/` (`boardWorktreePathFor`;
+  `resolveBoardRoot`/`resolveWorkspaceBacklogRoot` are mode-aware via `boardHomeFor` — the split
+  root keeps `config.yml`/`docs`/`decisions` in the repo `backlog/`, and
+  `BacklogParser.getPrimaryRoot()` replaced every `dirname(backlogPath)` repo-root derivation). A
+  small **event-driven** engine (`src/core/autoSync.ts` — never a poll loop, the v1 postmortem is
+  binding) debounce-commits board writes (pathspec-limited to the five state dirs so old v2 clients'
+  non-board-path pull guard never trips) and on events (activation, write burst, `request_merge`
+  boundaries in the MCP server, manual push/pull/Sync-Now) runs commit → staged-ref fetch →
+  `mergeBoards()` two-parent fold → `reset --keep` → best-effort push under a cross-process lock;
+  failures degrade to the status bar and never block a board write or git op. Migration is **only**
+  via the `taskwright.enableSync` mode picker (never a hand-flip — the setting description warns):
+  the S0–S6 prior-state matrix (`src/core/boardHomeMigration.ts` — fresh, ignored,
+  TRACKED-on-code-branch incl. stale 4-dir gitignore blocks, existing v2 ref ± remote, v1
+  `board.materialized` leftovers, fresh clones, re-runs) is classified and executed with a pre-move
+  ref snapshot and a per-file verify-before-delete move; the mode flips only after the verified
+  move; reverse migration (git-auto → git/off) is supported. Activation in git-auto bootstraps
+  fresh clones (`ensureBoardWorktree`, branch seeded local-ref > remote > empty root) and heals
+  split-brain strays (`foldPrimaryStrays`); board doctor gains `board-worktree-missing` /
+  `board-strays-in-primary` / `board-mode-mismatch` repairs. Upstream Backlog.md CLI root-layout
+  compat is dropped in git-auto only (documented). Coverage:
+  `src/test/unit/{boardWorktree,autoSync,boardHomeMigration,gitAutoIntegration,boardDoctor,boardRoot,syncConfig,boardSyncUx}.test.ts`.
+  Design: `docs/superpowers/specs/2026-07-10-hidden-worktree-board-home-design.md`; plan:
+  `docs/superpowers/plans/2026-07-11-hidden-worktree-board-home.md`.
 - **Tech-tree canvas (P2a)** ✅: a **Tree** tab (now the default view) renders the board as a dependency
   tech-tree. Pure core `src/webview/lib/treeGeometry.ts` computes node/edge geometry from the task graph
   (lanes = categories, bands = milestones/ages); the extension pushes layout via the `treeLayoutUpdated`

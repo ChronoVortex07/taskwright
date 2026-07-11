@@ -440,9 +440,9 @@ Scenarios (each its own `it`, sequential, generous timeouts like the Board Sync 
 - Modify: `CLAUDE.md` — Board Sync v2 bullet: add the `git-auto` third mode paragraph (one physical board in the hidden worktree; event-driven auto-sync; migration via enableSync; Backlog.md-CLI root-layout divergence documented as git-auto-only).
 - Modify: `AGENTS.md` — Board Sync section: same, agent-facing (mode set `off | git | git-auto`; in git-auto push/pull still exist as manual escape hatches; never edit board files by hand — unchanged).
 
-- [ ] **Step 1:** Write both edits, referencing the spec path.
-- [ ] **Step 2:** `bun run lint` (markdown untouched by eslint — sanity only) and re-read for accuracy against the implemented behavior.
-- [ ] **Step 3: Commit** `docs: git-auto board home mode (TASK-91)`.
+- [x] **Step 1:** Write both edits, referencing the spec path.
+- [x] **Step 2:** `bun run lint` (markdown untouched by eslint — sanity only) and re-read for accuracy against the implemented behavior.
+- [x] **Step 3: Commit** `docs: git-auto board home mode (TASK-91)`.
 
 ---
 
