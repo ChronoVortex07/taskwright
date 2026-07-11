@@ -2,6 +2,7 @@
   import { renderMermaidAction } from '../../lib/mermaidAction';
   import MarkdownEditor from '../shared/MarkdownEditor.svelte';
   import { vscode } from '../../stores/vscode.svelte';
+  import { isRelativeUrl, isSafeUrl } from '../../../core/sanitizeUrl';
 
   interface Props {
     taskId: string;
@@ -61,7 +62,14 @@
     const link = target?.closest?.('a') as HTMLAnchorElement | null;
     if (link) {
       const href = link.getAttribute('href');
-      if (href && !/^[a-z][a-z0-9+.-]*:/i.test(href)) {
+      // Defense in depth: block navigation to dangerous schemes (javascript:,
+      // data:, vbscript:, ...) even if one ever reaches the DOM.
+      if (href && !isSafeUrl(href)) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (href && isRelativeUrl(href)) {
         event.preventDefault();
         event.stopPropagation();
         const [relativePath, fragment] = href.split('#');

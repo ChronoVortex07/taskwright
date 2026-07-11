@@ -8,6 +8,7 @@
   } from '../../lib/types';
   import { formatStoredUtcDateForDisplay } from '../../lib/date-display';
   import { renderMermaidAction } from '../../lib/mermaidAction';
+  import { isRelativeUrl, isSafeUrl } from '../../../core/sanitizeUrl';
 
   type TaskWithBlocks = Task & { blocksTaskIds?: string[] };
   type SubtaskSummary = {
@@ -61,7 +62,16 @@
     const link = target?.closest?.('a') as HTMLAnchorElement | null;
     if (!link) return;
     const href = link.getAttribute('href');
-    if (!href || /^[a-z][a-z0-9+.-]*:/i.test(href)) return;
+    if (!href) return;
+    // Defense in depth: block navigation to dangerous schemes (javascript:,
+    // data:, vbscript:, ...) even if one ever reaches the DOM.
+    if (!isSafeUrl(href)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    // Safe external schemes use the anchor's default navigation.
+    if (!isRelativeUrl(href)) return;
     event.preventDefault();
     event.stopPropagation();
     const [relativePath, fragment] = href.split('#');

@@ -2,6 +2,7 @@
   import type { BacklogDocument, BacklogDecision } from '../../lib/types';
   import { vscode, onMessage } from '../../stores/vscode.svelte';
   import { renderMermaidAction } from '../../lib/mermaidAction';
+  import { isRelativeUrl, isSafeUrl } from '../../../core/sanitizeUrl';
 
   type ViewMode = 'document' | 'decision' | 'loading';
 
@@ -45,7 +46,17 @@
     const link = target?.closest?.('a') as HTMLAnchorElement | null;
     if (!link) return;
     const href = link.getAttribute('href');
-    if (!href || /^[a-z][a-z0-9+.-]*:/i.test(href)) return;
+    if (!href) return;
+    // Defense in depth: block navigation to dangerous schemes (javascript:,
+    // data:, vbscript:, ...) even if one ever reaches the DOM.
+    if (!isSafeUrl(href)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    // Safe external schemes (http/https/mailto) use the anchor's default
+    // navigation (VS Code opens them externally).
+    if (!isRelativeUrl(href)) return;
     event.preventDefault();
     const [relativePath, fragment] = href.split('#');
     vscode.postMessage({
