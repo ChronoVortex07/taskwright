@@ -45,7 +45,7 @@ import {
 import { injectConvention, injectAgentsConvention } from './core/agentConvention';
 import { installTaskwrightSkills, type SkillInstallResult } from './core/skillInstaller';
 import { extractTaskwrightServer, upsertTaskwrightMcpServer } from './core/mcpProjectConfig';
-import { upsertCodexMcpServer } from './core/codexConfig';
+import { codexServerForPackagedExtension, upsertCodexMcpServer } from './core/codexConfig';
 import { installCodexPrompts } from './core/codexPrompts';
 import { homedir } from 'os';
 import { affectsTaskwrightConfig, getTaskwrightConfig } from './config';
@@ -2394,12 +2394,9 @@ export async function activate(context: vscode.ExtensionContext) {
   };
   // Codex integration adapter: register the Taskwright MCP server in Codex's
   // user-global config.toml and install the four user-facing skills as Codex
-  // custom prompts — the Codex counterpart of setUpClaudeIntegration. Codex has
-  // no per-project MCP surface, so registration targets $CODEX_HOME
-  // (~/.codex by default) with an ABSOLUTE path to the extension's committed
-  // launcher (scripts/taskwright-mcp.cjs); the launcher resolves the primary
-  // checkout's built server from the session's cwd, so worktrees resolve the
-  // primary build exactly as with Claude Code.
+  // custom prompts — the Codex counterpart of setUpClaudeIntegration. This
+  // targets $CODEX_HOME (~/.codex by default) with an ABSOLUTE path to the
+  // extension's packaged MCP bundle, so it works from consumer repositories.
   const codexHome = (): string => {
     const fromEnv = process.env.CODEX_HOME?.trim();
     return fromEnv ? fromEnv : path.join(homedir(), '.codex');
@@ -2420,19 +2417,17 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // 1) Upsert [mcp_servers.taskwright] into Codex's config.toml (idempotent,
     // preserves every other line of the user's config).
-    const launcherPath = path.join(context.extensionPath, 'scripts', 'taskwright-mcp.cjs');
-    if (!fs.existsSync(launcherPath)) {
+    if (!fs.existsSync(mcpServerPath)) {
       vscode.window.showErrorMessage(
-        'The Taskwright MCP launcher (scripts/taskwright-mcp.cjs) is missing. Reinstall or rebuild the extension.'
+        'The packaged Taskwright MCP server (dist/mcp/server.js) is missing. Reinstall or rebuild the extension.'
       );
       return;
     }
     try {
       const templatePath = path.join(context.extensionPath, '.mcp.json');
       const server = extractTaskwrightServer(fs.readFileSync(templatePath, 'utf-8'));
-      // Codex's config is user-global — swap the template's repo-relative
-      // launcher arg for the extension's absolute one.
-      const codexServer = { ...server, args: [launcherPath] };
+      // Codex's user-global config needs an absolute, cwd-independent target.
+      const codexServer = codexServerForPackagedExtension(server, mcpServerPath);
       const configPath = path.join(codexDir, 'config.toml');
       const existing = fs.existsSync(configPath) ? fs.readFileSync(configPath, 'utf-8') : '';
       fs.writeFileSync(configPath, upsertCodexMcpServer(existing, codexServer), 'utf-8');

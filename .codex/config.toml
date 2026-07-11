@@ -1,7 +1,6 @@
-[mcp_servers.backlog]
-command = "backlog"
-args = ["mcp", "start"]
+[mcp_servers.taskwright]
+command = "node"
+args = ["scripts/taskwright-mcp.cjs"]
 
-experimental_use_rmcp_client = true
 [mcp_servers.svelte]
 url = "https://mcp.svelte.dev/mcp"

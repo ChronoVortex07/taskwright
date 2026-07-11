@@ -5,11 +5,10 @@ import type { McpServerDef } from './mcpProjectConfig';
  * Pure helpers for registering the Taskwright MCP server in Codex's
  * `config.toml` (`[mcp_servers.taskwright]`) — the Codex counterpart to
  * `src/core/mcpProjectConfig.ts` (`.mcp.json` for Claude Code). Codex reads a
- * user-global `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`), so the
- * adapter passes an ABSOLUTE launcher path; the launcher
- * (`scripts/taskwright-mcp.cjs`) resolves the primary checkout's built server
- * from the session's cwd, so worktrees resolve the primary build exactly as
- * with Claude Code.
+ * user-global `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`) and a
+ * trusted project's `.codex/config.toml`. The extension installer passes the
+ * packaged server's ABSOLUTE path so it works even when Codex starts in a
+ * consumer repository that has no Taskwright source checkout.
  *
  * String-in / string-out so the extension owns all fs I/O and these stay
  * unit-testable without a Codex install. No vscode, no fs. Only the
@@ -19,6 +18,18 @@ import type { McpServerDef } from './mcpProjectConfig';
 
 /** The `[mcp_servers.<name>]` header Taskwright owns in config.toml. */
 const TABLE_HEADER = `[mcp_servers.${TASKWRIGHT_MCP_NAME}]`;
+
+/**
+ * Retarget the repository template server at the extension's packaged MCP
+ * bundle. The repository launcher intentionally resolves a build from cwd and
+ * therefore is only suitable for developing Taskwright itself.
+ */
+export function codexServerForPackagedExtension(
+  server: McpServerDef,
+  packagedServerPath: string
+): McpServerDef {
+  return { ...server, args: [packagedServerPath] };
+}
 
 /** Render a TOML basic string (double-quoted, backslashes and quotes escaped). */
 function tomlString(value: string): string {

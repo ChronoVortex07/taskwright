@@ -49,6 +49,7 @@ import {
   pullBoardHandler,
   type McpHandlerDeps,
 } from './handlers';
+import { TASKWRIGHT_MCP_INSTRUCTIONS } from './instructions';
 
 function jsonContent(value: unknown): { content: Array<{ type: 'text'; text: string }> } {
   return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
@@ -106,7 +107,10 @@ async function main(): Promise<void> {
     treeFieldService: new TreeFieldService(),
   };
 
-  const server = new McpServer({ name: 'taskwright', version: '0.0.1' });
+  const server = new McpServer(
+    { name: 'taskwright', version: '0.0.1' },
+    { instructions: TASKWRIGHT_MCP_INSTRUCTIONS }
+  );
 
   server.registerTool(
     'get_active_task',

@@ -104,9 +104,9 @@ export async function detectClaudeCodeIntegration(workspaceRoot: string): Promis
  * Detect Codex integration in the workspace.
  *
  * Checks:
- * - `.codex/config.toml` (workspace) and `<homeDir>/.codex/config.toml` (the
- *   config Codex actually reads) for `[mcp_servers.taskwright]` (legacy
- *   `mcp_servers.backlog` too)
+ * - `.codex/config.toml` (workspace) and `<homeDir>/.codex/config.toml` for
+ *   `[mcp_servers.taskwright]`. The legacy Backlog server is a different MCP
+ *   and must not suppress Taskwright setup.
  * - `AGENTS.md` for the guidelines marker
  */
 export async function detectCodexIntegration(
@@ -123,10 +123,7 @@ export async function detectCodexIntegration(
   ];
   for (const configPath of configPaths) {
     const codexConfig = await safeReadFile(configPath);
-    if (
-      codexConfig &&
-      MCP_SERVER_NAMES.some((name) => codexConfig.includes(`mcp_servers.${name}`))
-    ) {
+    if (codexConfig && codexConfig.includes(`mcp_servers.${TASKWRIGHT_MCP_NAME}`)) {
       result.mcpConfigured = true;
       break;
     }

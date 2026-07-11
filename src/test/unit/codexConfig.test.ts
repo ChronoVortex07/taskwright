@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { renderCodexServerToml, upsertCodexMcpServer } from '../../core/codexConfig';
+import * as fs from 'fs';
+import * as path from 'path';
+import {
+  codexServerForPackagedExtension,
+  renderCodexServerToml,
+  upsertCodexMcpServer,
+} from '../../core/codexConfig';
 import { extractTaskwrightServer } from '../../core/mcpProjectConfig';
 
 // The same server shape the extension ships in its .mcp.json template. The Codex
@@ -44,6 +50,21 @@ describe('renderCodexServerToml', () => {
 
   it('omits the Claude-specific "type" key (not part of Codex TOML schema)', () => {
     expect(renderCodexServerToml(SERVER)).not.toContain('type =');
+  });
+});
+
+describe('codexServerForPackagedExtension', () => {
+  it('targets the packaged MCP bundle directly so it starts in consumer repositories', () => {
+    const server = codexServerForPackagedExtension(
+      SERVER,
+      'C:\\extensions\\taskwright\\dist\\mcp\\server.js'
+    );
+
+    expect(server).toEqual({
+      ...SERVER,
+      args: ['C:\\extensions\\taskwright\\dist\\mcp\\server.js'],
+    });
+    expect(server.args?.[0]).not.toContain('taskwright-mcp.cjs');
   });
 });
 
@@ -108,5 +129,14 @@ describe('upsertCodexMcpServer', () => {
     const out = upsertCodexMcpServer('', server);
     expect(out).toContain('[mcp_servers.taskwright]');
     expect(out).toContain('args = ["scripts/taskwright-mcp.cjs"]');
+  });
+
+  it('dogfoods the Taskwright MCP in the committed project-scoped Codex config', () => {
+    const config = fs.readFileSync(
+      path.resolve(__dirname, '..', '..', '..', '.codex', 'config.toml'),
+      'utf8'
+    );
+    expect(config).toContain('[mcp_servers.taskwright]');
+    expect(config).not.toContain('[mcp_servers.backlog]');
   });
 });

@@ -198,13 +198,13 @@ describe('AgentIntegrationDetector', () => {
       expect(result.mcpConfigured).toBe(true);
     });
 
-    it('should detect legacy mcp_servers.backlog in .codex/config.toml (back-compat)', async () => {
+    it('does not mistake the legacy Backlog MCP for the Taskwright MCP', async () => {
       mockFileContents({
         'config.toml': '[mcp_servers.backlog]\ncommand = "backlog"\nargs = ["mcp"]',
       });
 
       const result = await detectCodexIntegration('/workspace');
-      expect(result.mcpConfigured).toBe(true);
+      expect(result.mcpConfigured).toBe(false);
     });
 
     it('should not detect when .codex/config.toml has no taskwright or backlog entry', async () => {
