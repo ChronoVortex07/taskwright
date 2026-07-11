@@ -4,6 +4,7 @@ import {
   injectAgentsConvention,
   TASKWRIGHT_CONVENTION,
   TASKWRIGHT_AGENTS_CONVENTION,
+  TASKWRIGHT_AGENTS_CONVENTION_MAX_CHARS,
 } from '../../core/agentConvention';
 import { TASKWRIGHT_MARKERS } from '../../core/markerBlock';
 
@@ -66,5 +67,18 @@ describe('injectAgentsConvention', () => {
     expect(TASKWRIGHT_AGENTS_CONVENTION).not.toBe(TASKWRIGHT_CONVENTION);
     expect(TASKWRIGHT_AGENTS_CONVENTION).toContain('request_merge');
     expect(TASKWRIGHT_CONVENTION).not.toContain('request_merge');
+  });
+
+  it('stays within the Codex instruction budget by deferring detail to skills', () => {
+    // AC#4: AGENTS.md must not inline the detailed workflows — it points at the
+    // progressively-disclosed native skills instead, and stays under budget.
+    expect(TASKWRIGHT_AGENTS_CONVENTION.length).toBeLessThanOrEqual(
+      TASKWRIGHT_AGENTS_CONVENTION_MAX_CHARS
+    );
+    expect(TASKWRIGHT_AGENTS_CONVENTION).toContain('.agents/skills/');
+    expect(TASKWRIGHT_AGENTS_CONVENTION).toContain('progressively disclosed');
+    for (const skill of ['create-task', 'execute-task', 'index-codebase', 'orchestrate-board']) {
+      expect(TASKWRIGHT_AGENTS_CONVENTION).toContain(skill);
+    }
   });
 });

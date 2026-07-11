@@ -43,7 +43,19 @@ This project is managed with [Taskwright](https://github.com/ChronoVortex07/task
 3. Do the work inside your worktree. Record progress with **\`edit_task\`** (implementationNotes / finalSummary).
 4. Close with **\`request_merge\`** from inside your worktree — it rebases, verifies, merges to the base branch, and marks the task Done.
 
-If \`get_active_task\` reports none is set, ask which task to work on rather than assuming.`;
+If \`get_active_task\` reports none is set, ask which task to work on rather than assuming.
+
+The full workflows are **progressively disclosed as native skills** under \`.agents/skills/\` (\`create-task\`, \`execute-task\`, \`index-codebase\`, \`orchestrate-board\`) — invoke a skill by name to load its detailed instructions on demand instead of inlining them here.`;
+
+/**
+ * A conservative character budget for the injected AGENTS.md block. AGENTS.md is
+ * loaded into the agent's context every session, so the convention block stays
+ * a concise pointer: the detailed, multi-step workflows live in the
+ * progressively-disclosed skills under `.agents/skills/` and load only when a
+ * skill is selected. Keeping the block well under this budget keeps AGENTS.md
+ * within Codex's per-file instruction limits.
+ */
+export const TASKWRIGHT_AGENTS_CONVENTION_MAX_CHARS = 2000;
 
 /**
  * Insert or update Taskwright's convention block in an existing AGENTS.md body

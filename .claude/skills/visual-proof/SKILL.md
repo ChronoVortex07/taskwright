@@ -22,7 +22,7 @@ Heuristic: if the proof answers "what does this _look_ like?", fixtures are enou
 - `uvx showboat --version` works (`uv` is pinned in `mise.toml`; run `mise install` if missing).
 - `bun run build` has run recently so `dist/extension.js` and `dist/webview/*` exist.
 - For CDP: VS Code cached at `.vscode-test/` — if not, run `bun run test:e2e` once to download it. On headless Linux, wrap CDP invocations with `xvfb-run -a --server-args="-screen 0 1920x1080x24"`.
-- `agent-browser` is already available in this repo (see `.claude/skills/agent-browser/SKILL.md`).
+- `agent-browser` is already available in this repo (see `.agents/skills/agent-browser/SKILL.md`).
 
 ## Capture method 1: Vite fixture + agent-browser
 

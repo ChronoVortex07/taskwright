@@ -362,7 +362,25 @@ rebase_conflict`) so `/orchestrate-board` branches without parsing prose. **Dura
   guardrail generalized to `commandUsesHeadlessMode` (deny-list: `claude -p`/`--print`, `codex exec`,
   generic `--headless`/`--non-interactive`) applied regardless of agent — subscription safety is a
   principle, not a Claude feature. A custom `taskwright.dispatchTemplate` still wins untouched.
-  Coverage: `src/test/unit/{codexConfig,codexPrompts,AgentIntegrationDetector,dispatchProfiles,dispatchPrompt,dispatchActions}.test.ts`.
+  Coverage: `src/test/unit/{codexConfig,AgentIntegrationDetector,dispatchProfiles,dispatchPrompt,dispatchActions}.test.ts`.
+  (The Codex custom-prompt renderer `src/core/codexPrompts.ts` was **superseded by TASK-98** — Codex
+  now gets native `.agents/skills/` SKILL.md packages instead of `~/.codex/prompts/*.md`.)
+- **Native cross-agent skills + Codex plugin (TASK-98)** ✅: replaced the Codex custom-prompt
+  approximation with **native SKILL.md packages** under Codex's canonical `.agents/skills/`
+  discovery surface — the same full, progressively-disclosed skill directories Claude Code gets in
+  `.claude/skills/`, from the one bundled source (`dist/skills/`), so neither agent's capabilities are
+  reduced. New pure cores: `src/core/agentSkills.ts` (`installAgentSkills` / `discoverAgentSkills` /
+  `uninstallAgentSkills` into `<root>/.agents/skills`, idempotent + clean scoped uninstall) and
+  `src/core/codexPlugin.ts` (renders a valid `.codex-plugin/plugin.json` manifest bundling
+  `skills: './skills/'` + `mcpServers: './.mcp.json'`, the plugin's bare-map `.mcp.json`, and a
+  repo-scoped `.agents/plugins/marketplace.json`; `scripts/build.ts` assembles the distributable
+  bundle into `dist/codex-plugin/`). `setUpCodexIntegration` now calls `installAgentSkills`;
+  `codexPrompts.ts` removed. `TASKWRIGHT_AGENTS_CONVENTION` stays a concise pointer under a documented
+  char budget (`TASKWRIGHT_AGENTS_CONVENTION_MAX_CHARS`), deferring detail to the skills. Repaired the
+  unusable visual-proof reference (`.claude/skills/agent-browser` is a broken text pseudo-symlink →
+  repointed to the real `.agents/skills/agent-browser/SKILL.md`). Install/update/uninstall flows in
+  `docs/codex-plugin.md`. Coverage:
+  `src/test/unit/{agentSkills,codexPlugin,agentConvention,visualProofSkill}.test.ts`.
 
 ## Conventions
 

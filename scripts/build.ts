@@ -2,6 +2,8 @@ import * as esbuild from 'esbuild';
 import * as fs from 'fs';
 import * as path from 'path';
 import { installTaskwrightSkills } from '../src/core/skillInstaller';
+import { codexPluginBundleFiles, renderCodexMarketplaceJson } from '../src/core/codexPlugin';
+import type { McpServerDef } from '../src/core/mcpProjectConfig';
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
@@ -87,6 +89,64 @@ function bundleSkills(): void {
   }
 }
 
+function packageVersion(): string {
+  const pkg = JSON.parse(fs.readFileSync('package.json', 'utf-8')) as { version?: string };
+  return pkg.version ?? '0.0.0';
+}
+
+/**
+ * Assemble the distributable **Codex plugin bundle** into `dist/codex-plugin/`
+ * so Taskwright's native skills and MCP server can be installed together via
+ * Codex's `/plugins` browser (the distribution primitive, complementary to the
+ * per-repo extension setup). Layout:
+ *
+ *   dist/codex-plugin/
+ *   ├── .codex-plugin/plugin.json          (manifest: skills + mcpServers)
+ *   ├── .mcp.json                          (bundled MCP server, bare-map form)
+ *   ├── .agents/plugins/marketplace.json   (repo-scoped registration helper)
+ *   ├── mcp/server.js                      (the standalone, dependency-free server)
+ *   └── skills/<name>/SKILL.md             (the four native SKILL.md packages)
+ *
+ * Runs after esbuild so the built `dist/mcp/server.js` exists to copy in.
+ */
+function bundleCodexPlugin(): void {
+  const version = packageVersion();
+  const bundleDir = path.join('dist', 'codex-plugin');
+  // The plugin ships the standalone server and launches it directly by node.
+  const pluginServer: McpServerDef = { command: 'node', args: ['mcp/server.js'] };
+
+  fs.rmSync(bundleDir, { recursive: true, force: true });
+  fs.mkdirSync(bundleDir, { recursive: true });
+
+  // Manifest + plugin .mcp.json (from the pure renderers).
+  for (const [rel, content] of Object.entries(
+    codexPluginBundleFiles({ version, server: pluginServer })
+  )) {
+    const dest = path.join(bundleDir, rel);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, content, 'utf-8');
+  }
+
+  // Repo-scoped marketplace registration helper.
+  const marketplacePath = path.join(bundleDir, '.agents', 'plugins', 'marketplace.json');
+  fs.mkdirSync(path.dirname(marketplacePath), { recursive: true });
+  fs.writeFileSync(marketplacePath, renderCodexMarketplaceJson({ version, source: './' }), 'utf-8');
+
+  // Native skill packages (copied from dist/skills, produced by bundleSkills).
+  installTaskwrightSkills(path.join('dist', 'skills'), path.join(bundleDir, 'skills'), true);
+
+  // The standalone MCP server the manifest points at.
+  const serverSrc = path.join('dist', 'mcp', 'server.js');
+  if (fs.existsSync(serverSrc)) {
+    fs.mkdirSync(path.join(bundleDir, 'mcp'), { recursive: true });
+    fs.copyFileSync(serverSrc, path.join(bundleDir, 'mcp', 'server.js'));
+  } else {
+    console.warn(`[codex-plugin] ${serverSrc} not found — bundle omits the MCP server binary.`);
+  }
+
+  console.log(`[codex-plugin] assembled ${bundleDir} (v${version}).`);
+}
+
 async function main(): Promise<void> {
   // Bundle the shipped skills into dist/skills/ before building the JS bundles,
   // so a published .vsix carries them (runs in both one-shot and --watch builds).
@@ -98,10 +158,16 @@ async function main(): Promise<void> {
 
   if (watch) {
     await Promise.all(contexts.map((ctx) => ctx.watch()));
+    // Assemble the plugin once up front; subsequent rebuilds refresh dist/skills
+    // and dist/mcp, but the plugin bundle is a distribution artifact, not part
+    // of the dev inner loop.
+    bundleCodexPlugin();
     console.log('[esbuild] Watching for changes...');
   } else {
     await Promise.all(contexts.map((ctx) => ctx.rebuild()));
     await Promise.all(contexts.map((ctx) => ctx.dispose()));
+    // After the JS bundles exist (dist/mcp/server.js), assemble the Codex plugin.
+    bundleCodexPlugin();
   }
 }
 

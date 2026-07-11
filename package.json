@@ -376,7 +376,7 @@
       },
       {
         "command": "taskwright.setupCodexIntegration",
-        "title": "Taskwright: Set Up Codex Integration (MCP + prompts)"
+        "title": "Taskwright: Set Up Codex Integration (MCP + skills)"
       },
       {
         "command": "taskwright.editBoardConfig",

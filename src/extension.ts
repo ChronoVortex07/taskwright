@@ -46,7 +46,7 @@ import { injectConvention, injectAgentsConvention } from './core/agentConvention
 import { installTaskwrightSkills, type SkillInstallResult } from './core/skillInstaller';
 import { extractTaskwrightServer, upsertTaskwrightMcpServer } from './core/mcpProjectConfig';
 import { codexServerForPackagedExtension, upsertCodexMcpServer } from './core/codexConfig';
-import { installCodexPrompts } from './core/codexPrompts';
+import { installAgentSkills } from './core/agentSkills';
 import { homedir } from 'os';
 import { affectsTaskwrightConfig, getTaskwrightConfig } from './config';
 import {
@@ -2410,7 +2410,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const codexDir = codexHome();
     if (!fs.existsSync(codexDir)) {
       vscode.window.showWarningMessage(
-        `Codex does not appear to be installed (no ${codexDir}). Install Codex, then run "Taskwright: Set Up Codex Integration (MCP + prompts)" again.`
+        `Codex does not appear to be installed (no ${codexDir}). Install Codex, then run "Taskwright: Set Up Codex Integration (MCP + skills)" again.`
       );
       return;
     }
@@ -2440,35 +2440,35 @@ export async function activate(context: vscode.ExtensionContext) {
       );
     }
 
-    // 2) Install the four user-facing skills as Codex custom prompts
-    // (~/.codex/prompts/<name>.md, invoked as /<name>), rendered from the same
-    // bundled skill sources the Claude installer copies — one source of truth,
-    // per-agent renderers. Idempotent: existing prompts are skipped.
+    // 2) Install the four user-facing skills as NATIVE SKILL.md packages under
+    // the project's `.agents/skills/` — Codex's canonical skill discovery
+    // surface ($REPO_ROOT/.agents/skills). These are the SAME full skill
+    // packages the Claude installer copies into `.claude/skills/` (one source of
+    // truth, no capability reduction) — Codex reads name+description up front and
+    // loads the full body on demand (progressive disclosure). This replaces the
+    // earlier `~/.codex/prompts/<name>.md` custom-prompt approximation.
+    // Idempotent: existing skills are skipped.
     try {
       const extSkillsDir = path.join(context.extensionPath, 'dist', 'skills');
-      const promptResults = installCodexPrompts(
-        extSkillsDir,
-        path.join(codexDir, 'prompts'),
-        false
-      );
-      const created = promptResults.filter((r: SkillInstallResult) => r.action === 'created');
-      const skipped = promptResults.filter((r: SkillInstallResult) => r.action === 'skipped');
+      const skillResults = installAgentSkills(extSkillsDir, root, false);
+      const created = skillResults.filter((r: SkillInstallResult) => r.action === 'created');
+      const skipped = skillResults.filter((r: SkillInstallResult) => r.action === 'skipped');
       if (created.length > 0 || skipped.length > 0) {
         const parts: string[] = [];
         if (created.length > 0) {
-          parts.push(
-            `installed ${created.map((r: SkillInstallResult) => `/${r.name}`).join(', ')}`
-          );
+          parts.push(`installed ${created.map((r: SkillInstallResult) => r.name).join(', ')}`);
         }
         if (skipped.length > 0) {
           parts.push(
-            `${skipped.map((r: SkillInstallResult) => `/${r.name}`).join(', ')} already present`
+            `${skipped.map((r: SkillInstallResult) => r.name).join(', ')} already present`
           );
         }
-        vscode.window.showInformationMessage(`Taskwright Codex prompts: ${parts.join('; ')}.`);
+        vscode.window.showInformationMessage(
+          `Taskwright native skills (.agents/skills): ${parts.join('; ')}.`
+        );
       }
     } catch (error) {
-      vscode.window.showErrorMessage(`Failed to install Taskwright Codex prompts: ${error}`);
+      vscode.window.showErrorMessage(`Failed to install Taskwright native skills: ${error}`);
     }
 
     // 3) AGENTS.md is Codex's native instruction surface — offer the shared

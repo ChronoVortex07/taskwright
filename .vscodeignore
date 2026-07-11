@@ -75,3 +75,7 @@ bun.lock
 
 # Source maps (not needed in production)
 dist/**/*.map
+
+# The Codex plugin bundle is a separate distribution artifact (installed via
+# Codex's /plugins browser), not used by the VS Code extension at runtime.
+dist/codex-plugin/**
