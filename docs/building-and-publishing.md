@@ -31,13 +31,13 @@ changes.
 
 Useful scripts:
 
-| Command                              | What it does                                                                           |
-| ------------------------------------ | -------------------------------------------------------------------------------------- |
-| `bun run build`                      | Full build: CSS + Svelte webviews + extension + MCP server → `dist/`                   |
-| `bun run watch`                      | Rebuild the extension bundle on change                                                 |
-| `bun run test`                       | Unit tests (Vitest). ~22 POSIX-path tests fail on Windows — expected, not a regression |
-| `bun run lint` / `bun run typecheck` | ESLint / TypeScript checks                                                             |
-| `bun run proof`                      | Build + run the Playwright visual-proof specs (screenshots in `e2e/__screenshots__/`)  |
+| Command                              | What it does                                                                             |
+| ------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `bun run build`                      | Full build: CSS + Svelte webviews + extension + MCP server → `dist/`                     |
+| `bun run watch`                      | Rebuild the extension bundle on change                                                   |
+| `bun run test`                       | Unit tests (Vitest). Passes fully on Windows, macOS, and Linux — 0 failures on all three |
+| `bun run lint` / `bun run typecheck` | ESLint / TypeScript checks                                                               |
+| `bun run proof`                      | Build + run the Playwright visual-proof specs (screenshots in `e2e/__screenshots__/`)    |
 
 > The F5 dev host is for **iterating on the code**. To actually _use_ Taskwright day-to-day in your
 > normal editor, install it as a packaged extension (next section) instead.

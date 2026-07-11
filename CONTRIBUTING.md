@@ -48,9 +48,31 @@ bun run typecheck       # tsc --noEmit
 bun run test:playwright # Webview UI tests
 ```
 
-> **Known issue (Windows):** ~22 upstream unit tests assert POSIX-style paths (`/repo/...`) and fail on
-> Windows, where the (cross-platform-correct) code returns `C:\...`. They pass on Linux/CI. Prefer
-> running the full suite on Linux/WSL until these assertions are made platform-aware.
+### Platform support
+
+Development and release automation is **cross-platform** — every `package.json` script runs on
+Windows, macOS, and Linux with no `bash` required. The scripts are TypeScript run via `bun` (the old
+`scripts/*.sh` wrappers were ported); the shared platform branching lives in `scripts/lib/platform.ts`
+and is unit-tested. CI runs the portable verification core (install, lint, typecheck, depcheck, audit
+gate, unit tests, build, license check) on **both Windows and Linux**.
+
+The unit suite (`bun run test`) passes fully on Windows, Linux, and CI — **0 failures on all three**
+(the historical ~22 POSIX-path assertions were made path-separator-agnostic in TASK-4; don't
+reintroduce POSIX-only path assertions).
+
+**Unavoidable platform prerequisites:**
+
+- **All platforms:** Node **≥ 22** and [Bun](https://bun.sh).
+- **Windows:** `git config --global core.longpaths true` (Backlog.md task filenames can exceed
+  `MAX_PATH`).
+- **Headless Linux (CI, devcontainers):** the display-driven suites — `bun run test:e2e`,
+  `bun run test:cdp`, and `bun run screenshots` — need **`xvfb`** installed (`apt-get install -y
+xvfb`); the scripts detect a headless Linux host and wrap the run in `xvfb-run` automatically. On
+  Windows and macOS they run against the native display with no extra setup. If `xvfb-run` is missing
+  on a headless Linux host, the script fails with an actionable "command not found" message rather
+  than hanging.
+- **`bun run test:e2e` / `bun run test:cdp`:** download a VS Code build into `.vscode-test/` on first
+  run (the CDP launcher and CI provision the platform-appropriate binary).
 
 ## Code style
 

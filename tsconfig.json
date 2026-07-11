@@ -15,6 +15,6 @@
     "sourceMap": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*", "scripts/hooks/**/*"],
+  "include": ["src/**/*", "scripts/hooks/**/*", "scripts/lib/**/*"],
   "exclude": ["node_modules", "dist", "src/test/e2e/**/*", "src/webview/**/*"]
 }

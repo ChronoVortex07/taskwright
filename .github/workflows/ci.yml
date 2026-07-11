@@ -14,9 +14,18 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        # The portable verification core (install, engines, lint, typecheck,
+        # depcheck, audit gate, unit tests, build, license check) runs on both
+        # Windows and Linux. The display/browser/VS-Code-provisioning-heavy steps
+        # (Playwright, CDP, extension e2e) run on Linux only — they depend on
+        # xvfb, apt, and a linux-x64 VS Code download. Those suites still RUN on
+        # Windows locally via `bun run test:playwright` / `test:cdp` / `test:e2e`
+        # (all cross-platform now), they are just not gated in CI here.
+        os: [ubuntu-24.04, windows-latest]
         node-version: [22] # Match mise.toml
 
     steps:
@@ -55,11 +64,18 @@ jobs:
       - name: Build
         run: bun run build
 
+      - name: Verify licenses are up to date
+        run: bun run licenses:check
+
+      # ---- Linux-only display/browser/VS-Code suites ------------------------
+
       - name: Get Playwright version
+        if: runner.os == 'Linux'
         id: playwright-version
         run: echo "version=$(bunx playwright --version | awk '{print $2}')" >> $GITHUB_OUTPUT
 
       - name: Cache Playwright browsers
+        if: runner.os == 'Linux'
         id: playwright-cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -67,17 +83,19 @@ jobs:
           key: playwright-${{ steps.playwright-version.outputs.version }}
 
       - name: Install Playwright browser
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        if: runner.os == 'Linux' && steps.playwright-cache.outputs.cache-hit != 'true'
         run: bunx playwright install --with-deps chromium
 
       - name: Install Playwright system deps only
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        if: runner.os == 'Linux' && steps.playwright-cache.outputs.cache-hit == 'true'
         run: bunx playwright install-deps chromium
 
       - name: Playwright tests
+        if: runner.os == 'Linux'
         run: bun run test:playwright
 
       - name: Download VS Code for CDP tests
+        if: runner.os == 'Linux'
         run: |
           mkdir -p .vscode-test
           curl -fsSL "https://update.code.visualstudio.com/latest/linux-x64/stable" -o /tmp/vscode.tar.gz
@@ -85,13 +103,12 @@ jobs:
           rm /tmp/vscode.tar.gz
 
       - name: CDP cross-view tests
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get install -y xvfb
           xvfb-run -a --server-args="-screen 0 1920x1080x24" \
             bunx vitest run --config vitest.cdp.config.ts
 
       - name: Extension e2e smoke tests
+        if: runner.os == 'Linux'
         run: bun run test:e2e
-
-      - name: Verify licenses are up to date
-        run: bun run licenses:check

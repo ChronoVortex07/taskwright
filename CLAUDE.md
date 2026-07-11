@@ -14,6 +14,16 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   Linux, and CI — the current baseline is **0 failures** on all three. (Historically ~22 upstream tests
   asserted POSIX paths and failed on Windows; that was fixed — just don't reintroduce POSIX-only path
   assertions.)
+- **Cross-platform automation (TASK-101):** every `package.json` script runs on Windows/macOS/Linux
+  with no `bash` — the old `scripts/*.sh` wrappers were ported to TypeScript run via `bun`
+  (`scripts/generate-licenses.ts`, `check-licenses.ts`, `run-e2e.ts`, `run-cdp-tests.ts`,
+  `screenshots/run.ts`). The shared, unit-tested platform branching is `scripts/lib/platform.ts`
+  (`shouldUseXvfb`/`withXvfb`): display-driven suites (`test:e2e`, `test:cdp`, `screenshots`) auto-wrap
+  in `xvfb-run` on **headless Linux only** and run against the native display on Windows/macOS. CI
+  (`.github/workflows/ci.yml`) matrixes the portable core over `ubuntu-24.04` + `windows-latest`; the
+  xvfb/apt/VS-Code-download suites stay Linux-only. Prereqs live in `CONTRIBUTING.md` (Platform
+  support). When adding a script, don't shell out to `bash` — write a `bun`-run `.ts` and reuse
+  `scripts/lib/`.
 
 ## Architecture (inherited)
 

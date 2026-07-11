@@ -15,9 +15,9 @@ ignores:
   # directly imported by our source.
   - tailwindcss
 
-  # Used by scripts/generate-licenses.sh via the `generate-license-file` bin.
-  # Depcheck finds bin usages in package.json "scripts" entries but not in
-  # standalone shell scripts, so this stays ignored.
+  # Used by scripts/generate-licenses.ts, which invokes the `generate-license-file`
+  # bin via `bun x`. Depcheck finds bin usages in package.json "scripts" entries
+  # but not a dynamic invocation inside a standalone script, so this stays ignored.
   - generate-license-file
 
   # Consumed by scripts/screenshots/generate.ts for PNG optimization. The
