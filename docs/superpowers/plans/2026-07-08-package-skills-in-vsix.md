@@ -114,75 +114,72 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 Then insert the following **two** describe blocks inside the top-level `describe('skillInstaller', () => { ... })`, immediately **after** the closing `});` of the `describe('installTaskwrightSkills', ...)` block and **before** the top-level `describe`'s final `});` (so they can use the existing `tmpDir` / `makeSkillDir` helpers):
 
 ```ts
-  describe('installTaskwrightSkills — missing source is logged, not silent', () => {
-    it('logs a missing source skill and skips it; present skills still install (no-op holds)', () => {
-      const extSkills = tmpDir();
-      // Only two of the three sources exist — index-codebase is missing.
-      makeSkillDir(extSkills, 'create-task', 'create content');
-      makeSkillDir(extSkills, 'execute-task', 'execute content');
+describe('installTaskwrightSkills — missing source is logged, not silent', () => {
+  it('logs a missing source skill and skips it; present skills still install (no-op holds)', () => {
+    const extSkills = tmpDir();
+    // Only two of the three sources exist — index-codebase is missing.
+    makeSkillDir(extSkills, 'create-task', 'create content');
+    makeSkillDir(extSkills, 'execute-task', 'execute content');
 
-      const projectSkills = tmpDir();
-      const onMissing = vi.fn();
+    const projectSkills = tmpDir();
+    const onMissing = vi.fn();
 
-      const results = installTaskwrightSkills(extSkills, projectSkills, false, onMissing);
+    const results = installTaskwrightSkills(extSkills, projectSkills, false, onMissing);
 
-      // No-op still holds for the missing skill: no result entry, no dir written.
-      expect(results.map((r: SkillInstallResult) => r.name)).toEqual([
-        'create-task',
-        'execute-task',
-      ]);
-      expect(fs.existsSync(path.join(projectSkills, 'index-codebase'))).toBe(false);
+    // No-op still holds for the missing skill: no result entry, no dir written.
+    expect(results.map((r: SkillInstallResult) => r.name)).toEqual(['create-task', 'execute-task']);
+    expect(fs.existsSync(path.join(projectSkills, 'index-codebase'))).toBe(false);
 
-      // ...but the miss is now SURFACED (logged) instead of silently swallowed.
-      expect(onMissing).toHaveBeenCalledTimes(1);
-      expect(onMissing).toHaveBeenCalledWith(
-        'index-codebase',
-        path.join(extSkills, 'index-codebase')
-      );
-    });
-
-    it('does not invoke the missing-source handler when every source is present', () => {
-      const extSkills = tmpDir();
-      makeSkillDir(extSkills, 'create-task', 'c');
-      makeSkillDir(extSkills, 'execute-task', 'e');
-      makeSkillDir(extSkills, 'index-codebase', 'i');
-      const onMissing = vi.fn();
-
-      installTaskwrightSkills(extSkills, tmpDir(), false, onMissing);
-
-      expect(onMissing).not.toHaveBeenCalled();
-    });
+    // ...but the miss is now SURFACED (logged) instead of silently swallowed.
+    expect(onMissing).toHaveBeenCalledTimes(1);
+    expect(onMissing).toHaveBeenCalledWith(
+      'index-codebase',
+      path.join(extSkills, 'index-codebase')
+    );
   });
 
-  describe('packaged skill bundle — resolves the real source, excludes dev skills', () => {
-    // src/test/unit -> repo root is three levels up.
-    const repoRoot = path.resolve(__dirname, '..', '..', '..');
-    const realSkillsDir = path.join(repoRoot, '.claude', 'skills');
+  it('does not invoke the missing-source handler when every source is present', () => {
+    const extSkills = tmpDir();
+    makeSkillDir(extSkills, 'create-task', 'c');
+    makeSkillDir(extSkills, 'execute-task', 'e');
+    makeSkillDir(extSkills, 'index-codebase', 'i');
+    const onMissing = vi.fn();
 
-    it('the committed .claude/skills/ source contains all three shipped skills', () => {
-      for (const name of TASKWRIGHT_SKILL_NAMES) {
-        expect(fs.existsSync(path.join(realSkillsDir, name, 'SKILL.md'))).toBe(true);
-      }
-    });
+    installTaskwrightSkills(extSkills, tmpDir(), false, onMissing);
 
-    it('bundling the real source copies EXACTLY the three skills and NOT visual-proof/agent-browser', () => {
-      const dest = tmpDir();
-
-      const results = installTaskwrightSkills(realSkillsDir, dest, true);
-
-      // Exactly the three Taskwright skills, each with its SKILL.md.
-      expect(results.map((r: SkillInstallResult) => r.name).sort()).toEqual(
-        [...TASKWRIGHT_SKILL_NAMES].sort()
-      );
-      for (const name of TASKWRIGHT_SKILL_NAMES) {
-        expect(fs.existsSync(path.join(dest, name, 'SKILL.md'))).toBe(true);
-      }
-
-      // The dev-only skills are never bundled (they are not in TASKWRIGHT_SKILL_NAMES).
-      expect(fs.existsSync(path.join(dest, 'visual-proof'))).toBe(false);
-      expect(fs.existsSync(path.join(dest, 'agent-browser'))).toBe(false);
-    });
+    expect(onMissing).not.toHaveBeenCalled();
   });
+});
+
+describe('packaged skill bundle — resolves the real source, excludes dev skills', () => {
+  // src/test/unit -> repo root is three levels up.
+  const repoRoot = path.resolve(__dirname, '..', '..', '..');
+  const realSkillsDir = path.join(repoRoot, '.claude', 'skills');
+
+  it('the committed .claude/skills/ source contains all three shipped skills', () => {
+    for (const name of TASKWRIGHT_SKILL_NAMES) {
+      expect(fs.existsSync(path.join(realSkillsDir, name, 'SKILL.md'))).toBe(true);
+    }
+  });
+
+  it('bundling the real source copies EXACTLY the three skills and NOT visual-proof/agent-browser', () => {
+    const dest = tmpDir();
+
+    const results = installTaskwrightSkills(realSkillsDir, dest, true);
+
+    // Exactly the three Taskwright skills, each with its SKILL.md.
+    expect(results.map((r: SkillInstallResult) => r.name).sort()).toEqual(
+      [...TASKWRIGHT_SKILL_NAMES].sort()
+    );
+    for (const name of TASKWRIGHT_SKILL_NAMES) {
+      expect(fs.existsSync(path.join(dest, name, 'SKILL.md'))).toBe(true);
+    }
+
+    // The dev-only skills are never bundled (they are not in TASKWRIGHT_SKILL_NAMES).
+    expect(fs.existsSync(path.join(dest, 'visual-proof'))).toBe(false);
+    expect(fs.existsSync(path.join(dest, 'agent-browser'))).toBe(false);
+  });
+});
 ```
 
 > Falsification: the missing-source test fails today because `installTaskwrightSkills` has no fourth param — the extra `onMissing` arg is ignored at runtime, so `onMissing` is never called and `toHaveBeenCalledTimes(1)` sees `0`. Under `bun run typecheck` it is additionally a compile error (4 args to a 3-param function). The exclusion test is a green characterization guard once the param exists — its job is to **lock** the exclude-dev-skills contract against the real committed source, so a future refactor that broadens the copy set breaks a test.
@@ -241,24 +238,24 @@ export function installTaskwrightSkills(
 And replace the silent `continue` block (`skillInstaller.ts:74-79`):
 
 ```ts
-    if (!fs.existsSync(srcDir)) {
-      // Source skill missing — skip silently rather than failing the whole
-      // setup. The extension ships these, but a dev checkout without them
-      // shouldn't break the integration command.
-      continue;
-    }
+if (!fs.existsSync(srcDir)) {
+  // Source skill missing — skip silently rather than failing the whole
+  // setup. The extension ships these, but a dev checkout without them
+  // shouldn't break the integration command.
+  continue;
+}
 ```
 
 with (surface the miss, keep the no-op):
 
 ```ts
-    if (!fs.existsSync(srcDir)) {
-      // Source skill missing — skip this one rather than failing the whole setup,
-      // but SURFACE it: a packaged install always ships these under dist/skills/,
-      // so a miss means a broken package, not a normal dev checkout.
-      onMissingSource(name, srcDir);
-      continue;
-    }
+if (!fs.existsSync(srcDir)) {
+  // Source skill missing — skip this one rather than failing the whole setup,
+  // but SURFACE it: a packaged install always ships these under dist/skills/,
+  // so a miss means a broken package, not a normal dev checkout.
+  onMissingSource(name, srcDir);
+  continue;
+}
 ```
 
 - [ ] **Step 4: Run the tests, expect PASS**
@@ -402,21 +399,21 @@ Expected: five `OK` lines. (Re-running `bun run build` prints `overwritten:` ins
 Replace the comment + source-path line (`extension.ts:1818-1821`):
 
 ```ts
-    // 3) Install the three Taskwright skills (create-task, execute-task,
-    // index-codebase) into the project's .claude/skills/ — idempotent: already-
-    // installed skills are skipped, so re-running setup is safe.
-    const extSkillsDir = path.join(context.extensionPath, '.claude', 'skills');
+// 3) Install the three Taskwright skills (create-task, execute-task,
+// index-codebase) into the project's .claude/skills/ — idempotent: already-
+// installed skills are skipped, so re-running setup is safe.
+const extSkillsDir = path.join(context.extensionPath, '.claude', 'skills');
 ```
 
 with:
 
 ```ts
-    // 3) Install the three Taskwright skills (create-task, execute-task,
-    // index-codebase) into the project's .claude/skills/ — idempotent: already-
-    // installed skills are skipped, so re-running setup is safe. The source is the
-    // BUNDLED copy under dist/skills/ (scripts/build.ts bundles them there) so a
-    // published .vsix ships them — .claude/** is excluded from the package.
-    const extSkillsDir = path.join(context.extensionPath, 'dist', 'skills');
+// 3) Install the three Taskwright skills (create-task, execute-task,
+// index-codebase) into the project's .claude/skills/ — idempotent: already-
+// installed skills are skipped, so re-running setup is safe. The source is the
+// BUNDLED copy under dist/skills/ (scripts/build.ts bundles them there) so a
+// published .vsix ships them — .claude/** is excluded from the package.
+const extSkillsDir = path.join(context.extensionPath, 'dist', 'skills');
 ```
 
 > This is the load-bearing repoint: `context.extensionPath` is the repo root under F5 dev and the extracted `extension/` dir for a `.vsix` install; in both, `dist/skills/` now exists (built in Step 3 / bundled by `vscode:prepublish`). The old `.claude/skills` path resolved only in a dev checkout — never in a published install.

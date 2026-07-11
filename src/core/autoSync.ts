@@ -31,12 +31,7 @@ import { boardWorktreePathFor } from './boardRoot';
  */
 
 /** Identity fallback so repos/CI without a git identity can still capture. */
-const COMMIT_IDENTITY = [
-  '-c',
-  'user.name=Taskwright',
-  '-c',
-  'user.email=taskwright@local',
-];
+const COMMIT_IDENTITY = ['-c', 'user.name=Taskwright', '-c', 'user.email=taskwright@local'];
 
 export interface AutoCommitResult {
   committed: boolean;
@@ -189,7 +184,10 @@ export async function runBoardAutoSync(
 
     outcome.remoteTip = await fetchRef(opts.primaryRoot, opts.remote, opts.ref, exec);
 
-    if (outcome.remoteTip && !(await isAncestor(opts.primaryRoot, outcome.remoteTip, localTip, exec))) {
+    if (
+      outcome.remoteTip &&
+      !(await isAncestor(opts.primaryRoot, outcome.remoteTip, localTip, exec))
+    ) {
       const baseSha = await mergeBaseOf(opts.primaryRoot, localTip, outcome.remoteTip, exec);
       const baseMap = baseSha ? await readRefFileMap(opts.primaryRoot, baseSha, exec) : undefined;
       const oursMap = await readRefFileMap(opts.primaryRoot, localTip, exec);

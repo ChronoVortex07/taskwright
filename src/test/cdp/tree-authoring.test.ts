@@ -96,7 +96,11 @@ describe('Tree authoring cross-view (CDP)', () => {
     expect(opened).toBe(true);
     // The form is {#if}-mounted at root; give the reactive mount a beat to settle.
     await sleep(150);
-    const formShown = await elementExistsInWebview(instance.cdp, 'tasks', '[data-testid="create-form"]');
+    const formShown = await elementExistsInWebview(
+      instance.cdp,
+      'tasks',
+      '[data-testid="create-form"]'
+    );
     expect(formShown).toBe(true);
 
     const typed = await typeInWebviewInput(

@@ -44,10 +44,7 @@ export class PromoteDraftsError extends Error {
 }
 
 /** Order the requested drafts so a draft's in-set dependencies precede it (deps → dependents). */
-function topoOrder(
-  ids: string[],
-  draftByUpper: Map<string, { dependencies: string[] }>
-): string[] {
+function topoOrder(ids: string[], draftByUpper: Map<string, { dependencies: string[] }>): string[] {
   const inSet = new Set(ids.map((i) => i.trim().toUpperCase()));
   const ordered: string[] = [];
   const visited = new Set<string>();

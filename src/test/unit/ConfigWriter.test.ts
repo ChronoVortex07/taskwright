@@ -339,9 +339,7 @@ describe('validateConfigEdits', () => {
     expect(result.valid).toBe(false);
     expect(result.errors.some((e) => e.field === 'statuses')).toBe(true);
     expect(
-      result.errors.some(
-        (e) => e.field === 'statuses' && e.blockingTaskIds?.includes('TASK-1')
-      )
+      result.errors.some((e) => e.field === 'statuses' && e.blockingTaskIds?.includes('TASK-1'))
     ).toBe(true);
   });
 

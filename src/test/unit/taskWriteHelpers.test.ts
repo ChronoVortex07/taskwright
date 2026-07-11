@@ -32,6 +32,8 @@ describe('assertValidPriority (config-driven)', () => {
     expect(() => assertValidPriority('Critical', ['Critical', 'Normal'])).not.toThrow();
   });
   it('throws for a value outside the allowed list', () => {
-    expect(() => assertValidPriority('urgent', ['high', 'medium', 'low'])).toThrow('Invalid priority');
+    expect(() => assertValidPriority('urgent', ['high', 'medium', 'low'])).toThrow(
+      'Invalid priority'
+    );
   });
 });

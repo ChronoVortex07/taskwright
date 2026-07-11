@@ -128,6 +128,7 @@
   <input
     class="cf-input"
     data-testid="cf-title"
+    aria-label="Task title"
     bind:this={titleEl}
     bind:value={title}
     placeholder="Task title"

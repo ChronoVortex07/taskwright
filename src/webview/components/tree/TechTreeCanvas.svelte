@@ -796,6 +796,7 @@ import ContextMenu from './ContextMenu.svelte';
         class="tree-tool-btn"
         data-testid="tree-zoom-out"
         title="Zoom out"
+        aria-label="Zoom out"
         onclick={() => zoomBy(1 / 1.2)}
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>
@@ -805,11 +806,18 @@ import ContextMenu from './ContextMenu.svelte';
         class="tree-tool-btn"
         data-testid="tree-zoom-in"
         title="Zoom in"
+        aria-label="Zoom in"
         onclick={() => zoomBy(1.2)}
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
       </button>
-      <button class="tree-tool-btn" data-testid="tree-zoom-fit" title="Fit to view" onclick={fit}>
+      <button
+        class="tree-tool-btn"
+        data-testid="tree-zoom-fit"
+        title="Fit to view"
+        aria-label="Fit to view"
+        onclick={fit}
+      >
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
       </button>
     </div>
@@ -826,6 +834,16 @@ import ContextMenu from './ContextMenu.svelte';
       </button>
     {/if}
 
+    <!--
+      The pan/zoom canvas is legitimately an interactive `role="application"`
+      region: it captures pointer gestures (pan, drag-to-connect/reslot) and
+      relays keyboard node navigation (arrows/j/k in onCanvasKeydown) — keydown
+      bubbles up from the focusable `.tree-node` children (each tabindex=0), so
+      the region itself is intentionally not a tab stop. Svelte's aria-query
+      classifies `application` as non-interactive and flags the pointer/key
+      listeners; the role is intentional here.
+    -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
       class="tree-viewport"
       class:panning

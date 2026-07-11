@@ -1433,7 +1433,9 @@ test.describe('Attachment chips', () => {
   test('clicking a filled chip expands its preview; clicking again collapses', async ({ page }) => {
     await page.locator('[data-testid="attach-chip-plan"]').click();
     await expect(page.locator('[data-testid="attach-panel-plan"]')).toBeVisible();
-    await expect(page.locator('[data-testid="implementationPlan-view"]')).toContainText('Do the thing');
+    await expect(page.locator('[data-testid="implementationPlan-view"]')).toContainText(
+      'Do the thing'
+    );
     await page.locator('[data-testid="attach-chip-plan"]').click();
     await expect(page.locator('[data-testid="attach-panel-plan"]')).toHaveCount(0);
   });
@@ -1445,7 +1447,9 @@ test.describe('Attachment chips', () => {
     expect(await getLastPostedMessage(page)).toMatchObject({ type: 'openFile' });
   });
 
-  test('Spec chip lists references + documentation; a relative link opens in the editor', async ({ page }) => {
+  test('Spec chip lists references + documentation; a relative link opens in the editor', async ({
+    page,
+  }) => {
     await page.locator('[data-testid="attach-chip-spec"]').click();
     await expect(page.locator('[data-testid="attach-panel-spec"]')).toContainText('docs/design.md');
     await clearPostedMessages(page);
@@ -1456,7 +1460,9 @@ test.describe('Attachment chips', () => {
     });
   });
 
-  test('Spec panel dedupes a path present in both documentation and references (no each_key_duplicate crash)', async ({ page }) => {
+  test('Spec panel dedupes a path present in both documentation and references (no each_key_duplicate crash)', async ({
+    page,
+  }) => {
     // A URL in BOTH frontmatter arrays would throw Svelte 5's each_key_duplicate and break
     // the whole detail render unless specItems is deduped.
     await postMessageToWebview(page, {

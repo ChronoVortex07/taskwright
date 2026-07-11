@@ -45,21 +45,16 @@ function resolveBundlePath(raw, cwd) {
 function resolveCommonDir(cwd) {
   // Try the modern flag first.
   try {
-    const raw = execFileSync(
-      'git',
-      ['rev-parse', '--path-format=absolute', '--git-common-dir'],
-      { cwd, encoding: 'utf8' }
-    );
+    const raw = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      cwd,
+      encoding: 'utf8',
+    });
     return resolveBundlePath(raw, cwd);
   } catch (_e) {
     // Fall back: git < 2.31 doesn't support --path-format=absolute.
   }
   try {
-    const raw = execFileSync(
-      'git',
-      ['rev-parse', '--git-common-dir'],
-      { cwd, encoding: 'utf8' }
-    );
+    const raw = execFileSync('git', ['rev-parse', '--git-common-dir'], { cwd, encoding: 'utf8' });
     return resolveBundlePath(raw, cwd);
   } catch (error) {
     console.error(
@@ -116,9 +111,8 @@ function main() {
     // The bundle's own CLI entry never throws/exits non-zero on a push/pull
     // failure (see `runBoardSyncHook`) — a non-zero exit here means the child
     // node process itself crashed unexpectedly. Log, never block the git op.
-    const detail = error && error.code
-      ? `${error.message} (code: ${error.code})`
-      : error && error.message;
+    const detail =
+      error && error.code ? `${error.message} (code: ${error.code})` : error && error.message;
     console.error(`[board-sync-hook] ${mode} child process failed: ${detail}`);
   }
 }

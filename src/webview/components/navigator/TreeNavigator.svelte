@@ -133,6 +133,7 @@
     <input
       type="text"
       placeholder="Search tasks…"
+      aria-label="Search tasks"
       data-testid="nav-search"
       value={search}
       oninput={onSearchInput}

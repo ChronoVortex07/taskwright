@@ -128,20 +128,35 @@ describe('TasksController — P2b board-bus enrichment', () => {
   it('marks claimedByMe true only for tasks claimed by the current identity', async () => {
     (mockParser.getTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
-        id: 'TASK-1', title: 'Mine', status: 'In Progress', labels: [], assignee: [],
-        dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
-        filePath: '/fake/backlog/tasks/task-1.md', claimedBy: currentIdentity(),
+        id: 'TASK-1',
+        title: 'Mine',
+        status: 'In Progress',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/fake/backlog/tasks/task-1.md',
+        claimedBy: currentIdentity(),
       } as Task,
       {
-        id: 'TASK-2', title: 'Theirs', status: 'In Progress', labels: [], assignee: [],
-        dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
-        filePath: '/fake/backlog/tasks/task-2.md', claimedBy: 'someone-else',
+        id: 'TASK-2',
+        title: 'Theirs',
+        status: 'In Progress',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/fake/backlog/tasks/task-2.md',
+        claimedBy: 'someone-else',
       } as Task,
     ]);
     const controller = new TasksController(host, mockParser, mockContext);
     await controller.refresh();
     const upd = posted.find((m) => m.type === 'tasksUpdated') as Extract<
-      ExtensionMessage, { type: 'tasksUpdated' }
+      ExtensionMessage,
+      { type: 'tasksUpdated' }
     >;
     const byId = new Map(upd.tasks.map((t) => [t.id, t]));
     expect((byId.get('TASK-1') as Task).claimedByMe).toBe(true);
@@ -162,13 +177,21 @@ describe('TasksController — updateTask priority write path (Q1)', () => {
       priorities: ['P0', 'P1', 'P2'],
     });
     (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
-      id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [],
-      dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
+      id: 'TASK-1',
+      title: 'T',
+      status: 'To Do',
+      labels: [],
+      assignee: [],
+      dependencies: [],
+      acceptanceCriteria: [],
+      definitionOfDone: [],
       filePath: '/fake/backlog/tasks/task-1.md',
     } as Task);
     const controller = new TasksController(host, mockParser, mockContext);
     await controller.handleMessage({
-      type: 'updateTask', taskId: 'TASK-1', updates: { priority: 'P0' },
+      type: 'updateTask',
+      taskId: 'TASK-1',
+      updates: { priority: 'P0' },
     });
     expect(updateSpy).toHaveBeenCalledWith('TASK-1', { priority: 'P0' }, mockParser);
   });
@@ -177,15 +200,25 @@ describe('TasksController — updateTask priority write path (Q1)', () => {
     const updateSpy = vi
       .spyOn(BacklogWriter.prototype, 'updateTask')
       .mockResolvedValue(undefined as never);
-    (mockParser.getConfig as ReturnType<typeof vi.fn>).mockResolvedValue({ priorities: ['P0', 'P1', 'P2'] });
+    (mockParser.getConfig as ReturnType<typeof vi.fn>).mockResolvedValue({
+      priorities: ['P0', 'P1', 'P2'],
+    });
     (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
-      id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [],
-      dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
+      id: 'TASK-1',
+      title: 'T',
+      status: 'To Do',
+      labels: [],
+      assignee: [],
+      dependencies: [],
+      acceptanceCriteria: [],
+      definitionOfDone: [],
       filePath: '/fake/backlog/tasks/task-1.md',
     } as Task);
     const controller = new TasksController(host, mockParser, mockContext);
     await controller.handleMessage({
-      type: 'updateTask', taskId: 'TASK-1', updates: { priority: 'nope' },
+      type: 'updateTask',
+      taskId: 'TASK-1',
+      updates: { priority: 'nope' },
     });
     expect(updateSpy).not.toHaveBeenCalled();
   });
@@ -226,8 +259,8 @@ import { resolvePriorities } from '../core/priorityOrder';
 Immediately after the `const stalenessMs = getClaimStalenessMs();` line (`TasksController.ts:295`), add the identity + repo root (best-effort; identity read never throws):
 
 ```ts
-      const claimIdentity = getClaimIdentity();
-      const repoRoot = path.dirname(this.parser.getBacklogPath());
+const claimIdentity = getClaimIdentity();
+const repoRoot = path.dirname(this.parser.getBacklogPath());
 ```
 
 - [ ] **Step 5: Implement — enrichment fields**
@@ -235,54 +268,54 @@ Immediately after the `const stalenessMs = getClaimStalenessMs();` line (`TasksC
 Extend the enhanced inline type and the enrichment object in the `tasks.map(...)` block (`TasksController.ts:308`). Change the type union:
 
 ```ts
-        const enhanced: Task & {
-          blocksTaskIds?: string[];
-          subtaskProgress?: { total: number; done: number };
-          blockingDependencyIds?: string[];
-          isActiveTask?: boolean;
-          claimStale?: boolean;
-          mergeState?: MergeTaskState;
-        } = {
-          ...task,
-          blocksTaskIds: reverseDeps.get(task.id) || [],
-          isActiveTask: !!activeTaskId && task.id === activeTaskId,
-          claimStale: !!task.claimedBy && isClaimStale(task.claimedAt, stalenessMs),
-          mergeState: mergeQueue ? mergeStateForTask(mergeQueue, task.id) : undefined,
-        };
+const enhanced: Task & {
+  blocksTaskIds?: string[];
+  subtaskProgress?: { total: number; done: number };
+  blockingDependencyIds?: string[];
+  isActiveTask?: boolean;
+  claimStale?: boolean;
+  mergeState?: MergeTaskState;
+} = {
+  ...task,
+  blocksTaskIds: reverseDeps.get(task.id) || [],
+  isActiveTask: !!activeTaskId && task.id === activeTaskId,
+  claimStale: !!task.claimedBy && isClaimStale(task.claimedAt, stalenessMs),
+  mergeState: mergeQueue ? mergeStateForTask(mergeQueue, task.id) : undefined,
+};
 ```
 
 to:
 
 ```ts
-        const enhanced: Task & {
-          blocksTaskIds?: string[];
-          subtaskProgress?: { total: number; done: number };
-          blockingDependencyIds?: string[];
-          isActiveTask?: boolean;
-          claimStale?: boolean;
-          claimedByMe?: boolean;
-          planProgress?: { done: number; total: number };
-          mergeState?: MergeTaskState;
-        } = {
-          ...task,
-          blocksTaskIds: reverseDeps.get(task.id) || [],
-          isActiveTask: !!activeTaskId && task.id === activeTaskId,
-          claimStale: !!task.claimedBy && isClaimStale(task.claimedAt, stalenessMs),
-          claimedByMe: !!task.claimedBy && task.claimedBy === claimIdentity,
-          mergeState: mergeQueue ? mergeStateForTask(mergeQueue, task.id) : undefined,
-        };
-        // Plan-progress for the tree node bar + popover. Synchronous, never throws
-        // (missing plan file → exists:false, zeros). Only set when a plan is linked.
-        if (task.plan) {
-          try {
-            const loaded = loadPlanProgress(repoRoot, task.plan);
-            if (loaded.progress.total > 0) {
-              enhanced.planProgress = { done: loaded.progress.done, total: loaded.progress.total };
-            }
-          } catch {
-            /* best-effort */
-          }
-        }
+const enhanced: Task & {
+  blocksTaskIds?: string[];
+  subtaskProgress?: { total: number; done: number };
+  blockingDependencyIds?: string[];
+  isActiveTask?: boolean;
+  claimStale?: boolean;
+  claimedByMe?: boolean;
+  planProgress?: { done: number; total: number };
+  mergeState?: MergeTaskState;
+} = {
+  ...task,
+  blocksTaskIds: reverseDeps.get(task.id) || [],
+  isActiveTask: !!activeTaskId && task.id === activeTaskId,
+  claimStale: !!task.claimedBy && isClaimStale(task.claimedAt, stalenessMs),
+  claimedByMe: !!task.claimedBy && task.claimedBy === claimIdentity,
+  mergeState: mergeQueue ? mergeStateForTask(mergeQueue, task.id) : undefined,
+};
+// Plan-progress for the tree node bar + popover. Synchronous, never throws
+// (missing plan file → exists:false, zeros). Only set when a plan is linked.
+if (task.plan) {
+  try {
+    const loaded = loadPlanProgress(repoRoot, task.plan);
+    if (loaded.progress.total > 0) {
+      enhanced.planProgress = { done: loaded.progress.done, total: loaded.progress.total };
+    }
+  } catch {
+    /* best-effort */
+  }
+}
 ```
 
 - [ ] **Step 6: Implement — emit `prioritiesUpdated`**
@@ -290,7 +323,7 @@ to:
 Right after the `this.host.postMessage({ type: 'statusesUpdated', statuses });` line (`TasksController.ts:373`), add:
 
 ```ts
-      this.host.postMessage({ type: 'prioritiesUpdated', priorities: resolvePriorities(config) });
+this.host.postMessage({ type: 'prioritiesUpdated', priorities: resolvePriorities(config) });
 ```
 
 - [ ] **Step 6b: Implement — widen the `updateTask` priority write path (Q1)**
@@ -298,30 +331,30 @@ Right after the `this.host.postMessage({ type: 'statusesUpdated', statuses });` 
 In `handleMessage`'s `updateTask` case, replace the legacy priority guard (`TasksController.ts:533-540`):
 
 ```ts
-        if (
-          message.updates.priority === 'high' ||
-          message.updates.priority === 'medium' ||
-          message.updates.priority === 'low' ||
-          message.updates.priority === undefined
-        ) {
-          updates.priority = message.updates.priority;
-        }
+if (
+  message.updates.priority === 'high' ||
+  message.updates.priority === 'medium' ||
+  message.updates.priority === 'low' ||
+  message.updates.priority === undefined
+) {
+  updates.priority = message.updates.priority;
+}
 ```
 
 with a check against the board's configured priorities (`resolvePriorities` is already imported in Step 3). Read config in the handler — `this.parser` is guaranteed here (the case opens with `if (!this.parser) break;` at `TasksController.ts:507`):
 
 ```ts
-        // Priority: accept any configured priority (P1 §10 made priority a user-defined
-        // list); `undefined` clears it; unknown strings are rejected (no write).
-        const configuredPriorities = resolvePriorities(await this.parser.getConfig());
-        if (
-          message.updates.priority === undefined ||
-          configuredPriorities.some(
-            (p) => p.toLowerCase() === String(message.updates.priority).toLowerCase()
-          )
-        ) {
-          updates.priority = message.updates.priority;
-        }
+// Priority: accept any configured priority (P1 §10 made priority a user-defined
+// list); `undefined` clears it; unknown strings are rejected (no write).
+const configuredPriorities = resolvePriorities(await this.parser.getConfig());
+if (
+  message.updates.priority === undefined ||
+  configuredPriorities.some(
+    (p) => p.toLowerCase() === String(message.updates.priority).toLowerCase()
+  )
+) {
+  updates.priority = message.updates.priority;
+}
 ```
 
 (The empty-updates guard below — `if (Object.keys(updates).length === 0) break;` — still short-circuits when nothing valid was supplied.)
@@ -424,35 +457,35 @@ to:
 `TechTreeCanvas.svelte` calls `persist()` on every `setViewport` (i.e. every pointermove during a pan and every wheel tick), hitting `vscode.setState` continuously. Debounce it: commit on pointerup / wheel-settle. Replace the `persist()` function (`TechTreeCanvas.svelte:56-59`):
 
 ```ts
-  function persist() {
-    const prev = (vscode.getState() as Record<string, unknown> | undefined) ?? {};
-    vscode.setState({ ...prev, treeViewport: vp });
-  }
+function persist() {
+  const prev = (vscode.getState() as Record<string, unknown> | undefined) ?? {};
+  vscode.setState({ ...prev, treeViewport: vp });
+}
 ```
 
 with a debounced writer (persist coalesces to a single write ~120ms after motion settles):
 
 ```ts
-  let persistTimer: ReturnType<typeof setTimeout> | undefined;
-  function persistNow() {
-    const prev = (vscode.getState() as Record<string, unknown> | undefined) ?? {};
-    vscode.setState({ ...prev, treeViewport: vp });
-  }
-  function persist() {
-    if (persistTimer) clearTimeout(persistTimer);
-    persistTimer = setTimeout(persistNow, 120);
-  }
+let persistTimer: ReturnType<typeof setTimeout> | undefined;
+function persistNow() {
+  const prev = (vscode.getState() as Record<string, unknown> | undefined) ?? {};
+  vscode.setState({ ...prev, treeViewport: vp });
+}
+function persist() {
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(persistNow, 120);
+}
 ```
 
 Then flush immediately on pointer-up so a pan that ends is saved even if the component unmounts. In `onPointerUp` (`TechTreeCanvas.svelte:107-111`), after `panning = false;`, add `persistNow();`:
 
 ```ts
-  function onPointerUp(e: PointerEvent) {
-    if (!panning) return;
-    panning = false;
-    viewportEl?.releasePointerCapture?.(e.pointerId);
-    persistNow();
-  }
+function onPointerUp(e: PointerEvent) {
+  if (!panning) return;
+  panning = false;
+  viewportEl?.releasePointerCapture?.(e.pointerId);
+  persistNow();
+}
 ```
 
 - [ ] **Step 4: Empty-state copy branch (b) + `dataSourceChanged` tracking in Tasks.svelte**
@@ -462,8 +495,8 @@ The tree empty-state over-claims "cross-branch mode" even when the local board i
 In `Tasks.svelte`, add state (near the tree vocab state at line 37-40):
 
 ```ts
-  // True while the board is in cross-branch mode (no local tree layout is computed).
-  let crossBranch = $state(false);
+// True while the board is in cross-branch mode (no local tree layout is computed).
+let crossBranch = $state(false);
 ```
 
 Add a `dataSourceChanged` case to the `onMessage` switch (after the `treeLayoutUpdated` case at line 99):
@@ -498,28 +531,28 @@ Pass it into the canvas — change the tree render branch (`Tasks.svelte:496-507
 In `TechTreeCanvas.svelte`, add `crossBranch` (and the not-yet-used `priorities`) to `Props` and `$props()` (`TechTreeCanvas.svelte:18-28`):
 
 ```ts
-  interface Props {
-    tasks: Task[];
-    laneOrder: string[];
-    bandOrder: string[];
-    warnings: string[];
-    statuses: string[];
-    priorities: string[];
-    taskIdDisplay: TaskIdDisplayMode;
-    crossBranch?: boolean;
-    onSelectTask: (taskId: string, meta?: Pick<Task, 'filePath' | 'source' | 'branch'>) => void;
-  }
-  let {
-    tasks,
-    laneOrder,
-    bandOrder,
-    warnings,
-    statuses,
-    priorities,
-    taskIdDisplay,
-    crossBranch = false,
-    onSelectTask,
-  }: Props = $props();
+interface Props {
+  tasks: Task[];
+  laneOrder: string[];
+  bandOrder: string[];
+  warnings: string[];
+  statuses: string[];
+  priorities: string[];
+  taskIdDisplay: TaskIdDisplayMode;
+  crossBranch?: boolean;
+  onSelectTask: (taskId: string, meta?: Pick<Task, 'filePath' | 'source' | 'branch'>) => void;
+}
+let {
+  tasks,
+  laneOrder,
+  bandOrder,
+  warnings,
+  statuses,
+  priorities,
+  taskIdDisplay,
+  crossBranch = false,
+  onSelectTask,
+}: Props = $props();
 ```
 
 Branch the empty-state copy (`TechTreeCanvas.svelte:136-143`):
@@ -557,20 +590,18 @@ Add a tree tab shortcut alongside z/x/c/v. In `Tasks.svelte`'s `handleGlobalKeyd
 Make canvas nodes arrow-navigable. In `TechTreeCanvas.svelte`, add a keydown handler on the viewport that moves focus between `.tree-node` elements in DOM order (arrows + j/k). Add the function near `zoomBy` (`TechTreeCanvas.svelte:125-128`):
 
 ```ts
-  function onCanvasKeydown(e: KeyboardEvent) {
-    const key = e.key;
-    if (!['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown', 'j', 'k'].includes(key)) return;
-    const nodes = Array.from(
-      viewportEl?.querySelectorAll<HTMLElement>('.tree-node') ?? []
-    );
-    if (nodes.length === 0) return;
-    const active = document.activeElement as HTMLElement | null;
-    const idx = active ? nodes.indexOf(active) : -1;
-    const forward = key === 'ArrowRight' || key === 'ArrowDown' || key === 'j';
-    const next = idx < 0 ? 0 : (idx + (forward ? 1 : -1) + nodes.length) % nodes.length;
-    e.preventDefault();
-    nodes[next]?.focus();
-  }
+function onCanvasKeydown(e: KeyboardEvent) {
+  const key = e.key;
+  if (!['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown', 'j', 'k'].includes(key)) return;
+  const nodes = Array.from(viewportEl?.querySelectorAll<HTMLElement>('.tree-node') ?? []);
+  if (nodes.length === 0) return;
+  const active = document.activeElement as HTMLElement | null;
+  const idx = active ? nodes.indexOf(active) : -1;
+  const forward = key === 'ArrowRight' || key === 'ArrowDown' || key === 'j';
+  const next = idx < 0 ? 0 : (idx + (forward ? 1 : -1) + nodes.length) % nodes.length;
+  e.preventDefault();
+  nodes[next]?.focus();
+}
 ```
 
 Wire it onto the `.tree-viewport` div (`TechTreeCanvas.svelte:169-181`) by adding `onkeydown={onCanvasKeydown}` to its attribute list (after `onwheel={onWheel}`):
@@ -591,26 +622,31 @@ Run the `svelte` MCP `svelte-autofixer` on `LaneBand.svelte`, `TechTreeCanvas.sv
 Append to `e2e/tree-canvas.spec.ts` (inside the `test.describe('Tech tree canvas', …)` block):
 
 ```ts
-  test('bug→cause edge has no arrowhead marker', async ({ page }) => {
-    await page.locator('[data-testid="tree-node-TASK-5"]').hover();
-    const bugEdge = page.locator('[data-testid="tree-edge-TASK-5-TASK-1"]');
-    await expect(bugEdge).toHaveCount(1);
-    await expect(bugEdge).not.toHaveAttribute('marker-end', /tw-arrow/);
-  });
+test('bug→cause edge has no arrowhead marker', async ({ page }) => {
+  await page.locator('[data-testid="tree-node-TASK-5"]').hover();
+  const bugEdge = page.locator('[data-testid="tree-edge-TASK-5-TASK-1"]');
+  await expect(bugEdge).toHaveCount(1);
+  await expect(bugEdge).not.toHaveAttribute('marker-end', /tw-arrow/);
+});
 
-  test('empty board (not cross-branch) shows the "no tasks" copy', async ({ page }) => {
-    await postMessageToWebview(page, { type: 'tasksUpdated', tasks: [] });
-    await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder: [], bandOrder: [], warnings: [] });
-    await page.waitForTimeout(80);
-    await expect(page.locator('[data-testid="tree-empty-state"]')).toContainText('No tasks to plot');
+test('empty board (not cross-branch) shows the "no tasks" copy', async ({ page }) => {
+  await postMessageToWebview(page, { type: 'tasksUpdated', tasks: [] });
+  await postMessageToWebview(page, {
+    type: 'treeLayoutUpdated',
+    laneOrder: [],
+    bandOrder: [],
+    warnings: [],
   });
+  await page.waitForTimeout(80);
+  await expect(page.locator('[data-testid="tree-empty-state"]')).toContainText('No tasks to plot');
+});
 
-  test('arrow key moves focus to the next node', async ({ page }) => {
-    await page.locator('[data-testid="tree-node-TASK-1"]').focus();
-    await page.locator('[data-testid="tree-viewport"]').press('ArrowRight');
-    const focusedId = await page.evaluate(() => document.activeElement?.getAttribute('data-testid'));
-    expect(focusedId).toMatch(/^tree-node-/);
-  });
+test('arrow key moves focus to the next node', async ({ page }) => {
+  await page.locator('[data-testid="tree-node-TASK-1"]').focus();
+  await page.locator('[data-testid="tree-viewport"]').press('ArrowRight');
+  const focusedId = await page.evaluate(() => document.activeElement?.getAttribute('data-testid'));
+  expect(focusedId).toMatch(/^tree-node-/);
+});
 ```
 
 - [ ] **Step 8: Build + regression**
@@ -808,7 +844,10 @@ export function toggleReleaseChecklistItem(content: string, itemId: number): str
   const before = content.slice(0, range.start);
   const section = content.slice(range.start, range.end);
   const after = content.slice(range.end);
-  const replaced = section.replace(regex, (_m, p, check, s) => `${p}${check === ' ' ? 'x' : ' '}${s}`);
+  const replaced = section.replace(
+    regex,
+    (_m, p, check, s) => `${p}${check === ' ' ? 'x' : ' '}${s}`
+  );
   return before + replaced + after;
 }
 
@@ -1247,7 +1286,7 @@ Create `src/webview/components/tree/DetailPopover.svelte`:
 Add the import beside the other tree imports (`TechTreeCanvas.svelte:16`):
 
 ```ts
-  import DetailPopover, { type PopoverActionKind } from './DetailPopover.svelte';
+import DetailPopover, { type PopoverActionKind } from './DetailPopover.svelte';
 ```
 
 > **If `bun run typecheck` rejects the `PopoverActionKind` re-import** (svelte2tsx usually re-exports an instance-`<script>` `export type`, but not always), move the `export type PopoverActionKind = …` union out of `DetailPopover.svelte`'s instance `<script lang="ts">` into a `<script module lang="ts">` block in the same file (or a tiny `./popoverActions.ts`) and re-import it from there. No behavior change.
@@ -1255,88 +1294,88 @@ Add the import beside the other tree imports (`TechTreeCanvas.svelte:16`):
 Add popover state after `let selectedId` (`TechTreeCanvas.svelte:41`):
 
 ```ts
-  let popoverTaskId = $state<string | null>(null);
-  let popoverX = $state(0);
-  let popoverY = $state(0);
-  const popoverTask = $derived(
-    popoverTaskId ? layoutNodes.find((t) => t.id === popoverTaskId) : undefined
-  );
-  // Close the popover if its task vanished from the board (e.g. completed/archived).
-  $effect(() => {
-    if (popoverTaskId && !popoverTask) closePopover();
-  });
-  // Keep the popover glued to its node while panning/zooming.
-  $effect(() => {
-    if (popoverTaskId) {
-      const a = anchorFor(popoverTaskId);
-      popoverX = a.x;
-      popoverY = a.y;
-    }
-  });
+let popoverTaskId = $state<string | null>(null);
+let popoverX = $state(0);
+let popoverY = $state(0);
+const popoverTask = $derived(
+  popoverTaskId ? layoutNodes.find((t) => t.id === popoverTaskId) : undefined
+);
+// Close the popover if its task vanished from the board (e.g. completed/archived).
+$effect(() => {
+  if (popoverTaskId && !popoverTask) closePopover();
+});
+// Keep the popover glued to its node while panning/zooming.
+$effect(() => {
+  if (popoverTaskId) {
+    const a = anchorFor(popoverTaskId);
+    popoverX = a.x;
+    popoverY = a.y;
+  }
+});
 ```
 
 Add the popover helpers next to `handleSelect` (replace the existing `handleSelect` at `TechTreeCanvas.svelte:130-133`):
 
 ```ts
-  function anchorFor(id: string): { x: number; y: number } {
-    const box = geometry.nodes.get(id);
-    if (!box || !viewportEl) return { x: 8, y: 8 };
-    const POP_W = 300;
-    const vw = viewportEl.clientWidth;
-    let px = box.x * vp.scale + vp.tx + box.width * vp.scale + 8;
-    if (px + POP_W > vw) px = Math.max(8, box.x * vp.scale + vp.tx - POP_W - 8);
-    const py = Math.max(8, box.y * vp.scale + vp.ty);
-    return { x: px, y: py };
-  }
+function anchorFor(id: string): { x: number; y: number } {
+  const box = geometry.nodes.get(id);
+  if (!box || !viewportEl) return { x: 8, y: 8 };
+  const POP_W = 300;
+  const vw = viewportEl.clientWidth;
+  let px = box.x * vp.scale + vp.tx + box.width * vp.scale + 8;
+  if (px + POP_W > vw) px = Math.max(8, box.x * vp.scale + vp.tx - POP_W - 8);
+  const py = Math.max(8, box.y * vp.scale + vp.ty);
+  return { x: px, y: py };
+}
 
-  function handleSelect(id: string) {
-    selectedId = id;
-    popoverTaskId = id;
-    const a = anchorFor(id);
-    popoverX = a.x;
-    popoverY = a.y;
-    vscode.postMessage({ type: 'popoverActiveChanged', taskId: id });
-  }
+function handleSelect(id: string) {
+  selectedId = id;
+  popoverTaskId = id;
+  const a = anchorFor(id);
+  popoverX = a.x;
+  popoverY = a.y;
+  vscode.postMessage({ type: 'popoverActiveChanged', taskId: id });
+}
 
-  function closePopover() {
-    if (popoverTaskId === null) return;
-    popoverTaskId = null;
-    vscode.postMessage({ type: 'popoverActiveChanged', taskId: null });
-  }
+function closePopover() {
+  if (popoverTaskId === null) return;
+  popoverTaskId = null;
+  vscode.postMessage({ type: 'popoverActiveChanged', taskId: null });
+}
 
-  function onPopoverAction(kind: PopoverActionKind, id: string) {
-    switch (kind) {
-      case 'claim':
-        vscode.postMessage({ type: 'claimTask', taskId: id });
-        break;
-      case 'dispatch':
-        vscode.postMessage({ type: 'dispatchTask', taskId: id });
-        break;
-      case 'forceClaim':
-        vscode.postMessage({ type: 'forceClaimTask', taskId: id });
-        break;
-      case 'release':
-        vscode.postMessage({ type: 'releaseTask', taskId: id });
-        break;
-      case 'cancelDispatch':
-        vscode.postMessage({ type: 'cancelDispatch', taskId: id });
-        break;
-      case 'approve':
-        vscode.postMessage({ type: 'approveMerge', taskId: id });
-        break;
-      case 'sendBack':
-        vscode.postMessage({ type: 'sendBackMerge', taskId: id });
-        break;
-      case 'markDone':
-        vscode.postMessage({ type: 'updateTask', taskId: id, updates: { status: doneStatus } });
-        break;
-    }
+function onPopoverAction(kind: PopoverActionKind, id: string) {
+  switch (kind) {
+    case 'claim':
+      vscode.postMessage({ type: 'claimTask', taskId: id });
+      break;
+    case 'dispatch':
+      vscode.postMessage({ type: 'dispatchTask', taskId: id });
+      break;
+    case 'forceClaim':
+      vscode.postMessage({ type: 'forceClaimTask', taskId: id });
+      break;
+    case 'release':
+      vscode.postMessage({ type: 'releaseTask', taskId: id });
+      break;
+    case 'cancelDispatch':
+      vscode.postMessage({ type: 'cancelDispatch', taskId: id });
+      break;
+    case 'approve':
+      vscode.postMessage({ type: 'approveMerge', taskId: id });
+      break;
+    case 'sendBack':
+      vscode.postMessage({ type: 'sendBackMerge', taskId: id });
+      break;
+    case 'markDone':
+      vscode.postMessage({ type: 'updateTask', taskId: id, updates: { status: doneStatus } });
+      break;
   }
+}
 
-  function onPopoverExpand(id: string) {
-    const t = layoutNodes.find((n) => n.id === id);
-    onSelectTask(id, t ? { filePath: t.filePath, source: t.source, branch: t.branch } : undefined);
-  }
+function onPopoverExpand(id: string) {
+  const t = layoutNodes.find((n) => n.id === id);
+  onSelectTask(id, t ? { filePath: t.filePath, source: t.source, branch: t.branch } : undefined);
+}
 ```
 
 > **Note:** `handleSelect` no longer calls `onSelectTask` directly — a node click now opens the popover (which makes the task ephemeral-active), and the popover's `⤢` calls `onPopoverExpand → onSelectTask` to open the full details. This is the intended P2b behavior change; the P2a `clicking a node sends selectTask` test is replaced by `e2e/tree-popover.spec.ts` (Step 5) — **delete** that P2a test in `tree-canvas.spec.ts` (the one titled `clicking a node sends selectTask (no popover in P2a)`).
@@ -1344,15 +1383,15 @@ Add the popover helpers next to `handleSelect` (replace the existing `handleSele
 Close the popover when the user clicks empty canvas. Update `onPointerDown` (`TechTreeCanvas.svelte:92-98`):
 
 ```ts
-  function onPointerDown(e: PointerEvent) {
-    const target = e.target as HTMLElement;
-    if (target.closest('.tree-toolbar') || target.closest('.tree-popover')) return;
-    if (target.closest('.tree-node')) return;
-    closePopover();
-    panning = true;
-    panStart = { x: e.clientX, y: e.clientY, tx: vp.tx, ty: vp.ty };
-    viewportEl?.setPointerCapture(e.pointerId);
-  }
+function onPointerDown(e: PointerEvent) {
+  const target = e.target as HTMLElement;
+  if (target.closest('.tree-toolbar') || target.closest('.tree-popover')) return;
+  if (target.closest('.tree-node')) return;
+  closePopover();
+  panning = true;
+  panStart = { x: e.clientX, y: e.clientY, tx: vp.tx, ty: vp.ty };
+  viewportEl?.setPointerCapture(e.pointerId);
+}
 ```
 
 Render the popover inside `.tree-canvas`, immediately after the closing `</div>` of `.tree-viewport` and before the warnings block (`TechTreeCanvas.svelte:219`, right after the viewport div closes):
@@ -1503,11 +1542,22 @@ async function setup(page: Parameters<typeof installVsCodeMock>[0]) {
   await installVsCodeMock(page);
   await page.goto('/tasks.html');
   await page.waitForTimeout(100);
-  await postMessageToWebview(page, { type: 'statusesUpdated', statuses: ['To Do', 'In Progress', 'Done'] });
-  await postMessageToWebview(page, { type: 'prioritiesUpdated', priorities: ['high', 'medium', 'low'] });
+  await postMessageToWebview(page, {
+    type: 'statusesUpdated',
+    statuses: ['To Do', 'In Progress', 'Done'],
+  });
+  await postMessageToWebview(page, {
+    type: 'prioritiesUpdated',
+    priorities: ['high', 'medium', 'low'],
+  });
   await postMessageToWebview(page, { type: 'milestonesUpdated', milestones: [] });
   await postMessageToWebview(page, { type: 'tasksUpdated', tasks: tasks() });
-  await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder, bandOrder, warnings: [] });
+  await postMessageToWebview(page, {
+    type: 'treeLayoutUpdated',
+    laneOrder,
+    bandOrder,
+    warnings: [],
+  });
   await postMessageToWebview(page, { type: 'activeTabChanged', tab: 'tree' });
   await page.waitForTimeout(150);
   await expect(page.locator('[data-testid="tree-canvas"]')).toBeVisible();
@@ -1528,7 +1578,10 @@ test.describe('Tree detail popover', () => {
     await clearPostedMessages(page);
     await page.locator('[data-testid="tp-close"]').click();
     await expect(page.locator('[data-testid="tree-popover"]')).toHaveCount(0);
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'popoverActiveChanged', taskId: null });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'popoverActiveChanged',
+      taskId: null,
+    });
   });
 
   test('unlocked To Do offers Claim + Dispatch', async ({ page }) => {
@@ -1544,7 +1597,10 @@ test.describe('Tree detail popover', () => {
     await expect(page.locator('[data-testid="tp-action-forceClaim"]')).toBeVisible();
     await expect(page.locator('[data-testid="tp-action-claim"]')).toHaveCount(0);
     await page.locator('[data-testid="tp-action-forceClaim"]').click();
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'forceClaimTask', taskId: 'TASK-2' });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'forceClaimTask',
+      taskId: 'TASK-2',
+    });
   });
 
   test('my in-progress task offers Mark done + Release', async ({ page }) => {
@@ -1571,7 +1627,10 @@ test.describe('Tree detail popover', () => {
     await page.locator('[data-testid="tree-node-TASK-1"]').click();
     await clearPostedMessages(page);
     await page.locator('[data-testid="tp-expand"]').click();
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'selectTask', taskId: 'TASK-1' });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'selectTask',
+      taskId: 'TASK-1',
+    });
   });
 });
 ```
@@ -1662,7 +1721,12 @@ describe('cancelDispatch', () => {
       disposeTerminal: vi.fn(() => {}),
     };
     await expect(
-      cancelDispatch(deps, { taskId: 'TASK-1', branch: 'b', toDoStatus: 'To Do', terminalName: 'Taskwright TASK-1' })
+      cancelDispatch(deps, {
+        taskId: 'TASK-1',
+        branch: 'b',
+        toDoStatus: 'To Do',
+        terminalName: 'Taskwright TASK-1',
+      })
     ).resolves.toBeUndefined();
     expect(deps.setStatus).toHaveBeenCalled();
     expect(deps.removeWorktree).toHaveBeenCalled();
@@ -1763,47 +1827,46 @@ import type { GitExecFn } from './core/WorktreeService';
 Register the command next to the existing `taskwright.forceClaimTask` (registered by P1 at `extension.ts:1056`; `writer`/`execFileAsync`/`path`/`parser`/`refreshAllViews`/`taskDetailProvider`/`resolveClaimTarget` are all in scope above it):
 
 ```ts
-  context.subscriptions.push(
-    vscode.commands.registerCommand('taskwright.cancelDispatch', async (arg: unknown) => {
-      const taskId = resolveClaimTarget(arg);
-      if (!taskId || !parser) return;
-      const task = await parser.getTask(taskId);
-      if (!task) return;
-      const confirm = await vscode.window.showWarningMessage(
-        `Cancel dispatch for ${taskId}? This releases the claim, resets it to To Do, and removes its worktree.`,
-        { modal: true },
-        'Cancel dispatch'
-      );
-      if (confirm !== 'Cancel dispatch') return;
+context.subscriptions.push(
+  vscode.commands.registerCommand('taskwright.cancelDispatch', async (arg: unknown) => {
+    const taskId = resolveClaimTarget(arg);
+    if (!taskId || !parser) return;
+    const task = await parser.getTask(taskId);
+    if (!task) return;
+    const confirm = await vscode.window.showWarningMessage(
+      `Cancel dispatch for ${taskId}? This releases the claim, resets it to To Do, and removes its worktree.`,
+      { modal: true },
+      'Cancel dispatch'
+    );
+    if (confirm !== 'Cancel dispatch') return;
 
-      const branch = dispatchBranchName(task);
-      const statuses = await parser.getStatuses();
-      const toDo = statuses[0] ?? 'To Do';
-      const repoRoot = path.dirname(parser.getBacklogPath());
-      const exec: GitExecFn = (cwd, args) =>
-        execFileAsync('git', args, { cwd, timeout: 15_000 }).then((r) => ({
-          stdout: r.stdout,
-          stderr: r.stderr,
-        }));
+    const branch = dispatchBranchName(task);
+    const statuses = await parser.getStatuses();
+    const toDo = statuses[0] ?? 'To Do';
+    const repoRoot = path.dirname(parser.getBacklogPath());
+    const exec: GitExecFn = (cwd, args) =>
+      execFileAsync('git', args, { cwd, timeout: 15_000 }).then((r) => ({
+        stdout: r.stdout,
+        stderr: r.stderr,
+      }));
 
-      await cancelDispatch(
-        {
-          releaseClaim: (id) => releaseTaskClaim(id, parser),
-          setStatus: (id, status) => writer.updateTask(id, { status }, parser),
-          removeWorktree: (rel) => removeWorktree(exec, repoRoot, rel),
-          disposeTerminal: (name) =>
-            vscode.window.terminals.find((t) => t.name === name)?.dispose(),
-        },
-        { taskId, branch, toDoStatus: toDo, terminalName: `Taskwright ${taskId}` }
-      );
+    await cancelDispatch(
+      {
+        releaseClaim: (id) => releaseTaskClaim(id, parser),
+        setStatus: (id, status) => writer.updateTask(id, { status }, parser),
+        removeWorktree: (rel) => removeWorktree(exec, repoRoot, rel),
+        disposeTerminal: (name) => vscode.window.terminals.find((t) => t.name === name)?.dispose(),
+      },
+      { taskId, branch, toDoStatus: toDo, terminalName: `Taskwright ${taskId}` }
+    );
 
-      refreshAllViews();
-      TaskDetailProvider.refreshCurrent(taskDetailProvider);
-      vscode.window.showInformationMessage(
-        `Cancelled dispatch for ${taskId}: released claim, reset to ${toDo}, removed worktree.`
-      );
-    })
-  );
+    refreshAllViews();
+    TaskDetailProvider.refreshCurrent(taskDetailProvider);
+    vscode.window.showInformationMessage(
+      `Cancelled dispatch for ${taskId}: released claim, reset to ${toDo}, removed worktree.`
+    );
+  })
+);
 ```
 
 Add the command to `package.json` `contributes.commands` (sibling of `taskwright.forceClaimTask`):
@@ -2225,23 +2288,23 @@ Add an `onOpenMilestone` prop and turn each header into a `<button>`. Replace `A
 In its `<style>` block, the container `.tree-band-headers` keeps `pointer-events: none;` — override it on the button so clicks land. Change the `.tree-band-header` rule (`AgeBandHeader.svelte:35`) to add these three lines to the existing declarations:
 
 ```css
-  .tree-band-header {
-    all: unset;
-    cursor: pointer;
-    pointer-events: auto;
-    position: absolute;
-    top: 0;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-left: 1px solid var(--vscode-panel-border, transparent);
-    color: var(--vscode-descriptionForeground, var(--vscode-foreground));
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    background: color-mix(in srgb, var(--vscode-editor-background) 85%, transparent);
-  }
+.tree-band-header {
+  all: unset;
+  cursor: pointer;
+  pointer-events: auto;
+  position: absolute;
+  top: 0;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--vscode-panel-border, transparent);
+  color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: color-mix(in srgb, var(--vscode-editor-background) 85%, transparent);
+}
 ```
 
 (`all: unset` resets the button; re-declare the visual rules that P2a had. The `pointer-events: auto` beats the container's `none`.)
@@ -2251,7 +2314,7 @@ In its `<style>` block, the container `.tree-band-headers` keeps `pointer-events
 Add the import:
 
 ```ts
-  import MilestonePopover from './MilestonePopover.svelte';
+import MilestonePopover from './MilestonePopover.svelte';
 ```
 
 Add a `milestoneData` prop (fed by Tasks.svelte) to `Props`/`$props()` — add it after `crossBranch`:
@@ -2272,32 +2335,32 @@ and in the destructure add `milestoneData = null,`.
 Add milestone popover state (after the detail-popover state from Task 4):
 
 ```ts
-  let milestoneBand = $state<string | null>(null);
-  let milestoneX = $state(0);
-  let milestoneY = $state(0);
-  const openMilestoneData = $derived(
-    milestoneBand && milestoneData && milestoneData.milestone === milestoneBand ? milestoneData : null
-  );
+let milestoneBand = $state<string | null>(null);
+let milestoneX = $state(0);
+let milestoneY = $state(0);
+const openMilestoneData = $derived(
+  milestoneBand && milestoneData && milestoneData.milestone === milestoneBand ? milestoneData : null
+);
 
-  function openMilestone(band: string) {
-    milestoneBand = band;
-    const b = geometry.bands.find((bnd) => bnd.name === band);
-    milestoneX = b ? Math.max(8, b.x * vp.scale + vp.tx) : 8;
-    milestoneY = 28;
-    vscode.postMessage({ type: 'requestMilestoneData', milestone: band });
-  }
-  function closeMilestone() {
-    milestoneBand = null;
-  }
+function openMilestone(band: string) {
+  milestoneBand = band;
+  const b = geometry.bands.find((bnd) => bnd.name === band);
+  milestoneX = b ? Math.max(8, b.x * vp.scale + vp.tx) : 8;
+  milestoneY = 28;
+  vscode.postMessage({ type: 'requestMilestoneData', milestone: band });
+}
+function closeMilestone() {
+  milestoneBand = null;
+}
 ```
 
 Also close the milestone popover when the user clicks empty canvas (Minor 11 — both popovers render as siblings **outside** `.tree-viewport`, so `onPointerDown` fires only for in-canvas clicks; adding this is safe and never fires from inside a popover). In the Task-4 `onPointerDown` rewrite, add `closeMilestone();` beside the existing `closePopover();`:
 
 ```ts
-    if (target.closest('.tree-node')) return;
-    closePopover();
-    closeMilestone();
-    panning = true;
+if (target.closest('.tree-node')) return;
+closePopover();
+closeMilestone();
+panning = true;
 ```
 
 Wire `onOpenMilestone` into `<AgeBandHeader>` (match the `<AgeBandHeader …>` line — after Tasks 2/4 it sits around `TechTreeCanvas.svelte:~214`; base was `:182`):
@@ -2330,7 +2393,7 @@ Render the milestone popover beside the detail popover (inside `.tree-canvas`, a
 Add state (near the tree vocab state):
 
 ```ts
-  let milestoneData = $state<Extract<ExtensionMessage, { type: 'milestoneData' }> | null>(null);
+let milestoneData = $state<Extract<ExtensionMessage, { type: 'milestoneData' }> | null>(null);
 ```
 
 (`ExtensionMessage` is already imported into `Tasks.svelte` via `../../lib/types`? It is re-exported there; add it to the type import at `Tasks.svelte:2` if missing.)
@@ -2357,7 +2420,11 @@ Create `e2e/tree-milestone.spec.ts` (reuses the tasks fixture; drives the band h
 
 ```ts
 import { test, expect } from '@playwright/test';
-import { installVsCodeMock, postMessageToWebview, getLastPostedMessage } from './fixtures/vscode-mock';
+import {
+  installVsCodeMock,
+  postMessageToWebview,
+  getLastPostedMessage,
+} from './fixtures/vscode-mock';
 import type { Task } from '../src/webview/lib/types';
 
 const laneOrder = ['Features', 'Bugs'];
@@ -2366,9 +2433,18 @@ const bandOrder = ['v1', 'Backburner'];
 function tasks(): Task[] {
   return [
     {
-      id: 'TASK-1', title: 'A', status: 'Done', category: 'Features', milestone: 'v1',
-      labels: [], assignee: [], dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
-      filePath: '/b/tasks/task-1.md', layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 0 },
+      id: 'TASK-1',
+      title: 'A',
+      status: 'Done',
+      category: 'Features',
+      milestone: 'v1',
+      labels: [],
+      assignee: [],
+      dependencies: [],
+      acceptanceCriteria: [],
+      definitionOfDone: [],
+      filePath: '/b/tasks/task-1.md',
+      layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 0 },
     } as Task,
   ];
 }
@@ -2378,10 +2454,18 @@ async function setup(page: Parameters<typeof installVsCodeMock>[0]) {
   await installVsCodeMock(page);
   await page.goto('/tasks.html');
   await page.waitForTimeout(100);
-  await postMessageToWebview(page, { type: 'statusesUpdated', statuses: ['To Do', 'In Progress', 'Done'] });
+  await postMessageToWebview(page, {
+    type: 'statusesUpdated',
+    statuses: ['To Do', 'In Progress', 'Done'],
+  });
   await postMessageToWebview(page, { type: 'milestonesUpdated', milestones: [] });
   await postMessageToWebview(page, { type: 'tasksUpdated', tasks: tasks() });
-  await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder, bandOrder, warnings: [] });
+  await postMessageToWebview(page, {
+    type: 'treeLayoutUpdated',
+    laneOrder,
+    bandOrder,
+    warnings: [],
+  });
   await postMessageToWebview(page, { type: 'activeTabChanged', tab: 'tree' });
   await page.waitForTimeout(150);
 }
@@ -2389,9 +2473,14 @@ async function setup(page: Parameters<typeof installVsCodeMock>[0]) {
 test.describe('Milestone popover', () => {
   test.beforeEach(async ({ page }) => setup(page));
 
-  test('clicking a band header requests milestone data and renders the popover', async ({ page }) => {
+  test('clicking a band header requests milestone data and renders the popover', async ({
+    page,
+  }) => {
     await page.locator('[data-testid="tree-band-v1"]').click();
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'requestMilestoneData', milestone: 'v1' });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'requestMilestoneData',
+      milestone: 'v1',
+    });
 
     await postMessageToWebview(page, {
       type: 'milestoneData',
@@ -2412,12 +2501,18 @@ test.describe('Milestone popover', () => {
   test('toggling a release-checklist item posts toggleReleaseChecklistItem', async ({ page }) => {
     await page.locator('[data-testid="tree-band-v1"]').click();
     await postMessageToWebview(page, {
-      type: 'milestoneData', milestone: 'v1', total: 1, done: 0,
-      lanes: [], checklist: [{ id: 1, text: 'Update changelog', checked: false }],
+      type: 'milestoneData',
+      milestone: 'v1',
+      total: 1,
+      done: 0,
+      lanes: [],
+      checklist: [{ id: 1, text: 'Update changelog', checked: false }],
     });
     await page.locator('[data-testid="rc-toggle-1"]').check();
     expect(await getLastPostedMessage(page)).toMatchObject({
-      type: 'toggleReleaseChecklistItem', milestone: 'v1', itemId: 1,
+      type: 'toggleReleaseChecklistItem',
+      milestone: 'v1',
+      itemId: 1,
     });
   });
 });
@@ -2634,7 +2729,7 @@ Create `src/webview/components/tree/InFlightPanel.svelte`:
 Add the import:
 
 ```ts
-  import InFlightPanel from './InFlightPanel.svelte';
+import InFlightPanel from './InFlightPanel.svelte';
 ```
 
 Render it inside `.tree-canvas`, right after the `.tree-toolbar` div closes (`TechTreeCanvas.svelte:167`):
@@ -2660,7 +2755,11 @@ Create `e2e/tree-inflight.spec.ts`:
 
 ```ts
 import { test, expect } from '@playwright/test';
-import { installVsCodeMock, postMessageToWebview, getLastPostedMessage } from './fixtures/vscode-mock';
+import {
+  installVsCodeMock,
+  postMessageToWebview,
+  getLastPostedMessage,
+} from './fixtures/vscode-mock';
 import type { Task } from '../src/webview/lib/types';
 
 const laneOrder = ['Features'];
@@ -2669,13 +2768,23 @@ const bandOrder = ['v1'];
 function tasks(): Task[] {
   const base = (over: Partial<Task> & { id: string }): Task =>
     ({
-      title: over.id, status: 'In Progress', labels: [], assignee: [], dependencies: [],
-      acceptanceCriteria: [], definitionOfDone: [], filePath: `/b/tasks/${over.id}.md`,
-      category: 'Features', milestone: 'v1',
-      layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 0 }, ...over,
+      title: over.id,
+      status: 'In Progress',
+      labels: [],
+      assignee: [],
+      dependencies: [],
+      acceptanceCriteria: [],
+      definitionOfDone: [],
+      filePath: `/b/tasks/${over.id}.md`,
+      category: 'Features',
+      milestone: 'v1',
+      layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 0 },
+      ...over,
     }) as Task;
   return [
-    base({ id: 'TASK-1', title: 'Active one', isActiveTask: true } as Partial<Task> & { id: string }),
+    base({ id: 'TASK-1', title: 'Active one', isActiveTask: true } as Partial<Task> & {
+      id: string;
+    }),
     base({
       id: 'TASK-2',
       title: 'Pending review',
@@ -2690,10 +2799,18 @@ async function setup(page: Parameters<typeof installVsCodeMock>[0]) {
   await installVsCodeMock(page);
   await page.goto('/tasks.html');
   await page.waitForTimeout(100);
-  await postMessageToWebview(page, { type: 'statusesUpdated', statuses: ['To Do', 'In Progress', 'Done'] });
+  await postMessageToWebview(page, {
+    type: 'statusesUpdated',
+    statuses: ['To Do', 'In Progress', 'Done'],
+  });
   await postMessageToWebview(page, { type: 'milestonesUpdated', milestones: [] });
   await postMessageToWebview(page, { type: 'tasksUpdated', tasks: tasks() });
-  await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder, bandOrder, warnings: [] });
+  await postMessageToWebview(page, {
+    type: 'treeLayoutUpdated',
+    laneOrder,
+    bandOrder,
+    warnings: [],
+  });
   await postMessageToWebview(page, { type: 'activeTabChanged', tab: 'tree' });
   await page.waitForTimeout(150);
 }
@@ -2708,7 +2825,10 @@ test.describe('In-flight panel', () => {
 
   test('Approve posts approveMerge', async ({ page }) => {
     await page.locator('[data-testid="inflight-approve-TASK-2"]').click();
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'approveMerge', taskId: 'TASK-2' });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'approveMerge',
+      taskId: 'TASK-2',
+    });
   });
 
   test('collapses to reclaim width', async ({ page }) => {
@@ -3225,27 +3345,25 @@ import { TreeNavigatorProvider } from './providers/TreeNavigatorProvider';
 Register it right after the `taskPreviewProvider` registration (`extension.ts:434-446`):
 
 ```ts
-  const treeNavigatorProvider = new TreeNavigatorProvider(
-    context.extensionUri,
-    parser,
-    (message) => tasksHosts.forEach((host) => host.relayNavigator(message))
-  );
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider('taskwright.treeNavigator', treeNavigatorProvider, {
-      webviewOptions: { retainContextWhenHidden: true },
-    })
-  );
-  console.log('[Taskwright] Tree navigator view provider registered');
+const treeNavigatorProvider = new TreeNavigatorProvider(context.extensionUri, parser, (message) =>
+  tasksHosts.forEach((host) => host.relayNavigator(message))
+);
+context.subscriptions.push(
+  vscode.window.registerWebviewViewProvider('taskwright.treeNavigator', treeNavigatorProvider, {
+    webviewOptions: { retainContextWhenHidden: true },
+  })
+);
+console.log('[Taskwright] Tree navigator view provider registered');
 ```
 
 Add its refresh to the fan-out helper `refreshAllViews` (`extension.ts:1025-1028`):
 
 ```ts
-  const refreshAllViews = (): void => {
-    tasksHosts.forEach((host) => host.refresh());
-    taskPreviewProvider.refresh();
-    treeNavigatorProvider.refresh();
-  };
+const refreshAllViews = (): void => {
+  tasksHosts.forEach((host) => host.refresh());
+  taskPreviewProvider.refresh();
+  treeNavigatorProvider.refresh();
+};
 ```
 
 And to the debounced file-watcher handler (`extension.ts:481-489`, the block that refreshes hosts + preview + detail) add `treeNavigatorProvider.refresh();` alongside the existing refresh calls.
@@ -3253,8 +3371,8 @@ And to the debounced file-watcher handler (`extension.ts:481-489`, the block tha
 Finally, re-parent the navigator on a multi-root backlog switch: in `switchActiveBacklog` (`extension.ts:465`), beside the existing `taskPreviewProvider.setParser(parser);` / `taskDetailProvider.setParser(parser);` / `contentDetailProvider.setParser(parser);` calls (`extension.ts:497-500`), add:
 
 ```ts
-    treeNavigatorProvider.setParser(parser);
-    treeNavigatorProvider.refresh();
+treeNavigatorProvider.setParser(parser);
+treeNavigatorProvider.refresh();
 ```
 
 (Without this the navigator keeps the stale parser after a backlog switch and stops updating; single-workspace — the common case — is unaffected. `treeNavigatorProvider` is constructed above at Step 9, before `switchActiveBacklog` is ever invoked, so it is in scope.)
@@ -3293,7 +3411,11 @@ Create `e2e/tree-navigator.spec.ts`:
 
 ```ts
 import { test, expect } from '@playwright/test';
-import { installVsCodeMock, postMessageToWebview, getLastPostedMessage } from './fixtures/vscode-mock';
+import {
+  installVsCodeMock,
+  postMessageToWebview,
+  getLastPostedMessage,
+} from './fixtures/vscode-mock';
 
 async function setup(page: Parameters<typeof installVsCodeMock>[0]) {
   await page.setViewportSize({ width: 400, height: 600 });
@@ -3331,7 +3453,9 @@ test.describe('Tree navigator', () => {
     });
   });
 
-  test('clicking a priority chip posts navigatorFilterChanged with the priority', async ({ page }) => {
+  test('clicking a priority chip posts navigatorFilterChanged with the priority', async ({
+    page,
+  }) => {
     await page.locator('[data-testid="nav-priority-high"]').click();
     expect(await getLastPostedMessage(page)).toMatchObject({
       type: 'navigatorFilterChanged',
@@ -3341,7 +3465,10 @@ test.describe('Tree navigator', () => {
 
   test('toggling a lane posts navigatorLaneToggle', async ({ page }) => {
     await page.locator('[data-testid="nav-lane-Bugs"]').click();
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'navigatorLaneToggle', lane: 'Bugs' });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'navigatorLaneToggle',
+      lane: 'Bugs',
+    });
   });
 
   test('jump button posts navigatorJump', async ({ page }) => {
@@ -3396,12 +3523,12 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 Add state (near the tree vocab state):
 
 ```ts
-  // Navigator-driven canvas state (relayed from the sidebar navigator via the extension).
-  let navSearch = $state('');
-  let navPriority = $state('');
-  let collapsedLanes = $state<string[]>([]);
-  let jumpBand = $state('');
-  let jumpNonce = $state(0);
+// Navigator-driven canvas state (relayed from the sidebar navigator via the extension).
+let navSearch = $state('');
+let navPriority = $state('');
+let collapsedLanes = $state<string[]>([]);
+let jumpBand = $state('');
+let jumpNonce = $state(0);
 ```
 
 Add the message cases (after the `milestoneData` case from Task 6):
@@ -3471,78 +3598,75 @@ and in the destructure add:
 Add the derived dim/hidden sets + jump + minimap feed (place after the `geometry` derived and the popover state):
 
 ```ts
-  const collapsedSet = $derived(new Set(collapsedLanes));
-  function matchesFilter(t: Task): boolean {
-    const s = navSearch.trim().toLowerCase();
-    if (s && !`${t.id} ${t.title}`.toLowerCase().includes(s)) return false;
-    if (navPriority && (t.priority ?? '') !== navPriority) return false;
-    return true;
+const collapsedSet = $derived(new Set(collapsedLanes));
+function matchesFilter(t: Task): boolean {
+  const s = navSearch.trim().toLowerCase();
+  if (s && !`${t.id} ${t.title}`.toLowerCase().includes(s)) return false;
+  if (navPriority && (t.priority ?? '') !== navPriority) return false;
+  return true;
+}
+const hiddenIds = $derived.by(() => {
+  const set = new Set<string>();
+  if (collapsedSet.size === 0) return set;
+  for (const t of layoutNodes) if (t.layout && collapsedSet.has(t.layout.lane)) set.add(t.id);
+  return set;
+});
+const dimmedIds = $derived.by(() => {
+  const set = new Set<string>();
+  if (!navSearch.trim() && !navPriority) return set;
+  for (const t of layoutNodes) if (!matchesFilter(t)) set.add(t.id);
+  return set;
+});
+const fadedIds = $derived(new Set<string>([...dimmedIds, ...hiddenIds]));
+
+// Q3: per-collapsed-lane summary (name + task counts) for the overlay strip. Uses the
+// existing geometry.lanes (y/height) — NO relayout; done = the last configured status.
+const laneSummaries = $derived.by(() => {
+  if (collapsedSet.size === 0)
+    return [] as Array<{ name: string; y: number; height: number; total: number; done: number }>;
+  return geometry.lanes
+    .filter((l) => collapsedSet.has(l.name))
+    .map((l) => {
+      const inLane = layoutNodes.filter((t) => t.layout?.lane === l.name);
+      const done = inLane.filter(
+        (t) => t.status === doneStatus || t.folder === 'completed' || t.folder === 'archive'
+      ).length;
+      return { name: l.name, y: l.y, height: l.height, total: inLane.length, done };
+    });
+});
+
+// Jump to a band when the navigator asks (nonce lets the same band re-trigger).
+let lastJumpNonce = 0;
+$effect(() => {
+  if (jumpNonce === lastJumpNonce) return;
+  lastJumpNonce = jumpNonce;
+  const b = geometry.bands.find((bnd) => bnd.name === jumpBand);
+  if (b && viewportEl) {
+    setViewport({ scale: vp.scale, tx: -b.x * vp.scale + 40, ty: vp.ty });
   }
-  const hiddenIds = $derived.by(() => {
-    const set = new Set<string>();
-    if (collapsedSet.size === 0) return set;
-    for (const t of layoutNodes) if (t.layout && collapsedSet.has(t.layout.lane)) set.add(t.id);
-    return set;
-  });
-  const dimmedIds = $derived.by(() => {
-    const set = new Set<string>();
-    if (!navSearch.trim() && !navPriority) return set;
-    for (const t of layoutNodes) if (!matchesFilter(t)) set.add(t.id);
-    return set;
-  });
-  const fadedIds = $derived(new Set<string>([...dimmedIds, ...hiddenIds]));
+});
 
-  // Q3: per-collapsed-lane summary (name + task counts) for the overlay strip. Uses the
-  // existing geometry.lanes (y/height) — NO relayout; done = the last configured status.
-  const laneSummaries = $derived.by(() => {
-    if (collapsedSet.size === 0)
-      return [] as Array<{ name: string; y: number; height: number; total: number; done: number }>;
-    return geometry.lanes
-      .filter((l) => collapsedSet.has(l.name))
-      .map((l) => {
-        const inLane = layoutNodes.filter((t) => t.layout?.lane === l.name);
-        const done = inLane.filter(
-          (t) => t.status === doneStatus || t.folder === 'completed' || t.folder === 'archive'
-        ).length;
-        return { name: l.name, y: l.y, height: l.height, total: inLane.length, done };
-      });
-  });
-
-  // Jump to a band when the navigator asks (nonce lets the same band re-trigger).
-  let lastJumpNonce = 0;
-  $effect(() => {
-    if (jumpNonce === lastJumpNonce) return;
-    lastJumpNonce = jumpNonce;
-    const b = geometry.bands.find((bnd) => bnd.name === jumpBand);
-    if (b && viewportEl) {
-      setViewport({ scale: vp.scale, tx: -b.x * vp.scale + 40, ty: vp.ty });
-    }
-  });
-
-  // Feed the navigator minimap with the current normalized viewport rect (debounced).
-  let minimapTimer: ReturnType<typeof setTimeout> | undefined;
-  $effect(() => {
-    const w = geometry.width;
-    const h = geometry.height;
-    const s = vp.scale;
-    const tx = vp.tx;
-    const ty = vp.ty;
-    if (!viewportEl || w <= 0 || h <= 0) return;
-    const vw = viewportEl.clientWidth;
-    const vh = viewportEl.clientHeight;
-    const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
-    const rect = {
-      x: clamp01(-tx / s / w),
-      y: clamp01(-ty / s / h),
-      w: clamp01(vw / s / w),
-      h: clamp01(vh / s / h),
-    };
-    if (minimapTimer) clearTimeout(minimapTimer);
-    minimapTimer = setTimeout(
-      () => vscode.postMessage({ type: 'minimapViewport', ...rect }),
-      100
-    );
-  });
+// Feed the navigator minimap with the current normalized viewport rect (debounced).
+let minimapTimer: ReturnType<typeof setTimeout> | undefined;
+$effect(() => {
+  const w = geometry.width;
+  const h = geometry.height;
+  const s = vp.scale;
+  const tx = vp.tx;
+  const ty = vp.ty;
+  if (!viewportEl || w <= 0 || h <= 0) return;
+  const vw = viewportEl.clientWidth;
+  const vh = viewportEl.clientHeight;
+  const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+  const rect = {
+    x: clamp01(-tx / s / w),
+    y: clamp01(-ty / s / h),
+    w: clamp01(vw / s / w),
+    h: clamp01(vh / s / h),
+  };
+  if (minimapTimer) clearTimeout(minimapTimer);
+  minimapTimer = setTimeout(() => vscode.postMessage({ type: 'minimapViewport', ...rect }), 100);
+});
 ```
 
 Thread the dim/hidden state into the render. Change the `<EdgeLayer>` invocation (`TechTreeCanvas.svelte:190-198`) to add `{fadedIds}`:
@@ -3602,24 +3726,24 @@ Render the Q3 **counts summary strips** inside `.tree-surface`, immediately afte
 (The `{/if}` / `{/each}` and the closing `</div>` above are the **existing** end of the `{#each layoutNodes}` block and the `.tree-surface` close — the new `{#each laneSummaries}` block slots between them.) Add the strip CSS to the `<style>` block:
 
 ```css
-  .tree-lane-collapsed {
-    position: absolute;
-    z-index: 6;
-    display: flex;
-    align-items: center;
-    padding: 0 12px;
-    box-sizing: border-box;
-    border-top: 1px solid var(--vscode-panel-border, transparent);
-    border-bottom: 1px solid var(--vscode-panel-border, transparent);
-    background: color-mix(in srgb, var(--vscode-editor-background) 82%, var(--vscode-foreground));
-  }
-  .tree-lane-collapsed-label {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--vscode-descriptionForeground, var(--vscode-foreground));
-    white-space: nowrap;
-  }
+.tree-lane-collapsed {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border-top: 1px solid var(--vscode-panel-border, transparent);
+  border-bottom: 1px solid var(--vscode-panel-border, transparent);
+  background: color-mix(in srgb, var(--vscode-editor-background) 82%, var(--vscode-foreground));
+}
+.tree-lane-collapsed-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+  white-space: nowrap;
+}
 ```
 
 - [ ] **Step 3: `TreeNode.svelte` — dim/hide classes**
@@ -3652,12 +3776,12 @@ Add the classes to the node div (`TreeNode.svelte:88-94`, in the `class:` list):
 Add the CSS rules to the `<style>` block (near the other state styles):
 
 ```css
-  .tree-node.nav-dimmed {
-    opacity: 0.16;
-  }
-  .tree-node.nav-hidden {
-    display: none;
-  }
+.tree-node.nav-dimmed {
+  opacity: 0.16;
+}
+.tree-node.nav-hidden {
+  display: none;
+}
 ```
 
 - [ ] **Step 4: `EdgeLayer.svelte` — fade edges touching dimmed/hidden nodes**
@@ -3695,9 +3819,9 @@ Add a `class:nav-faded` to the edge path (`EdgeLayer.svelte:98-105`; the `marker
 Add the CSS rule (in `<style>`, near `.tree-edge.faded`):
 
 ```css
-  .tree-edge.nav-faded {
-    opacity: 0.1;
-  }
+.tree-edge.nav-faded {
+  opacity: 0.1;
+}
 ```
 
 - [ ] **Step 5: Controller + command for the minimap reverse-relay**
@@ -3720,14 +3844,14 @@ In `src/providers/TasksController.ts`, add the case (next to the navigator/popov
 In `src/extension.ts`, register the internal relay command right after the navigator provider registration (Task 8, Step 9):
 
 ```ts
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      'taskwright.navigatorMinimap',
-      (x: number, y: number, w: number, h: number) => {
-        treeNavigatorProvider.postMessage({ type: 'minimapViewport', x, y, w, h });
-      }
-    )
-  );
+context.subscriptions.push(
+  vscode.commands.registerCommand(
+    'taskwright.navigatorMinimap',
+    (x: number, y: number, w: number, h: number) => {
+      treeNavigatorProvider.postMessage({ type: 'minimapViewport', x, y, w, h });
+    }
+  )
+);
 ```
 
 (Internal command — intentionally **not** declared in `package.json` `contributes.commands`, so it stays out of the palette.)
@@ -3737,74 +3861,87 @@ In `src/extension.ts`, register the internal relay command right after the navig
 Append to `e2e/tree-canvas.spec.ts` (inside `test.describe('Tech tree canvas', …)`):
 
 ```ts
-  test('navigatorFilterChanged dims non-matching nodes', async ({ page }) => {
-    await postMessageToWebview(page, {
-      type: 'navigatorFilterChanged',
-      search: 'Root',
-      priority: '',
-    });
-    await page.waitForTimeout(60);
-    await expect(page.locator('[data-testid="tree-node-TASK-1"]')).not.toHaveClass(/nav-dimmed/);
-    await expect(page.locator('[data-testid="tree-node-TASK-2"]')).toHaveClass(/nav-dimmed/);
+test('navigatorFilterChanged dims non-matching nodes', async ({ page }) => {
+  await postMessageToWebview(page, {
+    type: 'navigatorFilterChanged',
+    search: 'Root',
+    priority: '',
   });
+  await page.waitForTimeout(60);
+  await expect(page.locator('[data-testid="tree-node-TASK-1"]')).not.toHaveClass(/nav-dimmed/);
+  await expect(page.locator('[data-testid="tree-node-TASK-2"]')).toHaveClass(/nav-dimmed/);
+});
 
-  test('navigatorLaneToggle hides the lane and shows a counts summary strip', async ({ page }) => {
-    await postMessageToWebview(page, { type: 'navigatorLaneToggle', lane: 'Bugs' });
-    await page.waitForTimeout(60);
-    await expect(page.locator('[data-testid="tree-node-TASK-5"]')).toHaveClass(/nav-hidden/);
-    // Q3: the collapsed lane renders a summary strip with counts. TASK-5 is the only
-    // Bugs-lane node and it is not Done → "1 tasks · 0 done".
-    const strip = page.locator('[data-testid="tree-lane-collapsed-Bugs"]');
-    await expect(strip).toBeVisible();
-    await expect(strip).toContainText('1 tasks · 0 done');
-    // toggling again restores the nodes and removes the strip
-    await postMessageToWebview(page, { type: 'navigatorLaneToggle', lane: 'Bugs' });
-    await page.waitForTimeout(60);
-    await expect(page.locator('[data-testid="tree-node-TASK-5"]')).not.toHaveClass(/nav-hidden/);
-    await expect(page.locator('[data-testid="tree-lane-collapsed-Bugs"]')).toHaveCount(0);
-  });
+test('navigatorLaneToggle hides the lane and shows a counts summary strip', async ({ page }) => {
+  await postMessageToWebview(page, { type: 'navigatorLaneToggle', lane: 'Bugs' });
+  await page.waitForTimeout(60);
+  await expect(page.locator('[data-testid="tree-node-TASK-5"]')).toHaveClass(/nav-hidden/);
+  // Q3: the collapsed lane renders a summary strip with counts. TASK-5 is the only
+  // Bugs-lane node and it is not Done → "1 tasks · 0 done".
+  const strip = page.locator('[data-testid="tree-lane-collapsed-Bugs"]');
+  await expect(strip).toBeVisible();
+  await expect(strip).toContainText('1 tasks · 0 done');
+  // toggling again restores the nodes and removes the strip
+  await postMessageToWebview(page, { type: 'navigatorLaneToggle', lane: 'Bugs' });
+  await page.waitForTimeout(60);
+  await expect(page.locator('[data-testid="tree-node-TASK-5"]')).not.toHaveClass(/nav-hidden/);
+  await expect(page.locator('[data-testid="tree-lane-collapsed-Bugs"]')).toHaveCount(0);
+});
 
-  test('navigatorJump scrolls the surface toward a populated band', async ({ page }) => {
-    // `deriveGeometry` omits empty bands and the shared fixture leaves 'Backburner'
-    // empty — APPEND a Backburner node to the full treeTasks() fixture. Do NOT replace
-    // the fixture with a smaller one: the board must keep its three columns (content
-    // width 1088px) so the zoomed surface actually overflows the 1280px viewport —
-    // with a narrow 2-band board (560px), clampViewport (treeGeometry.ts:195-212) pins
-    // tx to one deterministic value, the style stays byte-identical, and the
-    // assertion below can never pass.
-    await postMessageToWebview(page, {
-      type: 'tasksUpdated',
-      tasks: [
-        ...treeTasks(),
-        {
-          id: 'TASK-9', title: 'Backburner node', status: 'To Do', labels: [], assignee: [],
-          dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
-          filePath: '/b/tasks/task-9.md', category: 'Features', milestone: 'Backburner',
-          layout: { lane: 'Features', band: 'Backburner', depth: 0, subRow: 0 },
-        } as Task,
-      ],
-    });
-    await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder, bandOrder, warnings: [] });
-    await page.waitForTimeout(80);
-    // Zoom in so the surface overflows the viewport; otherwise clampViewport pins the
-    // translate and the jump delta is nulled.
-    await page.locator('[data-testid="tree-zoom-in"]').click();
-    await page.locator('[data-testid="tree-zoom-in"]').click();
-    await page.waitForTimeout(40);
-    const surface = page.locator('[data-testid="tree-surface"]');
-    const before = await surface.getAttribute('style');
-    await postMessageToWebview(page, { type: 'navigatorJump', band: 'Backburner' });
-    await page.waitForTimeout(60);
-    expect(await surface.getAttribute('style')).not.toBe(before);
+test('navigatorJump scrolls the surface toward a populated band', async ({ page }) => {
+  // `deriveGeometry` omits empty bands and the shared fixture leaves 'Backburner'
+  // empty — APPEND a Backburner node to the full treeTasks() fixture. Do NOT replace
+  // the fixture with a smaller one: the board must keep its three columns (content
+  // width 1088px) so the zoomed surface actually overflows the 1280px viewport —
+  // with a narrow 2-band board (560px), clampViewport (treeGeometry.ts:195-212) pins
+  // tx to one deterministic value, the style stays byte-identical, and the
+  // assertion below can never pass.
+  await postMessageToWebview(page, {
+    type: 'tasksUpdated',
+    tasks: [
+      ...treeTasks(),
+      {
+        id: 'TASK-9',
+        title: 'Backburner node',
+        status: 'To Do',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/b/tasks/task-9.md',
+        category: 'Features',
+        milestone: 'Backburner',
+        layout: { lane: 'Features', band: 'Backburner', depth: 0, subRow: 0 },
+      } as Task,
+    ],
   });
+  await postMessageToWebview(page, {
+    type: 'treeLayoutUpdated',
+    laneOrder,
+    bandOrder,
+    warnings: [],
+  });
+  await page.waitForTimeout(80);
+  // Zoom in so the surface overflows the viewport; otherwise clampViewport pins the
+  // translate and the jump delta is nulled.
+  await page.locator('[data-testid="tree-zoom-in"]').click();
+  await page.locator('[data-testid="tree-zoom-in"]').click();
+  await page.waitForTimeout(40);
+  const surface = page.locator('[data-testid="tree-surface"]');
+  const before = await surface.getAttribute('style');
+  await postMessageToWebview(page, { type: 'navigatorJump', band: 'Backburner' });
+  await page.waitForTimeout(60);
+  expect(await surface.getAttribute('style')).not.toBe(before);
+});
 
-  test('canvas emits minimapViewport', async ({ page }) => {
-    // Nudge the viewport so the debounced effect fires with a real rect.
-    await page.locator('[data-testid="tree-zoom-in"]').click();
-    await page.waitForTimeout(150);
-    const msgs = await getPostedMessages(page);
-    expect(msgs.some((m) => m.type === 'minimapViewport')).toBe(true);
-  });
+test('canvas emits minimapViewport', async ({ page }) => {
+  // Nudge the viewport so the debounced effect fires with a real rect.
+  await page.locator('[data-testid="tree-zoom-in"]').click();
+  await page.waitForTimeout(150);
+  const msgs = await getPostedMessages(page);
+  expect(msgs.some((m) => m.type === 'minimapViewport')).toBe(true);
+});
 ```
 
 (Ensure the `getPostedMessages` import is present at the top of `tree-canvas.spec.ts`; add it to the existing `./fixtures/vscode-mock` import if missing.)
@@ -3883,18 +4020,18 @@ Inside the near-LOD `.tree-node-badges` div (`TreeNode.svelte:149-172`), add a P
 Add the CSS (near the other badge styles):
 
 ```css
-  .tree-node-promote {
-    all: unset;
-    cursor: pointer;
-    font-size: 10px;
-    padding: 1px 8px;
-    border-radius: 8px;
-    background: var(--vscode-button-background, #0e639c);
-    color: var(--vscode-button-foreground, #fff);
-  }
-  .tree-node-promote:hover {
-    background: var(--vscode-button-hoverBackground, #1177bb);
-  }
+.tree-node-promote {
+  all: unset;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 1px 8px;
+  border-radius: 8px;
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #fff);
+}
+.tree-node-promote:hover {
+  background: var(--vscode-button-hoverBackground, #1177bb);
+}
 ```
 
 > **Note (accepted, Minor 12):** `.tree-node-badges` renders only at **near** LOD, so the per-node Promote button shows only when zoomed in; at mid/far LOD use "Promote all proposed" (Step 2). The e2e fixture renders at near LOD, so `tree-node-promote-*` exists. Acceptable for v1.
@@ -3911,14 +4048,14 @@ Add `onPromote` to the `<TreeNode>` invocation (below `onHover`):
 Add a derived draft list + a promote-all helper (near the other derived state):
 
 ```ts
-  const draftNodes = $derived(
-    layoutNodes.filter((t) => t.status === 'Draft' || t.folder === 'drafts')
-  );
-  function promoteAll() {
-    for (const t of draftNodes) {
-      vscode.postMessage({ type: 'promoteDraft', taskId: t.id });
-    }
+const draftNodes = $derived(
+  layoutNodes.filter((t) => t.status === 'Draft' || t.folder === 'drafts')
+);
+function promoteAll() {
+  for (const t of draftNodes) {
+    vscode.postMessage({ type: 'promoteDraft', taskId: t.id });
   }
+}
 ```
 
 Render the "Promote all proposed" control inside `.tree-canvas`, right after the `.tree-toolbar` (or after the `InFlightPanel` from Task 7). Add before `.tree-viewport`:
@@ -3937,22 +4074,22 @@ Render the "Promote all proposed" control inside `.tree-canvas`, right after the
 Add its CSS (in the `<style>` block):
 
 ```css
-  .tree-promote-all {
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    z-index: 20;
-    cursor: pointer;
-    font-size: 12px;
-    padding: 4px 10px;
-    border: 1px solid var(--vscode-button-border, transparent);
-    border-radius: 6px;
-    background: var(--vscode-button-background, #0e639c);
-    color: var(--vscode-button-foreground, #fff);
-  }
-  .tree-promote-all:hover {
-    background: var(--vscode-button-hoverBackground, #1177bb);
-  }
+.tree-promote-all {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 20;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 6px;
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #fff);
+}
+.tree-promote-all:hover {
+  background: var(--vscode-button-hoverBackground, #1177bb);
+}
 ```
 
 - [ ] **Step 3: Playwright — `e2e/tree-promote.spec.ts`**
@@ -3970,13 +4107,29 @@ const bandOrder = ['v1'];
 function tasks(): Task[] {
   const base = (over: Partial<Task> & { id: string }): Task =>
     ({
-      title: over.id, status: 'Draft', labels: [], assignee: [], dependencies: [],
-      acceptanceCriteria: [], definitionOfDone: [], filePath: `/b/tasks/${over.id}.md`,
-      category: 'Misc', milestone: 'v1', ...over,
+      title: over.id,
+      status: 'Draft',
+      labels: [],
+      assignee: [],
+      dependencies: [],
+      acceptanceCriteria: [],
+      definitionOfDone: [],
+      filePath: `/b/tasks/${over.id}.md`,
+      category: 'Misc',
+      milestone: 'v1',
+      ...over,
     }) as Task;
   return [
-    base({ id: 'TASK-1', title: 'Idea one', layout: { lane: 'Misc', band: 'v1', depth: 0, subRow: 0 } }),
-    base({ id: 'TASK-2', title: 'Idea two', layout: { lane: 'Misc', band: 'v1', depth: 0, subRow: 1 } }),
+    base({
+      id: 'TASK-1',
+      title: 'Idea one',
+      layout: { lane: 'Misc', band: 'v1', depth: 0, subRow: 0 },
+    }),
+    base({
+      id: 'TASK-2',
+      title: 'Idea two',
+      layout: { lane: 'Misc', band: 'v1', depth: 0, subRow: 1 },
+    }),
   ];
 }
 
@@ -3985,10 +4138,18 @@ async function setup(page: Parameters<typeof installVsCodeMock>[0]) {
   await installVsCodeMock(page);
   await page.goto('/tasks.html');
   await page.waitForTimeout(100);
-  await postMessageToWebview(page, { type: 'statusesUpdated', statuses: ['Draft', 'To Do', 'In Progress', 'Done'] });
+  await postMessageToWebview(page, {
+    type: 'statusesUpdated',
+    statuses: ['Draft', 'To Do', 'In Progress', 'Done'],
+  });
   await postMessageToWebview(page, { type: 'milestonesUpdated', milestones: [] });
   await postMessageToWebview(page, { type: 'tasksUpdated', tasks: tasks() });
-  await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder, bandOrder, warnings: [] });
+  await postMessageToWebview(page, {
+    type: 'treeLayoutUpdated',
+    laneOrder,
+    bandOrder,
+    warnings: [],
+  });
   await postMessageToWebview(page, { type: 'activeTabChanged', tab: 'tree' });
   await page.waitForTimeout(150);
 }
@@ -4087,27 +4248,27 @@ Keep `handleApproveMerge`/`handleSendBackMerge` (merge banner) and `handleAttach
 Remove the two config-DoD injection blocks. First, delete `BacklogWriter.ts:740-747`:
 
 ```ts
-    // Add Definition of Done from config defaults
-    if (config.definition_of_done && config.definition_of_done.length > 0) {
-      body += '\n## Definition of Done\n<!-- DOD:BEGIN -->\n';
-      config.definition_of_done.forEach((item, index) => {
-        body += `- [ ] #${index + 1} ${item}\n`;
-      });
-      body += '<!-- DOD:END -->\n';
-    }
+// Add Definition of Done from config defaults
+if (config.definition_of_done && config.definition_of_done.length > 0) {
+  body += '\n## Definition of Done\n<!-- DOD:BEGIN -->\n';
+  config.definition_of_done.forEach((item, index) => {
+    body += `- [ ] #${index + 1} ${item}\n`;
+  });
+  body += '<!-- DOD:END -->\n';
+}
 ```
 
 Second, delete the identical block at `BacklogWriter.ts:904-911`:
 
 ```ts
-    // Add Definition of Done from config defaults
-    if (config.definition_of_done && config.definition_of_done.length > 0) {
-      body += '\n## Definition of Done\n<!-- DOD:BEGIN -->\n';
-      config.definition_of_done.forEach((item, index) => {
-        body += `- [ ] #${index + 1} ${item}\n`;
-      });
-      body += '<!-- DOD:END -->\n';
-    }
+// Add Definition of Done from config defaults
+if (config.definition_of_done && config.definition_of_done.length > 0) {
+  body += '\n## Definition of Done\n<!-- DOD:BEGIN -->\n';
+  config.definition_of_done.forEach((item, index) => {
+    body += `- [ ] #${index + 1} ${item}\n`;
+  });
+  body += '<!-- DOD:END -->\n';
+}
 ```
 
 (Leave `config` in the surrounding function signatures — it is still used for other fields. Do not remove DoD parsing/serialization elsewhere; existing tasks with a DoD section still round-trip.)
@@ -4394,15 +4555,15 @@ Run the `svelte` MCP `svelte-autofixer` on `AttachmentChips.svelte` until clean 
 Add the import beside the other detail imports (`TaskDetail.svelte:5-10`):
 
 ```ts
-  import AttachmentChips from './AttachmentChips.svelte';
+import AttachmentChips from './AttachmentChips.svelte';
 ```
 
 Add an `openWorkspaceFile` handler next to `handleOpenFile` (`TaskDetail.svelte:198-200`):
 
 ```ts
-  function handleOpenWorkspaceFile(relativePath: string, fragment: string | null) {
-    vscode.postMessage({ type: 'openWorkspaceFile', relativePath, fragment });
-  }
+function handleOpenWorkspaceFile(relativePath: string, fragment: string | null) {
+  vscode.postMessage({ type: 'openWorkspaceFile', relativePath, fragment });
+}
 ```
 
 Replace the three body `MarkdownSection`s (Implementation Plan / Implementation Notes / Final Summary — the blocks left by Task 11, immediately after the Acceptance Criteria `<Checklist>`):
@@ -4541,7 +4702,9 @@ test.describe('Attachment chips', () => {
   test('clicking a filled chip expands its preview; clicking again collapses', async ({ page }) => {
     await page.locator('[data-testid="attach-chip-plan"]').click();
     await expect(page.locator('[data-testid="attach-panel-plan"]')).toBeVisible();
-    await expect(page.locator('[data-testid="implementationPlan-view"]')).toContainText('Do the thing');
+    await expect(page.locator('[data-testid="implementationPlan-view"]')).toContainText(
+      'Do the thing'
+    );
     await page.locator('[data-testid="attach-chip-plan"]').click();
     await expect(page.locator('[data-testid="attach-panel-plan"]')).toHaveCount(0);
   });
@@ -4553,7 +4716,9 @@ test.describe('Attachment chips', () => {
     expect(await getLastPostedMessage(page)).toMatchObject({ type: 'openFile' });
   });
 
-  test('Spec chip lists references + documentation; a relative link opens in the editor', async ({ page }) => {
+  test('Spec chip lists references + documentation; a relative link opens in the editor', async ({
+    page,
+  }) => {
     await page.locator('[data-testid="attach-chip-spec"]').click();
     await expect(page.locator('[data-testid="attach-panel-spec"]')).toContainText('docs/design.md');
     await clearPostedMessages(page);
@@ -4615,11 +4780,7 @@ Create `src/test/cdp/tree-popover.test.ts`:
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import {
-  launchVsCode,
-  closeVsCode,
-  type VsCodeInstance,
-} from './lib/vscode-launcher';
+import { launchVsCode, closeVsCode, type VsCodeInstance } from './lib/vscode-launcher';
 import {
   createTestWorkspace,
   resetTestWorkspace,
@@ -4698,7 +4859,9 @@ describe('Tree popover cross-view (CDP)', () => {
   it('closing the popover clears active-task.json', async () => {
     await openTree(instance);
     await clickInWebview(instance.cdp, 'tasks', '[data-testid="tree-node-TASK-1"]');
-    await waitForFileContent(activeTaskPath(workspacePath), '"taskId": "TASK-1"', { timeoutMs: 12_000 });
+    await waitForFileContent(activeTaskPath(workspacePath), '"taskId": "TASK-1"', {
+      timeoutMs: 12_000,
+    });
     await clickInWebview(instance.cdp, 'tasks', '[data-testid="tp-close"]');
     await waitForFileGone(activeTaskPath(workspacePath));
     expect(fs.existsSync(activeTaskPath(workspacePath))).toBe(false);
@@ -4715,7 +4878,9 @@ describe('Tree popover cross-view (CDP)', () => {
     );
     expect(changed).toBe(true);
     const taskFile = taskFilePath(workspacePath, 'task-1 - Test-task-for-e2e.md');
-    const content = await waitForFileContent(taskFile, 'status: In Progress', { timeoutMs: 15_000 });
+    const content = await waitForFileContent(taskFile, 'status: In Progress', {
+      timeoutMs: 15_000,
+    });
     expect(content).toContain('status: In Progress');
   }, 45_000);
 });
@@ -4807,14 +4972,3 @@ is left open for the build:
 - **Q4** (attachments-as-chips — **required in P2b**) → **Task 11b** (complete chip UI + tests).
 - **Q5** (minimap column-jump is sufficient for v1; drag-to-pan deferred to P3) → **Task 9** behavior note.
 - **Q6** (`popoverActiveChanged` full `refresh()` accepted for v1) → **Task 4** handler note.
-
-
-
-
-
-
-
-
-
-
-

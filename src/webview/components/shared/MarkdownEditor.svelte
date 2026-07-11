@@ -198,6 +198,15 @@
 
 <style>
   .markdown-editor-container {
+    /* The container is a role=textbox wrapper (tabindex=-1); actual editing
+       happens in the inner TinyMDE element, so we suppress the wrapper's own
+       outline to avoid a double ring — but restore a visible ring on keyboard
+       focus should it ever receive it directly (a11y). */
     outline: none;
+  }
+
+  .markdown-editor-container:focus-visible {
+    outline: 2px solid var(--vscode-focusBorder, #007fd4);
+    outline-offset: -1px;
   }
 </style>

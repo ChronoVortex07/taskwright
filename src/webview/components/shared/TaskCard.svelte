@@ -58,7 +58,12 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === ' ') {
+    // A role="button" must activate on both Enter and Space (native button
+    // behavior). Enter opens the full task detail; Space selects/previews it.
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      onOpenTask(task.id, { filePath: task.filePath, source: task.source, branch: task.branch });
+    } else if (e.key === ' ') {
       e.preventDefault();
       onSelectTask(task.id, { filePath: task.filePath, source: task.source, branch: task.branch });
     }

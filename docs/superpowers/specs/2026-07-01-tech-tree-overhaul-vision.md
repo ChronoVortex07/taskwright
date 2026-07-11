@@ -12,7 +12,7 @@ design specs it points to.
 
 The current board is a status-columned kanban with a vertical task list. Three problems:
 
-1. **Too many clicks.** Creating a task takes: `+` → fill title/description → create → *then* open
+1. **Too many clicks.** Creating a task takes: `+` → fill title/description → create → _then_ open
    the task and edit to set priority. Fields that belong at creation (priority, category) are
    buried behind a second edit step (`TaskCreatePanel` only collects title/description/milestone).
 2. **Doesn't scale.** A large project stacks every task in one vertical column per status with no
@@ -57,14 +57,14 @@ These are shared by all sub-projects and must not be re-litigated per-piece:
 
 Each is independently specifiable, buildable, and testable. Order reflects dependencies.
 
-| # | Sub-project | Absorbs | Depends on |
-|---|-------------|---------|-----------|
-| **P1** | **Tree model & dependency gating** — `category`, gating, milestone bands, bug model, derived layout state | Task 9 | — (foundation) |
-| **P2** | **Tech-tree canvas** — pan/zoom board, nodes, dependency edges, lanes, age bands, side panel, detail popup, focus = active | Task 6, Task 12 | P1 |
-| **P3** | **Frictionless create/edit** — full-field creation (priority/category at creation), quick-edit, draw-edge-to-add-dependency, bug/one-off intake | — | P1, P2 |
-| **P4** | **`/create-task` skill + tree-traversal MCP tools** — vague → detailed tasks with dependency splitting, spec/plan population, walk-deps / walk-categories / create-category tools | — | P1 |
-| **P5** | **`/execute-task` skill** — worktree-enforced dispatch using executing-plans / subagent-driven-development | — | mostly independent |
-| **P6** | **Codebase indexing / git forensics** — bootstrap the initial tree on an existing project | — | P1, P4 |
+| #      | Sub-project                                                                                                                                                                       | Absorbs         | Depends on         |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- | ------------------ |
+| **P1** | **Tree model & dependency gating** — `category`, gating, milestone bands, bug model, derived layout state                                                                         | Task 9          | — (foundation)     |
+| **P2** | **Tech-tree canvas** — pan/zoom board, nodes, dependency edges, lanes, age bands, side panel, detail popup, focus = active                                                        | Task 6, Task 12 | P1                 |
+| **P3** | **Frictionless create/edit** — full-field creation (priority/category at creation), quick-edit, draw-edge-to-add-dependency, bug/one-off intake                                   | —               | P1, P2             |
+| **P4** | **`/create-task` skill + tree-traversal MCP tools** — vague → detailed tasks with dependency splitting, spec/plan population, walk-deps / walk-categories / create-category tools | —               | P1                 |
+| **P5** | **`/execute-task` skill** — worktree-enforced dispatch using executing-plans / subagent-driven-development                                                                        | —               | mostly independent |
+| **P6** | **Codebase indexing / git forensics** — bootstrap the initial tree on an existing project                                                                                         | —               | P1, P4             |
 
 **Absorbed board tasks:** Task 6 (group-by-label swimlanes) is superseded by category lanes in P2;
 Task 9 (prerequisite gating) is delivered by P1; Task 12 (focused task = active task) is delivered

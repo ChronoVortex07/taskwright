@@ -117,8 +117,7 @@ export async function gatherMigrationFacts(
     hasStateDirs: BOARD_SUBDIRS.some((sub) => pathExists(path.join(primaryRoot, 'backlog', sub))),
     trackedBoardFiles,
     localRefTip: await refTip(primaryRoot, ref, exec),
-    boardWorktreeOk:
-      (await boardWorktreeStatusOf(primaryRoot, ref, { exec, pathExists })) === 'ok',
+    boardWorktreeOk: (await boardWorktreeStatusOf(primaryRoot, ref, { exec, pathExists })) === 'ok',
     hasMaterializedMarker: pathExists(path.join(primaryRoot, '.taskwright', 'board.materialized')),
   };
 }

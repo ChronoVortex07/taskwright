@@ -9,14 +9,17 @@ function makeDeps(overrides?: {
   getTask?: (id: string) => Promise<{ id: string; dependencies: string[] } | undefined>;
   universe?: Array<{ id: string; dependencies: string[] }>;
 }) {
-  const createTask = vi.fn().mockResolvedValue({ id: overrides?.createTaskId ?? 'TASK-9', filePath: '/b/tasks/task-9.md' });
-  const createDraft = vi.fn().mockResolvedValue({ id: 'DRAFT-1', filePath: '/b/drafts/draft-1.md' });
+  const createTask = vi
+    .fn()
+    .mockResolvedValue({ id: overrides?.createTaskId ?? 'TASK-9', filePath: '/b/tasks/task-9.md' });
+  const createDraft = vi
+    .fn()
+    .mockResolvedValue({ id: 'DRAFT-1', filePath: '/b/drafts/draft-1.md' });
   const updateTask = vi.fn().mockResolvedValue(undefined);
   const setCategory = vi.fn().mockResolvedValue('');
   const setCausedBy = vi.fn().mockResolvedValue('');
   const getTask =
-    overrides?.getTask ??
-    vi.fn(async (id: string) => ({ id, dependencies: [] as string[] }));
+    overrides?.getTask ?? vi.fn(async (id: string) => ({ id, dependencies: [] as string[] }));
   const universe = overrides?.universe ?? [
     { id: 'TASK-1', dependencies: [] as string[] },
     { id: 'TASK-9', dependencies: [] as string[] },
@@ -39,7 +42,19 @@ describe('createTaskWithTreeFields — writer sequence', () => {
     const m = makeDeps();
     const res = await createTaskWithTreeFields(m.deps, { title: '  Ship it  ' });
     expect(res).toEqual({ id: 'TASK-9' });
-    expect(m.createTask).toHaveBeenCalledWith('/b', { title: 'Ship it', description: undefined, status: undefined, priority: undefined, labels: undefined, assignee: undefined, milestone: undefined }, m.deps.parser);
+    expect(m.createTask).toHaveBeenCalledWith(
+      '/b',
+      {
+        title: 'Ship it',
+        description: undefined,
+        status: undefined,
+        priority: undefined,
+        labels: undefined,
+        assignee: undefined,
+        milestone: undefined,
+      },
+      m.deps.parser
+    );
     expect(m.updateTask).not.toHaveBeenCalled();
     expect(m.setCategory).not.toHaveBeenCalled();
     expect(m.setCausedBy).not.toHaveBeenCalled();
@@ -48,9 +63,24 @@ describe('createTaskWithTreeFields — writer sequence', () => {
   it('full create: passes priority/milestone/description to createTask and sets category surgically', async () => {
     const m = makeDeps();
     await createTaskWithTreeFields(m.deps, {
-      title: 'Add login', description: 'desc', status: 'To Do', priority: 'high', milestone: 'v1', category: 'Features',
+      title: 'Add login',
+      description: 'desc',
+      status: 'To Do',
+      priority: 'high',
+      milestone: 'v1',
+      category: 'Features',
     });
-    expect(m.createTask).toHaveBeenCalledWith('/b', expect.objectContaining({ title: 'Add login', priority: 'high', milestone: 'v1', description: 'desc', status: 'To Do' }), m.deps.parser);
+    expect(m.createTask).toHaveBeenCalledWith(
+      '/b',
+      expect.objectContaining({
+        title: 'Add login',
+        priority: 'high',
+        milestone: 'v1',
+        description: 'desc',
+        status: 'To Do',
+      }),
+      m.deps.parser
+    );
     expect(m.setCategory).toHaveBeenCalledWith('TASK-9', 'Features', m.deps.parser);
   });
 
@@ -70,36 +100,75 @@ describe('createTaskWithTreeFields — writer sequence', () => {
   it('dependencies go through updateTask', async () => {
     const m = makeDeps();
     await createTaskWithTreeFields(m.deps, { title: 'x', dependencies: ['TASK-1', 'TASK-2'] });
-    expect(m.updateTask).toHaveBeenCalledWith('TASK-9', { dependencies: ['TASK-1', 'TASK-2'] }, m.deps.parser);
+    expect(m.updateTask).toHaveBeenCalledWith(
+      'TASK-9',
+      { dependencies: ['TASK-1', 'TASK-2'] },
+      m.deps.parser
+    );
   });
 
   it('draft create routes to createDraft with title/description', async () => {
     const m = makeDeps();
-    const res = await createTaskWithTreeFields(m.deps, { title: 'Spike', description: 'd', draft: true });
+    const res = await createTaskWithTreeFields(m.deps, {
+      title: 'Spike',
+      description: 'd',
+      draft: true,
+    });
     expect(res).toEqual({ id: 'DRAFT-1' });
-    expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, { title: 'Spike', description: 'd', status: undefined });
+    expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, {
+      title: 'Spike',
+      description: 'd',
+      status: undefined,
+    });
     expect(m.createTask).not.toHaveBeenCalled();
   });
 
   it('validates: empty title throws; caused_by without bug throws; invalid type throws', async () => {
     const m = makeDeps();
-    await expect(createTaskWithTreeFields(m.deps, { title: '   ' })).rejects.toThrow('A task title is required.');
-    await expect(createTaskWithTreeFields(m.deps, { title: 'x', causedBy: 'TASK-1' })).rejects.toThrow('caused_by can only be set on a bug');
-    await expect(createTaskWithTreeFields(m.deps, { title: 'x', type: 'nope' })).rejects.toThrow('Invalid type');
+    await expect(createTaskWithTreeFields(m.deps, { title: '   ' })).rejects.toThrow(
+      'A task title is required.'
+    );
+    await expect(
+      createTaskWithTreeFields(m.deps, { title: 'x', causedBy: 'TASK-1' })
+    ).rejects.toThrow('caused_by can only be set on a bug');
+    await expect(createTaskWithTreeFields(m.deps, { title: 'x', type: 'nope' })).rejects.toThrow(
+      'Invalid type'
+    );
   });
 });
 
 describe('createTaskWithTreeFields — linkTo post-create wiring', () => {
   it("direction 'unlocks': new task depends on the origin (new.dependencies += origin)", async () => {
-    const m = makeDeps({ getTask: vi.fn(async (id: string) => ({ id, dependencies: [] as string[] })) });
-    await createTaskWithTreeFields(m.deps, { title: 'B', linkTo: { taskId: 'TASK-1', direction: 'unlocks' } });
-    expect(m.updateTask).toHaveBeenCalledWith('TASK-9', { dependencies: ['TASK-1'] }, m.deps.parser);
+    const m = makeDeps({
+      getTask: vi.fn(async (id: string) => ({ id, dependencies: [] as string[] })),
+    });
+    await createTaskWithTreeFields(m.deps, {
+      title: 'B',
+      linkTo: { taskId: 'TASK-1', direction: 'unlocks' },
+    });
+    expect(m.updateTask).toHaveBeenCalledWith(
+      'TASK-9',
+      { dependencies: ['TASK-1'] },
+      m.deps.parser
+    );
   });
 
   it("direction 'needs': origin depends on the new task (origin.dependencies += new)", async () => {
-    const m = makeDeps({ getTask: vi.fn(async (id: string) => ({ id, dependencies: id === 'TASK-1' ? ['TASK-0'] : [] })) });
-    await createTaskWithTreeFields(m.deps, { title: 'A', linkTo: { taskId: 'TASK-1', direction: 'needs' } });
-    expect(m.updateTask).toHaveBeenCalledWith('TASK-1', { dependencies: ['TASK-0', 'TASK-9'] }, m.deps.parser);
+    const m = makeDeps({
+      getTask: vi.fn(async (id: string) => ({
+        id,
+        dependencies: id === 'TASK-1' ? ['TASK-0'] : [],
+      })),
+    });
+    await createTaskWithTreeFields(m.deps, {
+      title: 'A',
+      linkTo: { taskId: 'TASK-1', direction: 'needs' },
+    });
+    expect(m.updateTask).toHaveBeenCalledWith(
+      'TASK-1',
+      { dependencies: ['TASK-0', 'TASK-9'] },
+      m.deps.parser
+    );
   });
 
   it('linkTo that would cycle is refused', async () => {
@@ -112,7 +181,11 @@ describe('createTaskWithTreeFields — linkTo post-create wiring', () => {
       ],
     });
     await expect(
-      createTaskWithTreeFields(m.deps, { title: 'A', dependencies: ['TASK-1'], linkTo: { taskId: 'TASK-1', direction: 'needs' } })
+      createTaskWithTreeFields(m.deps, {
+        title: 'A',
+        dependencies: ['TASK-1'],
+        linkTo: { taskId: 'TASK-1', direction: 'needs' },
+      })
     ).rejects.toThrow('cycle');
   });
 });
@@ -121,15 +194,28 @@ describe('createTaskWithTreeFields — draft field completeness (GAP-2)', () => 
   it('draft create folds priority/milestone/labels/assignee into the same updateTask', async () => {
     const m = makeDeps();
     await createTaskWithTreeFields(m.deps, {
-      title: 'Spike caching', draft: true,
-      priority: 'high', milestone: 'v1', labels: ['spike'], assignee: ['@alice'],
+      title: 'Spike caching',
+      draft: true,
+      priority: 'high',
+      milestone: 'v1',
+      labels: ['spike'],
+      assignee: ['@alice'],
     });
-    expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, { title: 'Spike caching', description: undefined, status: undefined });
+    expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, {
+      title: 'Spike caching',
+      description: undefined,
+      status: undefined,
+    });
     expect(m.createTask).not.toHaveBeenCalled();
     // ONE updateTask carrying the draft-only canonical fields:
     expect(m.updateTask).toHaveBeenCalledWith(
       'DRAFT-1',
-      expect.objectContaining({ priority: 'high', milestone: 'v1', labels: ['spike'], assignee: ['@alice'] }),
+      expect.objectContaining({
+        priority: 'high',
+        milestone: 'v1',
+        labels: ['spike'],
+        assignee: ['@alice'],
+      }),
       m.deps.parser
     );
   });
@@ -137,8 +223,12 @@ describe('createTaskWithTreeFields — draft field completeness (GAP-2)', () => 
   it('draft create still applies type/dependencies through the SAME updateTask (one write)', async () => {
     const m = makeDeps();
     await createTaskWithTreeFields(m.deps, {
-      title: 'Bug spike', draft: true, type: 'bug', causedBy: 'TASK-1',
-      dependencies: ['TASK-2'], priority: 'medium',
+      title: 'Bug spike',
+      draft: true,
+      type: 'bug',
+      causedBy: 'TASK-1',
+      dependencies: ['TASK-2'],
+      priority: 'medium',
     });
     // exactly one updateTask, carrying type + dependencies + priority together:
     expect(m.updateTask).toHaveBeenCalledTimes(1);
@@ -154,7 +244,9 @@ describe('createTaskWithTreeFields — draft field completeness (GAP-2)', () => 
     const m = makeDeps();
     await createTaskWithTreeFields(m.deps, { title: 'Baseline', draft: true, status: 'Done' });
     expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, {
-      title: 'Baseline', description: undefined, status: 'Done',
+      title: 'Baseline',
+      description: undefined,
+      status: 'Done',
     });
     expect(m.createTask).not.toHaveBeenCalled();
   });
@@ -163,14 +255,25 @@ describe('createTaskWithTreeFields — draft field completeness (GAP-2)', () => 
     const m = makeDeps();
     await createTaskWithTreeFields(m.deps, { title: 'Gap', draft: true });
     expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, {
-      title: 'Gap', description: undefined, status: undefined,
+      title: 'Gap',
+      description: undefined,
+      status: undefined,
     });
   });
 
   it('non-draft create is unchanged: fields go to createTask, not a second updateTask', async () => {
     const m = makeDeps();
-    await createTaskWithTreeFields(m.deps, { title: 'y', priority: 'high', milestone: 'v1', labels: ['f'] });
-    expect(m.createTask).toHaveBeenCalledWith('/b', expect.objectContaining({ priority: 'high', milestone: 'v1', labels: ['f'] }), m.deps.parser);
+    await createTaskWithTreeFields(m.deps, {
+      title: 'y',
+      priority: 'high',
+      milestone: 'v1',
+      labels: ['f'],
+    });
+    expect(m.createTask).toHaveBeenCalledWith(
+      '/b',
+      expect.objectContaining({ priority: 'high', milestone: 'v1', labels: ['f'] }),
+      m.deps.parser
+    );
     expect(m.updateTask).not.toHaveBeenCalled(); // no type/deps → no canonical updateTask
   });
 });

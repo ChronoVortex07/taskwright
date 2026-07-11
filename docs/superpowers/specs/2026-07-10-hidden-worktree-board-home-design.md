@@ -49,7 +49,7 @@ worktree of the `taskwright-board` branch**, and run a small, event-driven auto-
 - **What moves / what stays:** only the five board-state dirs (`tasks`, `drafts`, `completed`,
   `archive`, `milestones` — v2's `boardTrackedPaths`) live on the board branch. `backlog/config.yml`
   and `backlog/docs|decisions/` stay in the code repo (they version with the code). The parser gains
-  a split root: *state root* (the board worktree's `backlog/`) + *config root* (repo `backlog/`).
+  a split root: _state root_ (the board worktree's `backlog/`) + _config root_ (repo `backlog/`).
   The split is forced by interop: the ref layout has no `config.yml`, and adding one would trip old
   clients' non-board-path guard.
 - Line-ending safety: the board worktree gets `extensions.worktreeConfig` + a per-worktree
@@ -149,15 +149,15 @@ bootstrap, and hygiene** for repos already in `git-auto` (§5.3, §6). Everythin
 
 ### 5.1 Prior-state matrix
 
-| # | Prior state | Detection | Migration action |
-|---|---|---|---|
-| S0 | Fresh repo, no board | no `backlog/` | Init config root in repo `backlog/`; seed an empty branch; add worktree. |
-| S1 | v2 `off` (default): board git-ignored in primary `backlog/` | fenced block present, `git ls-files` over board paths empty | Seed branch from live board → add worktree → verified move (§5.2). |
-| S2 | Board files **tracked on code branches** (3 of 5 consuming repos; *this repo tracks `milestones/`*) | `git ls-files -- <boardTrackedPaths>` non-empty | Untrack (`git rm -r --cached --ignore-unmatch`), (re)write the fenced block — `applyBoardIgnore` already emits the 5-dir v3 block incl. `milestones/`, upgrading stale 4-dir blocks in place — commit, then proceed as S1. **Working-tree content is the source of truth** (an uncommitted board edit survives because untracking never touches working files). Stale copies remain on *other* code branches/history — expected; surfaced in the migration summary; §6's stray-fold heals any resurrection. |
-| S3 | v2 `git` mode: local `taskwright-board` ref exists (likely **stale** — pushes were rare), remote may exist and may be ahead | `refTip()` non-null | Seed = fold, not clobber: snapshot live board (ours) → fetch remote ref if reachable (theirs; skip when offline) → `mergeBoards(base = merge-base map, ours, theirs)` → `commitMergedTree` **parented on the existing tips** so ref history continues and the remote push stays fast-forward → branch + worktree from that tip → verified move (§5.2). Conflicts surfaced per v2 rules. |
-| S4 | v1 CAS leftovers: `.taskwright/board.materialized` marker, legacy `'local'`/`'github'` mode values, per-worktree materialized copies under `.worktrees/*/backlog/` | marker file exists / `coerceMode` / n.a. | Tolerate + clean: delete the marker opportunistically; mode values already coerce on read; materialized copies in task worktrees are inert (v2 made them unreachable) and die with their worktrees. Then proceed per S1–S3. |
-| S5 | **Fresh clone of an already-migrated repo**: committed `.vscode/settings.json` says `git-auto`, but no `.taskwright/` (ignored ⇒ not cloned), no local branch; `origin/taskwright-board` exists | activation: mode `git-auto` ∧ worktree missing | **Activation bootstrap** (not enableSync): fetch ref → create local branch from it → `git worktree add` → done. No move needed — a migrated repo's primary `backlog/` holds only config/docs. This is the payoff case: a teammate clones and the board just appears. |
-| S6 | Already migrated (re-run) | worktree exists ∧ healthy | Ensure-only no-op (re-assert gitignore block, worktree config, hooks opt-in). |
+| #   | Prior state                                                                                                                                                                                     | Detection                                                   | Migration action                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S0  | Fresh repo, no board                                                                                                                                                                            | no `backlog/`                                               | Init config root in repo `backlog/`; seed an empty branch; add worktree.                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| S1  | v2 `off` (default): board git-ignored in primary `backlog/`                                                                                                                                     | fenced block present, `git ls-files` over board paths empty | Seed branch from live board → add worktree → verified move (§5.2).                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| S2  | Board files **tracked on code branches** (3 of 5 consuming repos; _this repo tracks `milestones/`_)                                                                                             | `git ls-files -- <boardTrackedPaths>` non-empty             | Untrack (`git rm -r --cached --ignore-unmatch`), (re)write the fenced block — `applyBoardIgnore` already emits the 5-dir v3 block incl. `milestones/`, upgrading stale 4-dir blocks in place — commit, then proceed as S1. **Working-tree content is the source of truth** (an uncommitted board edit survives because untracking never touches working files). Stale copies remain on _other_ code branches/history — expected; surfaced in the migration summary; §6's stray-fold heals any resurrection. |
+| S3  | v2 `git` mode: local `taskwright-board` ref exists (likely **stale** — pushes were rare), remote may exist and may be ahead                                                                     | `refTip()` non-null                                         | Seed = fold, not clobber: snapshot live board (ours) → fetch remote ref if reachable (theirs; skip when offline) → `mergeBoards(base = merge-base map, ours, theirs)` → `commitMergedTree` **parented on the existing tips** so ref history continues and the remote push stays fast-forward → branch + worktree from that tip → verified move (§5.2). Conflicts surfaced per v2 rules.                                                                                                                     |
+| S4  | v1 CAS leftovers: `.taskwright/board.materialized` marker, legacy `'local'`/`'github'` mode values, per-worktree materialized copies under `.worktrees/*/backlog/`                              | marker file exists / `coerceMode` / n.a.                    | Tolerate + clean: delete the marker opportunistically; mode values already coerce on read; materialized copies in task worktrees are inert (v2 made them unreachable) and die with their worktrees. Then proceed per S1–S3.                                                                                                                                                                                                                                                                                 |
+| S5  | **Fresh clone of an already-migrated repo**: committed `.vscode/settings.json` says `git-auto`, but no `.taskwright/` (ignored ⇒ not cloned), no local branch; `origin/taskwright-board` exists | activation: mode `git-auto` ∧ worktree missing              | **Activation bootstrap** (not enableSync): fetch ref → create local branch from it → `git worktree add` → done. No move needed — a migrated repo's primary `backlog/` holds only config/docs. This is the payoff case: a teammate clones and the board just appears.                                                                                                                                                                                                                                        |
+| S6  | Already migrated (re-run)                                                                                                                                                                       | worktree exists ∧ healthy                                   | Ensure-only no-op (re-assert gitignore block, worktree config, hooks opt-in).                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 ### 5.2 The verified move (S1–S3) — ordering is the safety argument
 
@@ -166,13 +166,13 @@ bootstrap, and hygiene** for repos already in `git-auto` (§5.3, §6). Everythin
 2. Dispose the extension's board `FileWatcher` (no event storms / Windows handle locks during the
    move).
 3. Create/advance the branch tip (per S1/S3 above) and `git worktree add .taskwright/board
-   taskwright-board` (prune stale registrations first).
+taskwright-board` (prune stale registrations first).
 4. **Verify before delete**: for every file under the primary's five state dirs, require the
    worktree copy to be byte-identical (or the file to appear in the surfaced conflict list from the
    S3 fold). Only then delete the primary copies — per-file, delete-last.
 5. **Commit point**: write `sync-config.json` `mode: 'git-auto'` (and the VS Code setting) only
    after step 4 completes. Any abort before this leaves the mode unflipped and the primary board
-   intact and authoritative (steps 1–3 are additive); an abort *during* step 4 leaves every file in
+   intact and authoritative (steps 1–3 are additive); an abort _during_ step 4 leaves every file in
    at least one complete home plus the step-1 ref backup. Re-running `enableSync` resumes
    idempotently.
 6. Prompt for window reload (restarts the MCP server so its launch-time root picks up the new
@@ -196,7 +196,7 @@ the human to end other agent sessions before migrating.
 ### 5.4 Reverse migration (leaving `git-auto`)
 
 Flipping the mode back by hand would leave `resolveBoardRoot` pointing at a primary `backlog/`
-with no task dirs — the board would *look* emptied. Two defenses:
+with no task dirs — the board would _look_ emptied. Two defenses:
 
 - **Supported path**: the `enableSync` mode picker offers `git`/`off` from `git-auto`; the reverse
   move is cheap with existing primitives — commit pending worktree changes → snapshot to ref →
@@ -204,8 +204,8 @@ with no task dirs — the board would *look* emptied. Two defenses:
   as the durable store) → flip mode → reload.
 - **Detection**: mode is `off`/`git` ∧ primary `backlog/tasks` missing ∧ a populated
   `.taskwright/board` (or `taskwright-board` ref) exists ⇒ board-doctor finding ("board looks
-  empty — mode was switched without migrating back") with repairs *Restore board here* (the
-  reverse move) or *Return to git-auto* (flip the setting back).
+  empty — mode was switched without migrating back") with repairs _Restore board here_ (the
+  reverse move) or _Return to git-auto_ (flip the setting back).
 
 ## 6. Failure recovery (board doctor)
 
@@ -213,28 +213,28 @@ The board branch is the durable store; the worktree is reproducible. New doctor 
 `DoctorFindingType`/`DoctorRepair`, the `doctorActions` switches, and the MCP `board_doctor` tool
 description — all currently exhaustive):
 
-| Finding | Detection (git-auto) | Repair |
-|---|---|---|
-| `board-worktree-missing` | mode `git-auto` ∧ `.taskwright/board` absent/unregistered (e.g. `git clean -dfx`, manual rm) | `git worktree prune` → re-add from `taskwright-board` (or bootstrap from remote per S5). Loss bound: the debounce window (seconds) of uncommitted edits — committed history lives on the branch in the common git dir and survives any worktree deletion. |
-| `board-strays-in-primary` | state dirs present under primary `backlog/` while mode `git-auto` | Fold + clean per §5.3. |
-| `board-mode-mismatch` | §5.4 detection | Restore-here / return-to-git-auto per §5.4. |
+| Finding                   | Detection (git-auto)                                                                         | Repair                                                                                                                                                                                                                                                    |
+| ------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `board-worktree-missing`  | mode `git-auto` ∧ `.taskwright/board` absent/unregistered (e.g. `git clean -dfx`, manual rm) | `git worktree prune` → re-add from `taskwright-board` (or bootstrap from remote per S5). Loss bound: the debounce window (seconds) of uncommitted edits — committed history lives on the branch in the common git dir and survives any worktree deletion. |
+| `board-strays-in-primary` | state dirs present under primary `backlog/` while mode `git-auto`                            | Fold + clean per §5.3.                                                                                                                                                                                                                                    |
+| `board-mode-mismatch`     | §5.4 detection                                                                               | Restore-here / return-to-git-auto per §5.4.                                                                                                                                                                                                               |
 
 `gatherDoctorFacts` gains the board-worktree facts; existing findings/repairs untouched.
 
 ## 7. Components
 
-| Unit | Responsibility | Purity |
-|---|---|---|
-| `boardWorktree.ts` (new) | create/repair/locate/prune the board worktree; seed branch from ref/board; worktree config (autocrlf) | git plumbing (mirrors `WorktreeService` shape) |
-| `resolveBoardRoot()` / `resolveWorkspaceBacklogRoot` (mod) | mode-aware root: worktree `backlog/` in `git-auto` | pure core + wiring |
-| primary-root accessor (new, threaded) | replace every `path.dirname(backlogPath)` primary-root derivation (providers, doctor, MCP `makePrimaryBoard`) | wiring |
-| parser/writer split root (mod) | state root vs config root (`config.yml`, docs/decisions from repo `backlog/`) | wiring |
-| `autoSync.ts` (new) | debounce, event queue, single-flight + cross-process lock, commit→fetch→merge→push planner | pure planner core + git shell |
-| `mergeBoards()` (reused) | unchanged conflict model | pure |
-| `enableSync` migration (mod) | mode picker; S0–S6 matrix; verified move; reverse move; reload prompt | wiring |
-| board doctor (mod) | three new findings/repairs (§6) | pure diagnoser + UX switch |
-| status-bar UX (mod) | mode, last-sync, pending/conflict state | UI |
-| docs (mod) | CLAUDE.md/AGENTS.md sync sections; Backlog.md-CLI divergence note | docs |
+| Unit                                                       | Responsibility                                                                                                | Purity                                         |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `boardWorktree.ts` (new)                                   | create/repair/locate/prune the board worktree; seed branch from ref/board; worktree config (autocrlf)         | git plumbing (mirrors `WorktreeService` shape) |
+| `resolveBoardRoot()` / `resolveWorkspaceBacklogRoot` (mod) | mode-aware root: worktree `backlog/` in `git-auto`                                                            | pure core + wiring                             |
+| primary-root accessor (new, threaded)                      | replace every `path.dirname(backlogPath)` primary-root derivation (providers, doctor, MCP `makePrimaryBoard`) | wiring                                         |
+| parser/writer split root (mod)                             | state root vs config root (`config.yml`, docs/decisions from repo `backlog/`)                                 | wiring                                         |
+| `autoSync.ts` (new)                                        | debounce, event queue, single-flight + cross-process lock, commit→fetch→merge→push planner                    | pure planner core + git shell                  |
+| `mergeBoards()` (reused)                                   | unchanged conflict model                                                                                      | pure                                           |
+| `enableSync` migration (mod)                               | mode picker; S0–S6 matrix; verified move; reverse move; reload prompt                                         | wiring                                         |
+| board doctor (mod)                                         | three new findings/repairs (§6)                                                                               | pure diagnoser + UX switch                     |
+| status-bar UX (mod)                                        | mode, last-sync, pending/conflict state                                                                       | UI                                             |
+| docs (mod)                                                 | CLAUDE.md/AGENTS.md sync sections; Backlog.md-CLI divergence note                                             | docs                                           |
 
 ## 8. Testing
 
@@ -249,7 +249,7 @@ description — all currently exhaustive):
   S4 (marker cleanup), S5 (fresh-clone bootstrap), S6 + double-run idempotence; reverse migration;
   split-brain stray fold; dirty board never blocks `request_merge` in git-auto.
 - **Windows:** byte-exact blobs (per-worktree `core.autocrlf=false`); paths with spaces; `git
-  clean` recovery; EBUSY-tolerant move.
+clean` recovery; EBUSY-tolerant move.
 
 ## 9. Non-goals
 

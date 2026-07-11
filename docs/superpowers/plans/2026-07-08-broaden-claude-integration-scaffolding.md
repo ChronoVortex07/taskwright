@@ -293,227 +293,227 @@ In `src/test/unit/skillInstaller.test.ts`, make these edits.
 (a) Replace the `TASKWRIGHT_SKILL_NAMES` describe (`skillInstaller.test.ts:34-38`):
 
 ```ts
-  describe('TASKWRIGHT_SKILL_NAMES', () => {
-    it('lists the three Taskwright skills', () => {
-      expect(TASKWRIGHT_SKILL_NAMES).toEqual(['create-task', 'execute-task', 'index-codebase']);
-    });
+describe('TASKWRIGHT_SKILL_NAMES', () => {
+  it('lists the three Taskwright skills', () => {
+    expect(TASKWRIGHT_SKILL_NAMES).toEqual(['create-task', 'execute-task', 'index-codebase']);
   });
+});
 ```
 
 with:
 
 ```ts
-  describe('TASKWRIGHT_SKILL_NAMES', () => {
-    it('lists the four user-facing Taskwright skills incl orchestrate-board', () => {
-      expect(TASKWRIGHT_SKILL_NAMES).toEqual([
-        'create-task',
-        'execute-task',
-        'index-codebase',
-        'orchestrate-board',
-      ]);
-    });
-
-    it('excludes the internal proof/testing skills', () => {
-      expect(TASKWRIGHT_SKILL_NAMES).not.toContain('visual-proof');
-      expect(TASKWRIGHT_SKILL_NAMES).not.toContain('agent-browser');
-    });
+describe('TASKWRIGHT_SKILL_NAMES', () => {
+  it('lists the four user-facing Taskwright skills incl orchestrate-board', () => {
+    expect(TASKWRIGHT_SKILL_NAMES).toEqual([
+      'create-task',
+      'execute-task',
+      'index-codebase',
+      'orchestrate-board',
+    ]);
   });
+
+  it('excludes the internal proof/testing skills', () => {
+    expect(TASKWRIGHT_SKILL_NAMES).not.toContain('visual-proof');
+    expect(TASKWRIGHT_SKILL_NAMES).not.toContain('agent-browser');
+  });
+});
 ```
 
 (b) Replace the "installs all three skills" test (`skillInstaller.test.ts:104-125`):
 
 ```ts
-    it('installs all three skills into the project skills directory', () => {
-      const extSkills = tmpDir();
-      makeSkillDir(extSkills, 'create-task', 'create content');
-      makeSkillDir(extSkills, 'execute-task', 'execute content');
-      makeSkillDir(extSkills, 'index-codebase', 'index content');
+it('installs all three skills into the project skills directory', () => {
+  const extSkills = tmpDir();
+  makeSkillDir(extSkills, 'create-task', 'create content');
+  makeSkillDir(extSkills, 'execute-task', 'execute content');
+  makeSkillDir(extSkills, 'index-codebase', 'index content');
 
-      const projectSkills = tmpDir();
+  const projectSkills = tmpDir();
 
-      const results = installTaskwrightSkills(extSkills, projectSkills, false);
+  const results = installTaskwrightSkills(extSkills, projectSkills, false);
 
-      expect(results).toHaveLength(3);
-      expect(results.map((r: SkillInstallResult) => r.action)).toEqual([
-        'created',
-        'created',
-        'created',
-      ]);
+  expect(results).toHaveLength(3);
+  expect(results.map((r: SkillInstallResult) => r.action)).toEqual([
+    'created',
+    'created',
+    'created',
+  ]);
 
-      for (const name of TASKWRIGHT_SKILL_NAMES) {
-        const dest = path.join(projectSkills, name, 'SKILL.md');
-        expect(fs.existsSync(dest)).toBe(true);
-      }
-    });
+  for (const name of TASKWRIGHT_SKILL_NAMES) {
+    const dest = path.join(projectSkills, name, 'SKILL.md');
+    expect(fs.existsSync(dest)).toBe(true);
+  }
+});
 ```
 
 with:
 
 ```ts
-    it('installs all four skills into the project skills directory', () => {
-      const extSkills = tmpDir();
-      makeSkillDir(extSkills, 'create-task', 'create content');
-      makeSkillDir(extSkills, 'execute-task', 'execute content');
-      makeSkillDir(extSkills, 'index-codebase', 'index content');
-      makeSkillDir(extSkills, 'orchestrate-board', 'orchestrate content');
+it('installs all four skills into the project skills directory', () => {
+  const extSkills = tmpDir();
+  makeSkillDir(extSkills, 'create-task', 'create content');
+  makeSkillDir(extSkills, 'execute-task', 'execute content');
+  makeSkillDir(extSkills, 'index-codebase', 'index content');
+  makeSkillDir(extSkills, 'orchestrate-board', 'orchestrate content');
 
-      const projectSkills = tmpDir();
+  const projectSkills = tmpDir();
 
-      const results = installTaskwrightSkills(extSkills, projectSkills, false);
+  const results = installTaskwrightSkills(extSkills, projectSkills, false);
 
-      expect(results).toHaveLength(4);
-      expect(results.map((r: SkillInstallResult) => r.action)).toEqual([
-        'created',
-        'created',
-        'created',
-        'created',
-      ]);
+  expect(results).toHaveLength(4);
+  expect(results.map((r: SkillInstallResult) => r.action)).toEqual([
+    'created',
+    'created',
+    'created',
+    'created',
+  ]);
 
-      for (const name of TASKWRIGHT_SKILL_NAMES) {
-        const dest = path.join(projectSkills, name, 'SKILL.md');
-        expect(fs.existsSync(dest)).toBe(true);
-      }
-    });
+  for (const name of TASKWRIGHT_SKILL_NAMES) {
+    const dest = path.join(projectSkills, name, 'SKILL.md');
+    expect(fs.existsSync(dest)).toBe(true);
+  }
+});
 ```
 
 (c) Replace the "skips already-installed skills and creates missing ones" test (`skillInstaller.test.ts:127-145`):
 
 ```ts
-    it('skips already-installed skills and creates missing ones', () => {
-      const extSkills = tmpDir();
-      makeSkillDir(extSkills, 'create-task', 'create content');
-      makeSkillDir(extSkills, 'execute-task', 'execute content');
-      makeSkillDir(extSkills, 'index-codebase', 'index content');
+it('skips already-installed skills and creates missing ones', () => {
+  const extSkills = tmpDir();
+  makeSkillDir(extSkills, 'create-task', 'create content');
+  makeSkillDir(extSkills, 'execute-task', 'execute content');
+  makeSkillDir(extSkills, 'index-codebase', 'index content');
 
-      const projectSkills = tmpDir();
-      // Pre-install one skill.
-      makeSkillDir(projectSkills, 'create-task', 'existing content');
+  const projectSkills = tmpDir();
+  // Pre-install one skill.
+  makeSkillDir(projectSkills, 'create-task', 'existing content');
 
-      const results = installTaskwrightSkills(extSkills, projectSkills, false);
+  const results = installTaskwrightSkills(extSkills, projectSkills, false);
 
-      const byName: Record<string, SkillInstallResult> = {};
-      for (const r of results) byName[r.name] = r;
+  const byName: Record<string, SkillInstallResult> = {};
+  for (const r of results) byName[r.name] = r;
 
-      expect(byName['create-task'].action).toBe('skipped');
-      expect(byName['execute-task'].action).toBe('created');
-      expect(byName['index-codebase'].action).toBe('created');
-    });
+  expect(byName['create-task'].action).toBe('skipped');
+  expect(byName['execute-task'].action).toBe('created');
+  expect(byName['index-codebase'].action).toBe('created');
+});
 ```
 
 with:
 
 ```ts
-    it('skips already-installed skills and creates missing ones', () => {
-      const extSkills = tmpDir();
-      makeSkillDir(extSkills, 'create-task', 'create content');
-      makeSkillDir(extSkills, 'execute-task', 'execute content');
-      makeSkillDir(extSkills, 'index-codebase', 'index content');
-      makeSkillDir(extSkills, 'orchestrate-board', 'orchestrate content');
+it('skips already-installed skills and creates missing ones', () => {
+  const extSkills = tmpDir();
+  makeSkillDir(extSkills, 'create-task', 'create content');
+  makeSkillDir(extSkills, 'execute-task', 'execute content');
+  makeSkillDir(extSkills, 'index-codebase', 'index content');
+  makeSkillDir(extSkills, 'orchestrate-board', 'orchestrate content');
 
-      const projectSkills = tmpDir();
-      // Pre-install one skill.
-      makeSkillDir(projectSkills, 'create-task', 'existing content');
+  const projectSkills = tmpDir();
+  // Pre-install one skill.
+  makeSkillDir(projectSkills, 'create-task', 'existing content');
 
-      const results = installTaskwrightSkills(extSkills, projectSkills, false);
+  const results = installTaskwrightSkills(extSkills, projectSkills, false);
 
-      const byName: Record<string, SkillInstallResult> = {};
-      for (const r of results) byName[r.name] = r;
+  const byName: Record<string, SkillInstallResult> = {};
+  for (const r of results) byName[r.name] = r;
 
-      expect(byName['create-task'].action).toBe('skipped');
-      expect(byName['execute-task'].action).toBe('created');
-      expect(byName['index-codebase'].action).toBe('created');
-      expect(byName['orchestrate-board'].action).toBe('created');
-    });
+  expect(byName['create-task'].action).toBe('skipped');
+  expect(byName['execute-task'].action).toBe('created');
+  expect(byName['index-codebase'].action).toBe('created');
+  expect(byName['orchestrate-board'].action).toBe('created');
+});
 ```
 
 (d) Replace the "overwrites all skills when overwrite is true" test (`skillInstaller.test.ts:147-164`):
 
 ```ts
-    it('overwrites all skills when overwrite is true', () => {
-      const extSkills = tmpDir();
-      makeSkillDir(extSkills, 'create-task', 'new create');
-      makeSkillDir(extSkills, 'execute-task', 'new execute');
-      makeSkillDir(extSkills, 'index-codebase', 'new index');
+it('overwrites all skills when overwrite is true', () => {
+  const extSkills = tmpDir();
+  makeSkillDir(extSkills, 'create-task', 'new create');
+  makeSkillDir(extSkills, 'execute-task', 'new execute');
+  makeSkillDir(extSkills, 'index-codebase', 'new index');
 
-      const projectSkills = tmpDir();
-      makeSkillDir(projectSkills, 'create-task', 'old create');
-      makeSkillDir(projectSkills, 'execute-task', 'old execute');
+  const projectSkills = tmpDir();
+  makeSkillDir(projectSkills, 'create-task', 'old create');
+  makeSkillDir(projectSkills, 'execute-task', 'old execute');
 
-      const results = installTaskwrightSkills(extSkills, projectSkills, true);
+  const results = installTaskwrightSkills(extSkills, projectSkills, true);
 
-      expect(results.map((r: SkillInstallResult) => r.action)).toEqual([
-        'overwritten',
-        'overwritten',
-        'created',
-      ]);
-    });
+  expect(results.map((r: SkillInstallResult) => r.action)).toEqual([
+    'overwritten',
+    'overwritten',
+    'created',
+  ]);
+});
 ```
 
 with:
 
 ```ts
-    it('overwrites all skills when overwrite is true', () => {
-      const extSkills = tmpDir();
-      makeSkillDir(extSkills, 'create-task', 'new create');
-      makeSkillDir(extSkills, 'execute-task', 'new execute');
-      makeSkillDir(extSkills, 'index-codebase', 'new index');
-      makeSkillDir(extSkills, 'orchestrate-board', 'new orchestrate');
+it('overwrites all skills when overwrite is true', () => {
+  const extSkills = tmpDir();
+  makeSkillDir(extSkills, 'create-task', 'new create');
+  makeSkillDir(extSkills, 'execute-task', 'new execute');
+  makeSkillDir(extSkills, 'index-codebase', 'new index');
+  makeSkillDir(extSkills, 'orchestrate-board', 'new orchestrate');
 
-      const projectSkills = tmpDir();
-      makeSkillDir(projectSkills, 'create-task', 'old create');
-      makeSkillDir(projectSkills, 'execute-task', 'old execute');
+  const projectSkills = tmpDir();
+  makeSkillDir(projectSkills, 'create-task', 'old create');
+  makeSkillDir(projectSkills, 'execute-task', 'old execute');
 
-      const results = installTaskwrightSkills(extSkills, projectSkills, true);
+  const results = installTaskwrightSkills(extSkills, projectSkills, true);
 
-      expect(results.map((r: SkillInstallResult) => r.action)).toEqual([
-        'overwritten',
-        'overwritten',
-        'created',
-        'created',
-      ]);
-    });
+  expect(results.map((r: SkillInstallResult) => r.action)).toEqual([
+    'overwritten',
+    'overwritten',
+    'created',
+    'created',
+  ]);
+});
 ```
 
 (e) Replace the "is idempotent" test (`skillInstaller.test.ts:166-180`):
 
 ```ts
-    it('is idempotent: re-running with overwrite=false creates nothing new', () => {
-      const extSkills = tmpDir();
-      makeSkillDir(extSkills, 'create-task', 'create content');
-      makeSkillDir(extSkills, 'execute-task', 'execute content');
-      makeSkillDir(extSkills, 'index-codebase', 'index content');
+it('is idempotent: re-running with overwrite=false creates nothing new', () => {
+  const extSkills = tmpDir();
+  makeSkillDir(extSkills, 'create-task', 'create content');
+  makeSkillDir(extSkills, 'execute-task', 'execute content');
+  makeSkillDir(extSkills, 'index-codebase', 'index content');
 
-      const projectSkills = tmpDir();
+  const projectSkills = tmpDir();
 
-      // First run installs everything.
-      installTaskwrightSkills(extSkills, projectSkills, false);
-      // Second run should skip everything.
-      const secondResults = installTaskwrightSkills(extSkills, projectSkills, false);
+  // First run installs everything.
+  installTaskwrightSkills(extSkills, projectSkills, false);
+  // Second run should skip everything.
+  const secondResults = installTaskwrightSkills(extSkills, projectSkills, false);
 
-      expect(secondResults.every((r: SkillInstallResult) => r.action === 'skipped')).toBe(true);
-    });
+  expect(secondResults.every((r: SkillInstallResult) => r.action === 'skipped')).toBe(true);
+});
 ```
 
 with:
 
 ```ts
-    it('is idempotent: re-running with overwrite=false creates nothing new', () => {
-      const extSkills = tmpDir();
-      makeSkillDir(extSkills, 'create-task', 'create content');
-      makeSkillDir(extSkills, 'execute-task', 'execute content');
-      makeSkillDir(extSkills, 'index-codebase', 'index content');
-      makeSkillDir(extSkills, 'orchestrate-board', 'orchestrate content');
+it('is idempotent: re-running with overwrite=false creates nothing new', () => {
+  const extSkills = tmpDir();
+  makeSkillDir(extSkills, 'create-task', 'create content');
+  makeSkillDir(extSkills, 'execute-task', 'execute content');
+  makeSkillDir(extSkills, 'index-codebase', 'index content');
+  makeSkillDir(extSkills, 'orchestrate-board', 'orchestrate content');
 
-      const projectSkills = tmpDir();
+  const projectSkills = tmpDir();
 
-      // First run installs everything.
-      installTaskwrightSkills(extSkills, projectSkills, false);
-      // Second run should skip everything.
-      const secondResults = installTaskwrightSkills(extSkills, projectSkills, false);
+  // First run installs everything.
+  installTaskwrightSkills(extSkills, projectSkills, false);
+  // Second run should skip everything.
+  const secondResults = installTaskwrightSkills(extSkills, projectSkills, false);
 
-      expect(secondResults).toHaveLength(4);
-      expect(secondResults.every((r: SkillInstallResult) => r.action === 'skipped')).toBe(true);
-    });
+  expect(secondResults).toHaveLength(4);
+  expect(secondResults.every((r: SkillInstallResult) => r.action === 'skipped')).toBe(true);
+});
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -559,18 +559,18 @@ export const TASKWRIGHT_SKILL_NAMES = [
 Replace the skills-install comment (`extension.ts:1818-1820`):
 
 ```ts
-    // 3) Install the three Taskwright skills (create-task, execute-task,
-    // index-codebase) into the project's .claude/skills/ — idempotent: already-
-    // installed skills are skipped, so re-running setup is safe.
+// 3) Install the three Taskwright skills (create-task, execute-task,
+// index-codebase) into the project's .claude/skills/ — idempotent: already-
+// installed skills are skipped, so re-running setup is safe.
 ```
 
 with:
 
 ```ts
-    // 3) Install the four user-facing Taskwright skills (create-task,
-    // execute-task, index-codebase, orchestrate-board) into the project's
-    // .claude/skills/ — idempotent: already-installed skills are skipped, so
-    // re-running setup is safe. (visual-proof/agent-browser stay internal.)
+// 3) Install the four user-facing Taskwright skills (create-task,
+// execute-task, index-codebase, orchestrate-board) into the project's
+// .claude/skills/ — idempotent: already-installed skills are skipped, so
+// re-running setup is safe. (visual-proof/agent-browser stay internal.)
 ```
 
 > This is a comment-only change — the loop already iterates `TASKWRIGHT_SKILL_NAMES`, so no logic changes in `setUpClaudeIntegration`.

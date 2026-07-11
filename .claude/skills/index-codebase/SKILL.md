@@ -20,7 +20,7 @@ proposal from the repo, not bypassing review.
 - Best on a **fresh** Taskwright mount over a repo with real history — an empty (or nearly
   empty) board that needs a foundation for new work to attach to.
 - Not for authoring a single feature's tasks from a brief — that is `/create-task`. This skill
-  reconstructs the *existing* structure; it does not decompose new scope.
+  reconstructs the _existing_ structure; it does not decompose new scope.
 
 ## Subscription safety
 
@@ -63,7 +63,7 @@ subsystems, releases, and decisions, not per-file detail.
    is clearly a defect.
 
 5. **Propose as drafts (confirm before writing)** — first print a **reconstruction summary**:
-   *N lanes (X new), M ages, K Done baseline drafts, J To-Do gap drafts, and the key edges.*
+   _N lanes (X new), M ages, K Done baseline drafts, J To-Do gap drafts, and the key edges._
    **Wait for the user's confirmation** before any write — lanes (`create_category`) and ages
    (`create_milestone`) land in config/on-disk immediately, and Done baseline drafts touch the
    board. On confirmation, write in this order so every reference resolves:

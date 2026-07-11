@@ -1,12 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import * as yaml from 'js-yaml';
-import { parseCategoriesLine, isReservedCategory, addCategoryLine } from '../../core/categoriesConfig';
+import {
+  parseCategoriesLine,
+  isReservedCategory,
+  addCategoryLine,
+} from '../../core/categoriesConfig';
 
-const CONFIG = 'project_name: "t"\nstatuses: ["To Do", "In Progress", "Done"]\ndefault_status: "To Do"\ntask_prefix: "task"\n';
+const CONFIG =
+  'project_name: "t"\nstatuses: ["To Do", "In Progress", "Done"]\ndefault_status: "To Do"\ntask_prefix: "task"\n';
 
 describe('parseCategoriesLine', () => {
   it('parses a single-line categories array', () => {
-    expect(parseCategoriesLine('categories: ["Features", "Platform"]\n')).toEqual(['Features', 'Platform']);
+    expect(parseCategoriesLine('categories: ["Features", "Platform"]\n')).toEqual([
+      'Features',
+      'Platform',
+    ]);
   });
   it('returns [] when absent', () => {
     expect(parseCategoriesLine(CONFIG)).toEqual([]);

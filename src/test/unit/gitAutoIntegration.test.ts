@@ -114,7 +114,12 @@ async function migrateCores(repo: TempRepo): Promise<void> {
 describe('git-auto migration matrix (integration)', () => {
   it('S1: ignored board migrates — files verified into the worktree, gone from the primary', async () => {
     const repo = await repoWithBoard();
-    repo.addGitignore(['backlog/tasks/', 'backlog/drafts/', 'backlog/completed/', 'backlog/archive/']);
+    repo.addGitignore([
+      'backlog/tasks/',
+      'backlog/drafts/',
+      'backlog/completed/',
+      'backlog/archive/',
+    ]);
 
     await migrateCores(repo);
 
@@ -138,7 +143,10 @@ describe('git-auto migration matrix (integration)', () => {
     await repo.git(['add', '-f', 'backlog']);
     await repo.git(['commit', '-q', '-m', 'track board (legacy repo state)']);
     // An uncommitted board edit right before migration — the working tree is truth.
-    repo.writeFile('backlog/tasks/task-1 - First.md', TASK_1('Uncommitted edit.', '2026-07-11 09:00'));
+    repo.writeFile(
+      'backlog/tasks/task-1 - First.md',
+      TASK_1('Uncommitted edit.', '2026-07-11 09:00')
+    );
 
     const facts = await gatherMigrationFacts(repo.root, REF);
     expect(facts.trackedBoardFiles.length).toBeGreaterThan(0);
@@ -173,7 +181,11 @@ describe('git-auto migration matrix (integration)', () => {
     const cloneDir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskwright-clone-'));
     cleanups.push(() => fs.rmSync(cloneDir, { recursive: true, force: true }));
     await execFileAsync('git', ['clone', '-q', bare, cloneDir]);
-    const cloneEnsured = await ensureBoardWorktree({ primaryRoot: cloneDir, ref: REF, remote: REMOTE });
+    const cloneEnsured = await ensureBoardWorktree({
+      primaryRoot: cloneDir,
+      ref: REF,
+      remote: REMOTE,
+    });
     expect(cloneEnsured.seeded).toBe('from-remote');
     fs.writeFileSync(
       path.join(cloneEnsured.path, 'backlog', 'tasks', 'task-1 - First.md'),
@@ -185,7 +197,10 @@ describe('git-auto migration matrix (integration)', () => {
     if (!('skipped' in clonePush)) expect(clonePush.pushed).toBe(true);
 
     // Meanwhile the live board here diverges (older updated_date than the remote).
-    repo.writeFile('backlog/tasks/task-1 - First.md', TASK_1('Local divergent body.', '2026-07-11 12:00'));
+    repo.writeFile(
+      'backlog/tasks/task-1 - First.md',
+      TASK_1('Local divergent body.', '2026-07-11 12:00')
+    );
 
     await migrateCores(repo); // seed-fold-ref: snapshot parented on oldTip
 
@@ -202,7 +217,11 @@ describe('git-auto migration matrix (integration)', () => {
     );
     expect(content).toContain('Remote-newer body.');
     const mergedTip = await refTip(repo.root, REF);
-    const { stdout } = await execFileAsync('git', ['merge-base', '--is-ancestor', oldTip!, mergedTip!], { cwd: repo.root }).then(
+    const { stdout } = await execFileAsync(
+      'git',
+      ['merge-base', '--is-ancestor', oldTip!, mergedTip!],
+      { cwd: repo.root }
+    ).then(
       () => ({ stdout: 'yes' }),
       () => ({ stdout: 'no' })
     );
@@ -246,7 +265,9 @@ describe('git-auto engine (integration)', () => {
     cleanups.push(() => fs.rmSync(cloneDir, { recursive: true, force: true }));
     await execFileAsync('git', ['clone', '-q', bare, cloneDir]);
     const boardB = await ensureBoardWorktree({ primaryRoot: cloneDir, ref: REF, remote: REMOTE });
-    expect(fs.existsSync(path.join(boardB.path, 'backlog', 'tasks', 'task-1 - First.md'))).toBe(true);
+    expect(fs.existsSync(path.join(boardB.path, 'backlog', 'tasks', 'task-1 - First.md'))).toBe(
+      true
+    );
 
     // A writes a NEW task; the debounced commit + event sync publish it.
     fs.writeFileSync(
@@ -260,9 +281,9 @@ describe('git-auto engine (integration)', () => {
 
     const syncB = await runBoardAutoSync({ primaryRoot: cloneDir, ref: REF, remote: REMOTE });
     expect('skipped' in syncB).toBe(false);
-    expect(
-      fs.existsSync(path.join(boardB.path, 'backlog', 'tasks', 'task-2 - Second.md'))
-    ).toBe(true);
+    expect(fs.existsSync(path.join(boardB.path, 'backlog', 'tasks', 'task-2 - Second.md'))).toBe(
+      true
+    );
   }, 30_000);
 
   it('offline: no remote — commits accumulate, sync degrades without throwing', async () => {
@@ -295,13 +316,14 @@ describe('git-auto engine (integration)', () => {
     fs.rmSync(boardWorktreePathFor(repo.root), { recursive: true, force: true });
     expect(await boardWorktreeStatusOf(repo.root, REF)).toBe('dir-missing');
 
-    const repaired = await ensureBoardWorktree({ primaryRoot: repo.root, ref: REF, remote: REMOTE });
+    const repaired = await ensureBoardWorktree({
+      primaryRoot: repo.root,
+      ref: REF,
+      remote: REMOTE,
+    });
     expect(repaired.seeded).toBe('from-local-ref');
     expect(
-      fs.readFileSync(
-        path.join(repaired.path, 'backlog', 'tasks', 'task-1 - First.md'),
-        'utf-8'
-      )
+      fs.readFileSync(path.join(repaired.path, 'backlog', 'tasks', 'task-1 - First.md'), 'utf-8')
     ).toContain('Committed before loss.');
   }, 30_000);
 
@@ -309,7 +331,10 @@ describe('git-auto engine (integration)', () => {
     const repo = await repoWithBoard();
     await migrateCores(repo);
     // A stale pre-reload writer recreates a task in the primary tree.
-    repo.writeFile('backlog/tasks/task-9 - Stray.md', TASK_1('Stray body.').replace('TASK-1', 'TASK-9'));
+    repo.writeFile(
+      'backlog/tasks/task-9 - Stray.md',
+      TASK_1('Stray body.').replace('TASK-1', 'TASK-9')
+    );
 
     const folded = await foldPrimaryStrays(repo.root);
     expect(folded).not.toBeNull();

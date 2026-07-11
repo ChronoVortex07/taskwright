@@ -1,10 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import {
-  boardWorktreeStatusOf,
-  ensureBoardWorktree,
-} from '../../core/boardWorktree';
+import { boardWorktreeStatusOf, ensureBoardWorktree } from '../../core/boardWorktree';
 import type { BoardGitExec } from '../../core/boardRef';
 import { boardWorktreePathFor } from '../../core/boardRoot';
 import { makeTempGitRepo, type TempRepo } from './helpers/tempGitRepo';
@@ -50,7 +47,9 @@ describe('ensureBoardWorktree (unit, scripted git)', () => {
   const dir = boardWorktreePathFor(primary);
 
   it('short-circuits when the worktree is already healthy', async () => {
-    const exec = scriptedExec([{ match: ['rev-parse', '--git-dir'], stdout: '.git/worktrees/board\n' }]);
+    const exec = scriptedExec([
+      { match: ['rev-parse', '--git-dir'], stdout: '.git/worktrees/board\n' },
+    ]);
 
     const result = await ensureBoardWorktree({
       primaryRoot: primary,
@@ -158,7 +157,11 @@ describe('boardWorktree (integration, real git)', () => {
     fs.rmSync(dir, { recursive: true, force: true });
     expect(await boardWorktreeStatusOf(repo.root, REF)).toBe('dir-missing');
 
-    const repaired = await ensureBoardWorktree({ primaryRoot: repo.root, ref: REF, remote: REMOTE });
+    const repaired = await ensureBoardWorktree({
+      primaryRoot: repo.root,
+      ref: REF,
+      remote: REMOTE,
+    });
     expect(repaired.created).toBe(true);
     expect(repaired.seeded).toBe('from-local-ref');
     expect(await boardWorktreeStatusOf(repo.root, REF)).toBe('ok');

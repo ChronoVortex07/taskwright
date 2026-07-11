@@ -59,7 +59,7 @@ The task focus mandates that this section resolve four questions. These are **po
 
 ### D1 — Degree of parallelism
 
-- **The ready set is provably mutually independent.** `next_ready_tasks` returns only tasks whose *every* dependency is Done. If two returned tasks A and B had a dependency edge A→B, then B could only be ready if A were Done — but A appears in the set precisely because it is *not* Done. Contradiction. Therefore **no two tasks in one `next_ready_tasks` result depend on each other**, and the whole set is safe to run concurrently. No per-pair independence computation is needed (unlike the SDD subtask check inside `/execute-task`).
+- **The ready set is provably mutually independent.** `next_ready_tasks` returns only tasks whose _every_ dependency is Done. If two returned tasks A and B had a dependency edge A→B, then B could only be ready if A were Done — but A appears in the set precisely because it is _not_ Done. Contradiction. Therefore **no two tasks in one `next_ready_tasks` result depend on each other**, and the whole set is safe to run concurrently. No per-pair independence computation is needed (unlike the SDD subtask check inside `/execute-task`).
 - **Cap, not swarm.** Each runner does real builds/tests (`bun install`, `bun run test`), which are CPU/disk-heavy, and merges serialize in the queue regardless — so beyond a small fan-out the wall-clock gain flattens while contention rises. Default **`MAX_PARALLEL = 3`** subagents per round. The user may override ("run up to N at a time", "one at a time" → sequential). If the ready set is larger than the cap, the extra tasks wait for the next round (they refresh into `next_ready_tasks` because they were neither dispatched nor claimed).
 - **Mode selection.** Default: **parallel** when the round's batch has ≥ 2 tasks and the user did not ask for sequential; **self-driven sequential** when the batch is 1 task, or the user asked for conservative / one-at-a-time / low-resource execution. Both modes run the identical per-task sequence (`start_task` → worktree deps → `/execute-task` → `request_merge`); the only difference is whether the orchestrator runs it inline (sequential) or hands it to a `Task` subagent (parallel).
 
@@ -73,7 +73,7 @@ The task focus mandates that this section resolve four questions. These are **po
 ### D3 — Monitoring subagent completion + merge-queue turns
 
 - **Completion.** The `Task` tool is awaited per batch: issuing N `Task` calls in one response runs them concurrently, and the orchestrator receives **all N returned summaries** when they finish. The orchestrator does **not** poll — it reads each subagent's final JSON status. In self-driven mode there is nothing to monitor (the orchestrator ran the task itself and observed `request_merge` return).
-- **Merge-queue turns.** The orchestrator does **not** sequence merges. Each runner's `/execute-task` calls `request_merge`, which enrolls the task in the shared `src/core/mergeQueue.ts` queue, waits for right-of-way, and returns only after the fast-forward merge (or PR) completes. So parallel subagents do their *work* concurrently but their *merges* serialize automatically inside `request_merge` — the orchestrator simply awaits the batch. After a batch returns, the orchestrator re-pulls `next_ready_tasks`: merged tasks have unlocked their dependents, so the next round's ready set may be larger.
+- **Merge-queue turns.** The orchestrator does **not** sequence merges. Each runner's `/execute-task` calls `request_merge`, which enrolls the task in the shared `src/core/mergeQueue.ts` queue, waits for right-of-way, and returns only after the fast-forward merge (or PR) completes. So parallel subagents do their _work_ concurrently but their _merges_ serialize automatically inside `request_merge` — the orchestrator simply awaits the batch. After a batch returns, the orchestrator re-pulls `next_ready_tasks`: merged tasks have unlocked their dependents, so the next round's ready set may be larger.
 
 ### D4 — Stop conditions
 
@@ -131,7 +131,7 @@ allowed-tools: mcp__taskwright__next_ready_tasks, mcp__taskwright__start_task, m
 Drive the whole Taskwright board, not one task: repeatedly pull the **ready** tasks, run each end
 to end in its own isolated worktree (yourself sequentially, or via parallel in-session subagents),
 and stop on a clear condition. Parity: every step is one a human can drive from the board (Dispatch
-/ Claim / Request merge) — you are automating the *sequence across many tasks*, not bypassing review
+/ Claim / Request merge) — you are automating the _sequence across many tasks_, not bypassing review
 or the merge queue. Each individual task is still executed by `/execute-task`; this skill is the loop
 around it.
 
@@ -141,7 +141,7 @@ around it.
   board's ready tasks.
 - Best when several tasks are ready and independent and the user wants them all taken to Done.
 - **Not** for a single task — use `/execute-task`. **Not** for authoring or decomposing new work —
-  use `/create-task`. This skill only *runs existing ready tasks*.
+  use `/create-task`. This skill only _runs existing ready tasks_.
 
 ## Subscription safety
 
@@ -152,12 +152,12 @@ plus local Bash/Read/Grep/Glob.
 
 ## Key facts you rely on
 
-- **The ready set is mutually independent.** `next_ready_tasks` returns only tasks whose *every*
+- **The ready set is mutually independent.** `next_ready_tasks` returns only tasks whose _every_
   dependency is Done. Two returned tasks can never depend on each other (a dependency would keep the
   dependent out of the set), so the whole set is safe to run **concurrently**.
 - **The merge queue serializes merges for you.** Each task's `/execute-task` closes with
   `request_merge`, which waits its turn in the shared merge queue and merges under right-of-way. You
-  never order merges yourself — parallel workers do their *work* concurrently and their *merges*
+  never order merges yourself — parallel workers do their _work_ concurrently and their _merges_
   serialize automatically.
 - **Claims are advisory and are your anti-collision guard.** `next_ready_tasks` already excludes
   tasks a live session holds or that are active in the merge queue. Every worker still **claims before
@@ -183,7 +183,7 @@ Repeat rounds until a stop condition fires:
    - Call `get_board`. If it shows **no** non-Done tasks → **Drained**: report Done and stop.
    - If non-Done tasks remain but are all `locked`/blocked by not-yet-Done dependencies and nothing is
      in flight → **All-blocked**: report the blocked frontier (which tasks, blocked by what) and stop.
-   Otherwise (ready set non-empty) continue.
+     Otherwise (ready set non-empty) continue.
 
 3. **Choose the batch.** Take the top `min(readyCount, cap)` tasks — parallel `cap` (default 3), or 1
    in sequential mode. The rest wait for the next round (they refresh back into `next_ready_tasks`).
@@ -219,8 +219,8 @@ Finish with a summary: tasks taken to **Done**, tasks **failed/surfaced** (with 
 
 Dispatch one `Task` subagent per batch task with **exactly** this prompt (self-contained — the
 subagent inherits none of your context). Substitute `{{taskId}}` and `{{title}}`:
-
 ```
+
 You are an autonomous Taskwright task runner. Execute EXACTLY ONE task end to end, in its own
 isolated git worktree, then report back. You share the repository with other agents: never touch
 another task, and never git checkout / commit / merge in the repository root (a pre-commit hook
@@ -230,6 +230,7 @@ agent.
 TASK: {{taskId}} — {{title}}
 
 Do this, in order:
+
 1. Bootstrap the worktree. Call the taskwright MCP tool `start_task` with { "taskId": "{{taskId}}" }.
    It returns { worktree, worktreeAbs, branch } and seeds this task as the worktree's active task.
    `cd` into `worktreeAbs` (Bash). If `node_modules` is absent there, run `bun install` once.
@@ -250,6 +251,7 @@ Do this, in order:
 
 Return ONLY a compact JSON object:
 {"status":"done"|"failed"|"surrendered"|"cancelled","taskId":"{{taskId}}","summary":"<1-2 sentences>"}
+
 ```
 
 In **self-driven sequential** mode you perform these same five steps inline for the one task, instead
@@ -325,7 +327,7 @@ Co-Authored-By: <your model> <noreply@anthropic.com>"
 In `CLAUDE.md`, add the bullet immediately after the P6 tech-tree bullet closes and before `## Conventions`. The P6 bullet ends with the line:
 
 ```markdown
-  `docs/superpowers/plans/2026-07-04-tech-tree-p6-codebase-indexing-skill.md`.
+`docs/superpowers/plans/2026-07-04-tech-tree-p6-codebase-indexing-skill.md`.
 ```
 
 Insert **after** that line (and its following blank line, before `## Conventions`) this new bullet, matching the existing bullets' density/style:
@@ -398,7 +400,7 @@ When both commits are in and the worktree is clean (`git status` shows nothing u
 - **Grounding reads** (create-task/execute-task SKILL.md house format; mergeQueue.ts; TaskSummary/get_board shapes; the advisory-claim + AGENTS.md workflow) → done during authoring; the merge-queue-serializes and ready-set-independence facts come straight from `src/core/mergeQueue.ts` and the DRAFT-5 READY definition.
 - **Testing** (self-check walkthrough proving the four required scenarios + surrender/failure) → Task 1 Step 2, S1–S5. "Composed tools only live after DRAFT-3/4/5/7 merge + primary rebuild" → stated in **Prerequisites** and Task 1's dependency note.
 
-**2. Why no source core / MCP tool (scope honesty):** the task focus says a helper core is *optional* ("if you add a tiny helper core…"). A skill is prose an LLM follows; its only runtime mechanism is the MCP tools + the `Task` tool, all of which the locked contracts already deliver (DRAFT-3/4/5/7). The one non-trivial decision — "which ready tasks are independent enough to parallelize" — is **eliminated by the ready-set invariant** (Design D1), not computed. Adding a core would have **no runtime consumer** (or would require a new MCP tool, which exceeds the locked DRAFT-8 contract of exactly `.claude/skills/orchestrate-board/SKILL.md`). So this revision adds none, and the plan says so explicitly rather than inventing a placeholder core.
+**2. Why no source core / MCP tool (scope honesty):** the task focus says a helper core is _optional_ ("if you add a tiny helper core…"). A skill is prose an LLM follows; its only runtime mechanism is the MCP tools + the `Task` tool, all of which the locked contracts already deliver (DRAFT-3/4/5/7). The one non-trivial decision — "which ready tasks are independent enough to parallelize" — is **eliminated by the ready-set invariant** (Design D1), not computed. Adding a core would have **no runtime consumer** (or would require a new MCP tool, which exceeds the locked DRAFT-8 contract of exactly `.claude/skills/orchestrate-board/SKILL.md`). So this revision adds none, and the plan says so explicitly rather than inventing a placeholder core.
 
 **3. No placeholders:** the complete SKILL.md is shown verbatim (frontmatter + loop + subagent prompt template + rules); the CLAUDE.md bullet is shown verbatim with its exact insertion anchor (the P6 bullet's closing line, verified at `CLAUDE.md:232`, before `## Conventions` at `:234`); both commit messages are complete. No "TBD", no "similar to above", no undefined tool or type.
 

@@ -7,6 +7,7 @@
 **Scope boundary (P4).** This plan implements the P4 architecture directives (`.superpowers/tech-tree-run/p4-architecture-directives.md`) in full: GAP-1/2/3 (Tasks 1–3), the read tools (Tasks 4–5), `create_category` (Task 6), the skill + tool-description polish + doc-sync (Task 7), and the CDP + Playwright proof pass (Task 8), plus the two cheap accepted-debt folds (dead `requestCreateTask` webview path → Task 1; the CLAUDE.md onboarding blurb → Task 7). It does **not** implement `/execute-task` (worktree-enforced dispatch — **P5**) or codebase-indexing tree bootstrap (**P6**). No new webview drag gestures, no stored coordinates, no embeddings/semantic search (baseline keyword only).
 
 **Architecture.** The MCP server (`src/mcp/server.ts` + `src/mcp/handlers.ts`) is a separate vscode-free stdio process reusing `src/core`. P4 adds:
+
 - **Reads** (`jsonContent` wrapper): `list_categories`/`list_milestones`/`get_board`/`search_tasks` — all built on the existing shared board derivation `loadTreeBoardFromParser` (`src/core/treeDerived.ts:92`) + `parser.getTasks()`/`getDrafts()`, so agent output matches the canvas exactly. `search_tasks` gets a pure core `src/core/searchTasks.ts`.
 - **Writes** (`runTool` wrapper): `create_category` (surgical single-line `config.yml` edit via new `src/core/categoriesConfig.ts`, mirroring `src/core/mergeStatusConfig.ts`) and `promote_drafts` (bulk, via new `src/core/promoteDrafts.ts` — validate → topo-order → per-draft `writer.promoteDraft` → remap inbound `dependencies`/`caused_by` across the board).
 - **Three gap closures** so the draft-review loop is live: (1) `loadTreeBoardFromParser` unions `getDrafts()` into the derivation universe **and** `TasksController` unions drafts into the **tree-tab** `tasksUpdated` payload, so draft files render as proposed nodes (the existing `isDraft` styling in `TreeNode.svelte:38` — `status === 'Draft' || folder === 'drafts'` — engages with zero webview changes); (2) `createTaskWithTreeFields`'s draft path applies `priority`/`milestone`/`labels`/`assignee` through the same `updateTask` call that already writes `type`/`dependencies`, and rejects `draft:true` + explicit `status`; (3) `promoteDrafts` re-ids each draft and rewrites every inbound `dependencies` reference (and bug `caused_by`) so a linked proposal set keeps its edges on promote. Both single (`promote_draft`) and bulk (`promote_drafts`) MCP promotes, and the canvas "Promote all proposed" button (now one `promoteDrafts` webview message), route through this core (parity + remap for free).
@@ -24,6 +25,7 @@
 ## Locked names & wire conventions (from the directives — do not rename)
 
 **New MCP tools (camelCase args/results, house style per `CreateTaskArgs`/`EditTaskArgs`):**
+
 - Reads → `jsonContent`: `list_categories` (no args) · `list_milestones` (no args) · `get_board` `{category?, milestone?, status?}` · `search_tasks` `{query, limit?}`.
 - Writes → `runTool`: `create_category` `{category}` · `promote_drafts` `{taskIds}`.
 - Field names stay camelCase in tool I/O (`causedBy`, not `caused_by` — the latter is the frontmatter spelling only, written surgically by `TreeFieldService.setCausedBy`).
@@ -120,9 +122,7 @@ Following the directives' Scope & sizing (`§Scope & sizing`, recommended ~8 tas
 import { loadTreeBoardFromParser } from '../../core/treeDerived';
 
 describe('loadTreeBoardFromParser — draft union (GAP-1a)', () => {
-  function stubParser(over: {
-    tasks?: Task[]; drafts?: Task[];
-  }) {
+  function stubParser(over: { tasks?: Task[]; drafts?: Task[] }) {
     return {
       getTasks: async () => over.tasks ?? [],
       getDrafts: async () => over.drafts ?? [],
@@ -168,8 +168,18 @@ describe('loadTreeBoardFromParser — draft union (GAP-1a)', () => {
 describe('TasksController — GAP-1b tree-mode draft union', () => {
   it('tree tab unions drafts into the tasksUpdated payload', async () => {
     (mockParser.getDrafts as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: 'DRAFT-1', title: 'Proposed', status: 'Draft', folder: 'drafts', labels: [], assignee: [],
-        dependencies: [], acceptanceCriteria: [], definitionOfDone: [], filePath: '/b/drafts/draft-1.md' },
+      {
+        id: 'DRAFT-1',
+        title: 'Proposed',
+        status: 'Draft',
+        folder: 'drafts',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/b/drafts/draft-1.md',
+      },
     ]);
     const controller = new TasksController(host, mockParser, mockContext);
     controller.setViewMode('tree'); // or the file's existing helper to select the tree tab
@@ -180,8 +190,18 @@ describe('TasksController — GAP-1b tree-mode draft union', () => {
 
   it('kanban tab does NOT union drafts into the payload', async () => {
     (mockParser.getDrafts as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: 'DRAFT-1', title: 'Proposed', status: 'Draft', folder: 'drafts', labels: [], assignee: [],
-        dependencies: [], acceptanceCriteria: [], definitionOfDone: [], filePath: '/b/drafts/draft-1.md' },
+      {
+        id: 'DRAFT-1',
+        title: 'Proposed',
+        status: 'Draft',
+        folder: 'drafts',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/b/drafts/draft-1.md',
+      },
     ]);
     const controller = new TasksController(host, mockParser, mockContext);
     controller.setViewMode('kanban');
@@ -230,14 +250,14 @@ export async function loadTreeBoardFromParser(parser: BacklogParser): Promise<Tr
 In `src/providers/TasksController.ts`, immediately after the `Promise.all` destructure that produces `tasks` (`TasksController.ts:246-256`) and **before** `computeSubtasks(tasks)` (`:259`), append drafts to `tasks` for the tree tab only:
 
 ```ts
-      // GAP-1(b): the tree canvas must show draft proposals as nodes (they gate deps
-      // and carry their own lane/band). Union drafts into the payload for the TREE tab
-      // ONLY — kanban/list/drafts/archived tabs are unchanged, and cross-branch mode
-      // skips tree derivation (treeBoard stays undefined) so there is nothing to render.
-      if (this.viewMode === 'tree' && this.dataSourceMode !== 'cross-branch') {
-        const treeDrafts = await this.parser.getDrafts();
-        tasks.push(...treeDrafts);
-      }
+// GAP-1(b): the tree canvas must show draft proposals as nodes (they gate deps
+// and carry their own lane/band). Union drafts into the payload for the TREE tab
+// ONLY — kanban/list/drafts/archived tabs are unchanged, and cross-branch mode
+// skips tree derivation (treeBoard stays undefined) so there is nothing to render.
+if (this.viewMode === 'tree' && this.dataSourceMode !== 'cross-branch') {
+  const treeDrafts = await this.parser.getDrafts();
+  tasks.push(...treeDrafts);
+}
 ```
 
 > `tasks` is a `const` array binding — `.push` mutates in place (allowed). The parser mtime-caches folder reads, so this second `getDrafts()` (the first feeds `draftCountFromFolder` at `:251-253`) is cheap. Downstream is automatic: `computeSubtasks(tasks)` (`:259`), the reverse-dep/`taskById` maps (`:281-293`), and the `tasksWithBlocks` enrichment map (`:325-381`) all iterate `tasks`, and the enrichment reads `treeBoard?.states.get(...)` (`:355`) — which now (Step 3) carries draft states/layout. The draft badge count is unaffected: `draftCount` uses `draftCountFromFolder` in tree mode (`:418`, `viewMode !== 'drafts'`). Draft nodes arrive with `folder:'drafts'` set, so `TreeNode.svelte:38` `isDraft` styling engages with no webview change. Popover claim/dispatch on a draft: `DetailPopover`'s existing `isDraft` branch already restricts drafts to Promote/edit (directive Q2 — verify the branch during the Task 8 visual proof; no code change expected here).
@@ -309,15 +329,27 @@ describe('createTaskWithTreeFields — draft field completeness (GAP-2)', () => 
   it('draft create folds priority/milestone/labels/assignee into the same updateTask', async () => {
     const m = makeDeps();
     await createTaskWithTreeFields(m.deps, {
-      title: 'Spike caching', draft: true,
-      priority: 'high', milestone: 'v1', labels: ['spike'], assignee: ['@alice'],
+      title: 'Spike caching',
+      draft: true,
+      priority: 'high',
+      milestone: 'v1',
+      labels: ['spike'],
+      assignee: ['@alice'],
     });
-    expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, { title: 'Spike caching', description: undefined });
+    expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, {
+      title: 'Spike caching',
+      description: undefined,
+    });
     expect(m.createTask).not.toHaveBeenCalled();
     // ONE updateTask carrying the draft-only canonical fields:
     expect(m.updateTask).toHaveBeenCalledWith(
       'DRAFT-1',
-      expect.objectContaining({ priority: 'high', milestone: 'v1', labels: ['spike'], assignee: ['@alice'] }),
+      expect.objectContaining({
+        priority: 'high',
+        milestone: 'v1',
+        labels: ['spike'],
+        assignee: ['@alice'],
+      }),
       m.deps.parser
     );
   });
@@ -325,8 +357,12 @@ describe('createTaskWithTreeFields — draft field completeness (GAP-2)', () => 
   it('draft create still applies type/dependencies through the SAME updateTask (one write)', async () => {
     const m = makeDeps();
     await createTaskWithTreeFields(m.deps, {
-      title: 'Bug spike', draft: true, type: 'bug', causedBy: 'TASK-1',
-      dependencies: ['TASK-2'], priority: 'medium',
+      title: 'Bug spike',
+      draft: true,
+      type: 'bug',
+      causedBy: 'TASK-1',
+      dependencies: ['TASK-2'],
+      priority: 'medium',
     });
     // exactly one updateTask, carrying type + dependencies + priority together:
     expect(m.updateTask).toHaveBeenCalledTimes(1);
@@ -348,8 +384,17 @@ describe('createTaskWithTreeFields — draft field completeness (GAP-2)', () => 
 
   it('non-draft create is unchanged: fields go to createTask, not a second updateTask', async () => {
     const m = makeDeps();
-    await createTaskWithTreeFields(m.deps, { title: 'y', priority: 'high', milestone: 'v1', labels: ['f'] });
-    expect(m.createTask).toHaveBeenCalledWith('/b', expect.objectContaining({ priority: 'high', milestone: 'v1', labels: ['f'] }), m.deps.parser);
+    await createTaskWithTreeFields(m.deps, {
+      title: 'y',
+      priority: 'high',
+      milestone: 'v1',
+      labels: ['f'],
+    });
+    expect(m.createTask).toHaveBeenCalledWith(
+      '/b',
+      expect.objectContaining({ priority: 'high', milestone: 'v1', labels: ['f'] }),
+      m.deps.parser
+    );
     expect(m.updateTask).not.toHaveBeenCalled(); // no type/deps → no canonical updateTask
   });
 });
@@ -358,21 +403,26 @@ describe('createTaskWithTreeFields — draft field completeness (GAP-2)', () => 
 Also add one temp-dir integration case to `src/test/unit/mcpWriteHandlers.test.ts` (the `createTaskHandler` describe) proving a **real** draft file carries the fields on disk:
 
 ```ts
-  it('draft create writes priority + milestone into the DRAFT file (GAP-2)', async () => {
-    const d = deps();
-    // seed a milestone-less config; priority is validated against config priorities
-    const summary = await createTaskHandler(d, {
-      title: 'Proposed feature', draft: true, priority: 'high', milestone: 'v1', category: 'Features',
-    });
-    expect(summary.id).toBe('DRAFT-1');
-    const file = fs.readFileSync(
-      path.join(backlogPath, 'drafts', 'draft-1 - Proposed-feature.md'), 'utf-8'
-    );
-    expect(file).toMatch(/^priority:\s*high/m);
-    expect(file).toMatch(/^milestone:\s*v1/m);
-    expect(file).toMatch(/^category:\s*Features/m);
-    expect(file).toMatch(/^status:\s*Draft/m); // never rewritten to a board status
+it('draft create writes priority + milestone into the DRAFT file (GAP-2)', async () => {
+  const d = deps();
+  // seed a milestone-less config; priority is validated against config priorities
+  const summary = await createTaskHandler(d, {
+    title: 'Proposed feature',
+    draft: true,
+    priority: 'high',
+    milestone: 'v1',
+    category: 'Features',
   });
+  expect(summary.id).toBe('DRAFT-1');
+  const file = fs.readFileSync(
+    path.join(backlogPath, 'drafts', 'draft-1 - Proposed-feature.md'),
+    'utf-8'
+  );
+  expect(file).toMatch(/^priority:\s*high/m);
+  expect(file).toMatch(/^milestone:\s*v1/m);
+  expect(file).toMatch(/^category:\s*Features/m);
+  expect(file).toMatch(/^status:\s*Draft/m); // never rewritten to a board status
+});
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -387,42 +437,42 @@ In `src/core/createTaskWithTreeFields` (`createTaskCore.ts:73-129`), add the sta
 Add the guard right after the `dependencies` line (`:84`):
 
 ```ts
-  const dependencies = args.dependencies ?? [];
-  if (args.draft && args.status !== undefined) {
-    throw new Error('drafts always have status Draft; do not set status on a draft.');
-  }
+const dependencies = args.dependencies ?? [];
+if (args.draft && args.status !== undefined) {
+  throw new Error('drafts always have status Draft; do not set status on a draft.');
+}
 ```
 
 Then replace the canonical block (`createTaskCore.ts:108-114`):
 
 ```ts
-  // type / dependencies go through BacklogWriter (both serialized there).
-  const canonical: Partial<Task> = {};
-  if (type !== undefined) canonical.type = type;
-  if (dependencies.length > 0) canonical.dependencies = dependencies;
-  if (Object.keys(canonical).length > 0) {
-    await deps.writer.updateTask(id, canonical, deps.parser);
-  }
+// type / dependencies go through BacklogWriter (both serialized there).
+const canonical: Partial<Task> = {};
+if (type !== undefined) canonical.type = type;
+if (dependencies.length > 0) canonical.dependencies = dependencies;
+if (Object.keys(canonical).length > 0) {
+  await deps.writer.updateTask(id, canonical, deps.parser);
+}
 ```
 
 with (drafts fold their canonical fields into the SAME updateTask; non-draft path unchanged — those fields already went to `createTask`):
 
 ```ts
-  // type / dependencies go through BacklogWriter (both serialized there). On the DRAFT
-  // path, createDraft accepts only title/description, so priority/milestone/labels/
-  // assignee are folded into the SAME updateTask (GAP-2 — one write, not two).
-  const canonical: Partial<Task> = {};
-  if (type !== undefined) canonical.type = type;
-  if (dependencies.length > 0) canonical.dependencies = dependencies;
-  if (args.draft) {
-    if (args.priority !== undefined) canonical.priority = args.priority;
-    if (args.milestone !== undefined) canonical.milestone = args.milestone;
-    if (args.labels !== undefined) canonical.labels = args.labels;
-    if (args.assignee !== undefined) canonical.assignee = args.assignee;
-  }
-  if (Object.keys(canonical).length > 0) {
-    await deps.writer.updateTask(id, canonical, deps.parser);
-  }
+// type / dependencies go through BacklogWriter (both serialized there). On the DRAFT
+// path, createDraft accepts only title/description, so priority/milestone/labels/
+// assignee are folded into the SAME updateTask (GAP-2 — one write, not two).
+const canonical: Partial<Task> = {};
+if (type !== undefined) canonical.type = type;
+if (dependencies.length > 0) canonical.dependencies = dependencies;
+if (args.draft) {
+  if (args.priority !== undefined) canonical.priority = args.priority;
+  if (args.milestone !== undefined) canonical.milestone = args.milestone;
+  if (args.labels !== undefined) canonical.labels = args.labels;
+  if (args.assignee !== undefined) canonical.assignee = args.assignee;
+}
+if (Object.keys(canonical).length > 0) {
+  await deps.writer.updateTask(id, canonical, deps.parser);
+}
 ```
 
 > `BacklogWriter.updateTask` (`BacklogWriter.ts:554`) serializes `priority`/`milestone`/`labels`/`assignee`/`dependencies`/`type` from a `Partial<Task>` (`:581-609`) — no writer change needed. `category`/`causedBy` remain surgical post-create for both paths (`createTaskCore.ts:116-122`), so they already reach drafts (the pre-existing behavior GAP-2 does not touch). The non-draft path is untouched: those fields still flow through `createTask` (`:93-105`) and the `if (args.draft)` block never runs, so the existing `createTaskCore.test.ts` non-draft cases stay green.
@@ -490,10 +540,16 @@ function scaffold(): void {
   );
 }
 function deps() {
-  return { parser: new BacklogParser(backlogPath), writer: new BacklogWriter(), treeFieldService: new TreeFieldService() };
+  return {
+    parser: new BacklogParser(backlogPath),
+    writer: new BacklogWriter(),
+    treeFieldService: new TreeFieldService(),
+  };
 }
 function writeDraft(id: string, title: string, deps_: string[] = []): void {
-  const depBlock = deps_.length ? `dependencies:\n${deps_.map((d) => `  - ${d}`).join('\n')}\n` : 'dependencies: []\n';
+  const depBlock = deps_.length
+    ? `dependencies:\n${deps_.map((d) => `  - ${d}`).join('\n')}\n`
+    : 'dependencies: []\n';
   fs.writeFileSync(
     path.join(backlogPath, 'drafts', `${id.toLowerCase()} - ${title}.md`),
     `---\nid: ${id}\ntitle: ${title}\nstatus: Draft\nassignee: []\n${depBlock}---\n\n## Description\n<!-- SECTION:DESCRIPTION:BEGIN -->\n<!-- SECTION:DESCRIPTION:END -->\n`,
@@ -501,7 +557,9 @@ function writeDraft(id: string, title: string, deps_: string[] = []): void {
   );
 }
 function writeTask(id: string, title: string, deps_: string[] = [], extra = ''): void {
-  const depBlock = deps_.length ? `dependencies:\n${deps_.map((d) => `  - ${d}`).join('\n')}\n` : 'dependencies: []\n';
+  const depBlock = deps_.length
+    ? `dependencies:\n${deps_.map((d) => `  - ${d}`).join('\n')}\n`
+    : 'dependencies: []\n';
   fs.writeFileSync(
     path.join(backlogPath, 'tasks', `${id.toLowerCase()} - ${title}.md`),
     `---\nid: ${id}\ntitle: ${title}\nstatus: To Do\nassignee: []\n${depBlock}${extra}---\n\n## Description\n<!-- SECTION:DESCRIPTION:BEGIN -->\n<!-- SECTION:DESCRIPTION:END -->\n`,
@@ -574,8 +632,13 @@ describe('promoteDrafts', () => {
     writeDraft('DRAFT-2', 'Boom');
     const d = deps();
     const spy = vi.spyOn(d.writer, 'promoteDraft');
-    spy.mockImplementationOnce(async (id, parser) => BacklogWriter.prototype.promoteDraft.call(d.writer, id, parser))
-       .mockImplementationOnce(async () => { throw new Error('disk full'); });
+    spy
+      .mockImplementationOnce(async (id, parser) =>
+        BacklogWriter.prototype.promoteDraft.call(d.writer, id, parser)
+      )
+      .mockImplementationOnce(async () => {
+        throw new Error('disk full');
+      });
     // ONE call only: capture the error and assert it carries the partial mapping.
     // (Do NOT call promoteDrafts a second time — DRAFT-1 is already promoted, so a
     // second call fails up-front validation with a plain Error, proving nothing.)
@@ -596,7 +659,18 @@ describe('TasksController — promoteDrafts message (GAP-3)', () => {
     const spy = vi.spyOn(BacklogWriter.prototype, 'promoteDraft').mockResolvedValue('TASK-9');
     // parser.getDrafts must return the requested ids as drafts for validation to pass:
     (mockParser.getDrafts as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: 'DRAFT-1', title: 'a', status: 'Draft', folder: 'drafts', labels: [], assignee: [], dependencies: [], acceptanceCriteria: [], definitionOfDone: [], filePath: '/b/drafts/draft-1.md' },
+      {
+        id: 'DRAFT-1',
+        title: 'a',
+        status: 'Draft',
+        folder: 'drafts',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/b/drafts/draft-1.md',
+      },
     ]);
     (mockParser.getTasks as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     const controller = new TasksController(host, mockParser, mockContext);
@@ -613,12 +687,16 @@ describe('TasksController — promoteDrafts message (GAP-3)', () => {
 describe('promoteDraftsHandler', () => {
   it('bulk-promotes and rewires an inbound dependency', async () => {
     const d = deps();
-    await createTaskHandler(d, { title: 'Base', draft: true });     // DRAFT-1
+    await createTaskHandler(d, { title: 'Base', draft: true }); // DRAFT-1
     await createTaskHandler(d, { title: 'Uses', draft: true, dependencies: ['DRAFT-1'] }); // DRAFT-2 → dep DRAFT-1
     const res = await promoteDraftsHandler(d, { taskIds: ['DRAFT-1', 'DRAFT-2'] });
     expect(res.promoted).toHaveLength(2);
     const uses = fs.readFileSync(
-      path.join(backlogPath, 'tasks', fs.readdirSync(path.join(backlogPath, 'tasks')).find((f) => f.includes('Uses'))!),
+      path.join(
+        backlogPath,
+        'tasks',
+        fs.readdirSync(path.join(backlogPath, 'tasks')).find((f) => f.includes('Uses'))!
+      ),
       'utf-8'
     );
     expect(uses).toMatch(/- TASK-1\b/);
@@ -820,20 +898,20 @@ export async function promoteDraftsHandler(
 In `src/mcp/server.ts`, add `promoteDraftsHandler` to the `./handlers` import block (`server.ts:23-38`, near `promoteDraftHandler`). Then register the tool immediately after the `promote_draft` block (`server.ts:232-240`):
 
 ```ts
-  server.registerTool(
-    'promote_drafts',
-    {
-      title: 'Promote drafts (bulk)',
-      description:
-        'Promote a SET of reviewed draft proposals (DRAFT-N) into real tasks at once, remapping every inbound dependency and bug caused_by reference so a linked proposal set keeps its structure. Use after the human has reviewed the drafts on the board. Returns { promoted: [{from,to}], remapped: [...] }.',
-      inputSchema: {
-        taskIds: z
-          .array(z.string())
-          .describe('Draft IDs to promote together, e.g. ["DRAFT-1","DRAFT-2"].'),
-      },
+server.registerTool(
+  'promote_drafts',
+  {
+    title: 'Promote drafts (bulk)',
+    description:
+      'Promote a SET of reviewed draft proposals (DRAFT-N) into real tasks at once, remapping every inbound dependency and bug caused_by reference so a linked proposal set keeps its structure. Use after the human has reviewed the drafts on the board. Returns { promoted: [{from,to}], remapped: [...] }.',
+    inputSchema: {
+      taskIds: z
+        .array(z.string())
+        .describe('Draft IDs to promote together, e.g. ["DRAFT-1","DRAFT-2"].'),
     },
-    async (args) => runTool(() => promoteDraftsHandler(deps, args))
-  );
+  },
+  async (args) => runTool(() => promoteDraftsHandler(deps, args))
+);
 ```
 
 > Bare object-of-zod-validators (house convention, directive Q11). `runTool` because it can throw (`PromoteDraftsError` / validation). No sync-mode fork — promotion touches no claim/status ref (create_task precedent, directive Q11).
@@ -903,19 +981,19 @@ Reroute the existing `promoteDraft` case (`TasksController.ts:837-853`) through 
 In `src/webview/components/tree/TechTreeCanvas.svelte`, replace `promoteAll` (`TechTreeCanvas.svelte:145-149`):
 
 ```ts
-  function promoteAll() {
-    for (const t of promotableDrafts) {
-      vscode.postMessage({ type: 'promoteDraft', taskId: t.id });
-    }
+function promoteAll() {
+  for (const t of promotableDrafts) {
+    vscode.postMessage({ type: 'promoteDraft', taskId: t.id });
   }
+}
 ```
 
 with a single bulk post (preserves the filter-aware `promotableDrafts` — directive Q4, P2b carry-in already landed):
 
 ```ts
-  function promoteAll() {
-    vscode.postMessage({ type: 'promoteDrafts', taskIds: promotableDrafts.map((t) => t.id) });
-  }
+function promoteAll() {
+  vscode.postMessage({ type: 'promoteDrafts', taskIds: promotableDrafts.map((t) => t.id) });
+}
 ```
 
 > The per-node promote (`onPromote={(pid) => vscode.postMessage({ type: 'promoteDraft', taskId: pid })}`, `TechTreeCanvas.svelte:831`) is **unchanged** — its controller case (Step 6) now remaps too. `promotableDrafts` (`:144`) already filters to non-faded drafts, so the button count and payload stay filter-aware. Run the `svelte` MCP `svelte-autofixer` on `TechTreeCanvas.svelte` until clean (a one-line change; no new `$state`).
@@ -925,24 +1003,24 @@ with a single bulk post (preserves the filter-aware `promotableDrafts` — direc
 In `e2e/tree-canvas.spec.ts`, extend the **11b** test (`tree-canvas.spec.ts:348-372`) so it clicks Promote-all and asserts **one** `promoteDrafts` message carrying only the filtered-visible id. (Precision note: today's 11b only asserts the button count `(1)` — it does NOT assert the old N `promoteDraft` messages; the appended click+assert below is what creates the genuine red→green for the canvas rewire, in the SAME commit.) Append to the existing 11b body after the `(1)` count assertion:
 
 ```ts
-    // Promote-all now posts ONE promoteDrafts message with only the visible (filtered) draft.
-    await page.locator('[data-testid="tree-promote-all"]').click();
-    const msgs = await getPostedMessages(page);
-    const bulk = msgs.filter((m) => m.type === 'promoteDrafts');
-    expect(bulk).toHaveLength(1);
-    expect(bulk[0]).toMatchObject({ type: 'promoteDrafts', taskIds: ['TASK-D1'] });
-    // No per-node promoteDraft messages from the bulk button:
-    expect(msgs.some((m) => m.type === 'promoteDraft')).toBe(false);
+// Promote-all now posts ONE promoteDrafts message with only the visible (filtered) draft.
+await page.locator('[data-testid="tree-promote-all"]').click();
+const msgs = await getPostedMessages(page);
+const bulk = msgs.filter((m) => m.type === 'promoteDrafts');
+expect(bulk).toHaveLength(1);
+expect(bulk[0]).toMatchObject({ type: 'promoteDrafts', taskIds: ['TASK-D1'] });
+// No per-node promoteDraft messages from the bulk button:
+expect(msgs.some((m) => m.type === 'promoteDraft')).toBe(false);
 ```
 
 Add a new sibling test asserting a `folder:'drafts'` node renders as proposed (the fixture's `treeTasks()` already carries a `status:'Draft'` node `TASK-4`, `tree-canvas.spec.ts:61-68`):
 
 ```ts
-  test('a draft node renders as a proposed tree node (GAP-1 visible)', async ({ page }) => {
-    // treeTasks() includes TASK-4 (status 'Draft'); the tree tab shows it as a proposed node.
-    await expect(page.locator('[data-testid="tree-node-TASK-4"]')).toBeVisible();
-    await expect(page.locator('[data-testid="tree-node-TASK-4"]')).toHaveClass(/draft|proposed/);
-  });
+test('a draft node renders as a proposed tree node (GAP-1 visible)', async ({ page }) => {
+  // treeTasks() includes TASK-4 (status 'Draft'); the tree tab shows it as a proposed node.
+  await expect(page.locator('[data-testid="tree-node-TASK-4"]')).toBeVisible();
+  await expect(page.locator('[data-testid="tree-node-TASK-4"]')).toHaveClass(/draft|proposed/);
+});
 ```
 
 > Confirm the exact proposed-style class on `TreeNode.svelte` (grep the draft branch — it applies a class like `is-draft`/`proposed`/`draft`; match the real one in the `toHaveClass` regex). The fixture already posts `TASK-4` via `treeTasks()` in the describe's `beforeEach` setup — reuse it; do not re-post tasks.
@@ -1000,6 +1078,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 **Why (directive Q6, Q7):** the skill "reads the tree" before decomposing — it needs the lane vocabulary and the milestone bands with counts, matching the canvas exactly (parity). Both are built on the shared `loadTreeBoardFromParser` so the agent sees the same `laneOrder`/`bandOrder` the canvas renders.
 
 **Shapes (verbatim from the directives):**
+
 - `list_categories` → `[{ category, count, reserved }]`. Vocabulary = `TreeBoard.laneOrder` (config order + discovered + Misc + Bugs — canvas parity, reserved included). `count` = tasks in the Q5 universe (tasks + drafts) whose lane resolves there via `laneOf`. `reserved` = `Misc | Bugs`.
 - `list_milestones` → `[{ id?, name, order, taskCount, doneCount }]`. Order = `TreeBoard.bandOrder` (declared → discovered → Backburner). `id` from milestone files (`getMilestones()`) when one exists; omitted for discovered/Backburner. Counts over the Q5 universe; `done` = `status === resolveDoneStatus(config.statuses)`. Backburner counts tasks with no/unknown milestone (band semantics, `treeLayout.ts:77-83`).
 
@@ -1043,9 +1122,12 @@ function scaffold(configExtra = ''): void {
 }
 function deps(): McpHandlerDeps {
   return {
-    root, backlogPath,
-    parser: new BacklogParser(backlogPath), writer: new BacklogWriter(),
-    claimService: new ClaimService(), planService: new PlanService(),
+    root,
+    backlogPath,
+    parser: new BacklogParser(backlogPath),
+    writer: new BacklogWriter(),
+    claimService: new ClaimService(),
+    planService: new PlanService(),
     treeFieldService: new TreeFieldService(),
   };
 }
@@ -1198,7 +1280,13 @@ export async function listMilestonesHandler(deps: McpHandlerDeps): Promise<Miles
   return board.bandOrder.map((name, order) => {
     const agg = totals.get(name) ?? { taskCount: 0, doneCount: 0 };
     const id = name === BACKBURNER_BAND ? undefined : idByName.get(name.toLowerCase());
-    return { ...(id ? { id } : {}), name, order, taskCount: agg.taskCount, doneCount: agg.doneCount };
+    return {
+      ...(id ? { id } : {}),
+      name,
+      order,
+      taskCount: agg.taskCount,
+      doneCount: agg.doneCount,
+    };
   });
 }
 ```
@@ -1210,25 +1298,25 @@ export async function listMilestonesHandler(deps: McpHandlerDeps): Promise<Miles
 Add `listCategoriesHandler`, `listMilestonesHandler` to the `./handlers` import block (`server.ts:23-38`). Register them after `attach_plan` (`server.ts:122-136`), before `create_task`, both `jsonContent` (infallible reads, directive Q11):
 
 ```ts
-  server.registerTool(
-    'list_categories',
-    {
-      title: 'List categories',
-      description:
-        'List the tech-tree lane vocabulary (categories) with a task count each, including the reserved Misc and Bugs lanes. Read this before deciding a new task’s lane: reuse an existing category by sideways traversal; only create a new one (create_category) for a genuinely new area.',
-    },
-    async () => jsonContent(await listCategoriesHandler(deps))
-  );
+server.registerTool(
+  'list_categories',
+  {
+    title: 'List categories',
+    description:
+      'List the tech-tree lane vocabulary (categories) with a task count each, including the reserved Misc and Bugs lanes. Read this before deciding a new task’s lane: reuse an existing category by sideways traversal; only create a new one (create_category) for a genuinely new area.',
+  },
+  async () => jsonContent(await listCategoriesHandler(deps))
+);
 
-  server.registerTool(
-    'list_milestones',
-    {
-      title: 'List milestones',
-      description:
-        'List milestone bands in board order (declared → discovered → Backburner) with task/done counts each. Read this to slot a task into the milestone where the work lands in the flow; default to Backburner when unknown.',
-    },
-    async () => jsonContent(await listMilestonesHandler(deps))
-  );
+server.registerTool(
+  'list_milestones',
+  {
+    title: 'List milestones',
+    description:
+      'List milestone bands in board order (declared → discovered → Backburner) with task/done counts each. Read this to slot a task into the milestone where the work lands in the flow; default to Backburner when unknown.',
+  },
+  async () => jsonContent(await listMilestonesHandler(deps))
+);
 ```
 
 - [ ] **Step 5: Build + tests + typecheck**
@@ -1267,6 +1355,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 **Why (directive Q5, Q8):** the skill reads the board (compact, filterable so output stays bounded) and searches for related/overlapping work to link rather than duplicate. `get_board` yields compact per-task summaries; `search_tasks` ranks the same universe by a pure keyword scorer.
 
 **Shapes (verbatim from the directives):**
+
 - `get_board` → universe = tasks + drafts (completed/archived participate in gating only, never output). Compact: `{ id, title, status, priority?, category?, milestone?, type?, causedBy?, dependencies, blockedBy, locked, draft }` (`draft` = `folder==='drafts'`; `milestone` omitted ⇒ Backburner, `category` omitted ⇒ Misc — do NOT synthesize lane/band names into the fields). Optional filters `category` (laneOf semantics: `Bugs`/`Misc` match), `milestone` (`Backburner` matches unset), `status`. Built on `loadTreeBoardFromParser` + `getDrafts` + `getTasks`; `blockedBy`/`locked` from `states`.
 - `search_tasks` → pure core `searchTasks(tasks, query, {limit=20})`, case-insensitive tokenized query, ALL tokens must match somewhere; score per token: title 3 / labels+category 2 / description 1, sum, tie-break stable by id. Empty/blank query → error (that's `get_board`'s job). Handler composes the Q5 compact summaries over the same universe.
 
@@ -1279,13 +1368,27 @@ import { describe, it, expect } from 'vitest';
 import { searchTasks, type SearchableTask } from '../../core/searchTasks';
 
 const T = (over: Partial<SearchableTask> & { id: string; title: string }): SearchableTask => ({
-  description: '', labels: [], category: '', ...over,
+  description: '',
+  labels: [],
+  category: '',
+  ...over,
 });
 
 describe('searchTasks', () => {
   const tasks = [
-    T({ id: 'TASK-1', title: 'Login flow', description: 'auth via oauth', labels: ['auth'], category: 'Features' }),
-    T({ id: 'TASK-2', title: 'Dashboard', description: 'charts and login widget', category: 'Features' }),
+    T({
+      id: 'TASK-1',
+      title: 'Login flow',
+      description: 'auth via oauth',
+      labels: ['auth'],
+      category: 'Features',
+    }),
+    T({
+      id: 'TASK-2',
+      title: 'Dashboard',
+      description: 'charts and login widget',
+      category: 'Features',
+    }),
     T({ id: 'TASK-3', title: 'Docs', description: 'unrelated' }),
   ];
 
@@ -1302,16 +1405,13 @@ describe('searchTasks', () => {
   it('sums field weights per token (title+desc beats title-only)', () => {
     const two = [
       T({ id: 'TASK-A', title: 'alpha', description: 'alpha' }), // 3 + 1 = 4
-      T({ id: 'TASK-B', title: 'alpha', description: 'beta' }),  // 3
+      T({ id: 'TASK-B', title: 'alpha', description: 'beta' }), // 3
     ];
     expect(searchTasks(two, 'alpha').map((t) => t.id)).toEqual(['TASK-A', 'TASK-B']);
   });
 
   it('tie-breaks stably by id ascending', () => {
-    const two = [
-      T({ id: 'TASK-2', title: 'same' }),
-      T({ id: 'TASK-1', title: 'same' }),
-    ];
+    const two = [T({ id: 'TASK-2', title: 'same' }), T({ id: 'TASK-1', title: 'same' })];
     expect(searchTasks(two, 'same').map((t) => t.id)).toEqual(['TASK-1', 'TASK-2']);
   });
 
@@ -1352,15 +1452,22 @@ describe('getBoardHandler', () => {
     const d = deps();
     await createTaskHandler(d, { title: 'A', category: 'Features', milestone: 'v1' });
     await createTaskHandler(d, { title: 'B' }); // Misc + Backburner
-    expect((await getBoardHandler(d, { category: 'Features' })).map((b) => b.id)).toEqual(['TASK-1']);
+    expect((await getBoardHandler(d, { category: 'Features' })).map((b) => b.id)).toEqual([
+      'TASK-1',
+    ]);
     expect((await getBoardHandler(d, { category: 'Misc' })).map((b) => b.id)).toEqual(['TASK-2']);
-    expect((await getBoardHandler(d, { milestone: 'Backburner' })).map((b) => b.id)).toEqual(['TASK-2']);
-    expect((await getBoardHandler(d, { status: 'To Do' })).map((b) => b.id).sort()).toEqual(['TASK-1', 'TASK-2']);
+    expect((await getBoardHandler(d, { milestone: 'Backburner' })).map((b) => b.id)).toEqual([
+      'TASK-2',
+    ]);
+    expect((await getBoardHandler(d, { status: 'To Do' })).map((b) => b.id).sort()).toEqual([
+      'TASK-1',
+      'TASK-2',
+    ]);
   });
 
   it('reports locked/blockedBy from the derivation', async () => {
     const d = deps();
-    await createTaskHandler(d, { title: 'Base' });                       // TASK-1
+    await createTaskHandler(d, { title: 'Base' }); // TASK-1
     await createTaskHandler(d, { title: 'Dep', dependencies: ['TASK-1'] }); // TASK-2 blocked by TASK-1
     const board = await getBoardHandler(d, {});
     const t2 = board.find((b) => b.id === 'TASK-2')!;
@@ -1416,7 +1523,9 @@ export function searchTasks<T extends SearchableTask>(
 ): T[] {
   const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (tokens.length === 0) {
-    throw new Error('A non-empty search query is required (use get_board to list the whole board).');
+    throw new Error(
+      'A non-empty search query is required (use get_board to list the whole board).'
+    );
   }
   const limit = opts.limit ?? 20;
   const scored: Array<{ task: T; score: number }> = [];
@@ -1554,34 +1663,34 @@ export async function searchTasksHandler(
 Add `getBoardHandler`, `searchTasksHandler` to the `./handlers` import block. Register after `list_milestones` (Task 4), both `jsonContent`:
 
 ```ts
-  server.registerTool(
-    'get_board',
-    {
-      title: 'Get board',
-      description:
-        'Get a compact, filterable view of the board (active tasks + draft proposals) for tree traversal: each row is { id, title, status, priority?, category?, milestone?, type?, causedBy?, dependencies, blockedBy, locked, draft }. Filter by category / milestone / status to keep output bounded on large boards. Unset category means the Misc lane; unset milestone means Backburner.',
-      inputSchema: {
-        category: z.string().optional().describe('Lane filter (incl. reserved "Bugs"/"Misc").'),
-        milestone: z.string().optional().describe('Band filter ("Backburner" matches unset).'),
-        status: z.string().optional().describe('Status filter.'),
-      },
+server.registerTool(
+  'get_board',
+  {
+    title: 'Get board',
+    description:
+      'Get a compact, filterable view of the board (active tasks + draft proposals) for tree traversal: each row is { id, title, status, priority?, category?, milestone?, type?, causedBy?, dependencies, blockedBy, locked, draft }. Filter by category / milestone / status to keep output bounded on large boards. Unset category means the Misc lane; unset milestone means Backburner.',
+    inputSchema: {
+      category: z.string().optional().describe('Lane filter (incl. reserved "Bugs"/"Misc").'),
+      milestone: z.string().optional().describe('Band filter ("Backburner" matches unset).'),
+      status: z.string().optional().describe('Status filter.'),
     },
-    async (args) => jsonContent(await getBoardHandler(deps, args))
-  );
+  },
+  async (args) => jsonContent(await getBoardHandler(deps, args))
+);
 
-  server.registerTool(
-    'search_tasks',
-    {
-      title: 'Search tasks',
-      description:
-        'Keyword-search the board (active tasks + drafts) by title / description / labels / category, ranked, returning the same compact summaries as get_board. Use this to find related or overlapping work so you LINK to or extend an existing task instead of creating a near-duplicate. All query tokens must match; a blank query is an error (use get_board to list everything).',
-      inputSchema: {
-        query: z.string().describe('Space-separated keywords; all must match somewhere.'),
-        limit: z.number().optional().describe('Max results (default 20).'),
-      },
+server.registerTool(
+  'search_tasks',
+  {
+    title: 'Search tasks',
+    description:
+      'Keyword-search the board (active tasks + drafts) by title / description / labels / category, ranked, returning the same compact summaries as get_board. Use this to find related or overlapping work so you LINK to or extend an existing task instead of creating a near-duplicate. All query tokens must match; a blank query is an error (use get_board to list everything).',
+    inputSchema: {
+      query: z.string().describe('Space-separated keywords; all must match somewhere.'),
+      limit: z.number().optional().describe('Max results (default 20).'),
     },
-    async (args) => jsonContent(await searchTasksHandler(deps, args))
-  );
+  },
+  async (args) => jsonContent(await searchTasksHandler(deps, args))
+);
 ```
 
 > **Wrapper note (directive Q11):** reads use `jsonContent`, which has **no** try/catch — a thrown error propagates to the SDK and surfaces as a tool error to the client. `searchTasksHandler`'s blank-query throw is therefore surfaced correctly under `jsonContent` (the SDK reports the error); this matches the read-tool contract. Do **not** switch `search_tasks` to `runTool` — it is a read, and the throw is the intended empty-query signal. The unit test asserts the handler rejects (Step 1 5b), which covers the surfaced-error path.
@@ -1629,13 +1738,21 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ```ts
 import { describe, it, expect } from 'vitest';
-import { parseCategoriesLine, isReservedCategory, addCategoryLine } from '../../core/categoriesConfig';
+import {
+  parseCategoriesLine,
+  isReservedCategory,
+  addCategoryLine,
+} from '../../core/categoriesConfig';
 
-const CONFIG = 'project_name: "t"\nstatuses: ["To Do", "In Progress", "Done"]\ndefault_status: "To Do"\ntask_prefix: "task"\n';
+const CONFIG =
+  'project_name: "t"\nstatuses: ["To Do", "In Progress", "Done"]\ndefault_status: "To Do"\ntask_prefix: "task"\n';
 
 describe('parseCategoriesLine', () => {
   it('parses a single-line categories array', () => {
-    expect(parseCategoriesLine('categories: ["Features", "Platform"]\n')).toEqual(['Features', 'Platform']);
+    expect(parseCategoriesLine('categories: ["Features", "Platform"]\n')).toEqual([
+      'Features',
+      'Platform',
+    ]);
   });
   it('returns [] when absent', () => {
     expect(parseCategoriesLine(CONFIG)).toEqual([]);
@@ -1846,18 +1963,18 @@ export async function createCategoryHandler(
 Add `createCategoryHandler` to the `./handlers` import block. Register after `create_task` (`server.ts:138-166`), `runTool` (it can throw):
 
 ```ts
-  server.registerTool(
-    'create_category',
-    {
-      title: 'Create category',
-      description:
-        'Add a new tech-tree lane (category) to the board config. Idempotent: an existing category (case-insensitive, including discovered ones) returns { created:false, category } rather than erroring. Reserved lane names (Bugs/Misc/Backburner) are refused. Create a category ONLY for a genuinely new area of work, surfaced for the user’s approval — prefer reusing an existing lane (see list_categories).',
-      inputSchema: {
-        category: z.string().describe('The new lane name, e.g. "Platform".'),
-      },
+server.registerTool(
+  'create_category',
+  {
+    title: 'Create category',
+    description:
+      'Add a new tech-tree lane (category) to the board config. Idempotent: an existing category (case-insensitive, including discovered ones) returns { created:false, category } rather than erroring. Reserved lane names (Bugs/Misc/Backburner) are refused. Create a category ONLY for a genuinely new area of work, surfaced for the user’s approval — prefer reusing an existing lane (see list_categories).',
+    inputSchema: {
+      category: z.string().describe('The new lane name, e.g. "Platform".'),
     },
-    async (args) => runTool(() => createCategoryHandler(deps, args))
-  );
+  },
+  async (args) => runTool(() => createCategoryHandler(deps, args))
+);
 ```
 
 - [ ] **Step 6: Build + tests + typecheck**
@@ -2071,15 +2188,27 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { launchVsCode, closeVsCode, type VsCodeInstance } from './lib/vscode-launcher';
-import { createTestWorkspace, resetTestWorkspace, cleanupTestWorkspace } from './lib/test-workspace';
+import {
+  createTestWorkspace,
+  resetTestWorkspace,
+  cleanupTestWorkspace,
+} from './lib/test-workspace';
 import { waitForExtensionReady, waitForWebviewContent } from './lib/wait-helpers';
-import { clickInWebview, elementExistsInWebview, clearWebviewSessionCache } from './lib/webview-helpers';
+import {
+  clickInWebview,
+  elementExistsInWebview,
+  clearWebviewSessionCache,
+} from './lib/webview-helpers';
 import { dismissNotifications, resetEditorState, executeCommand, sleep } from './lib/cdp-helpers';
 
 const CDP_PORT = 9344;
 
-function draftsDir(w: string): string { return path.join(w, 'backlog', 'drafts'); }
-function tasksDir(w: string): string { return path.join(w, 'backlog', 'tasks'); }
+function draftsDir(w: string): string {
+  return path.join(w, 'backlog', 'drafts');
+}
+function tasksDir(w: string): string {
+  return path.join(w, 'backlog', 'tasks');
+}
 
 /** Seed two linked drafts (DRAFT-2 depends on DRAFT-1) into the per-run tmpdir copy. */
 function seedLinkedDrafts(w: string): void {
@@ -2150,8 +2279,12 @@ describe('Tree promote-all cross-view (CDP)', () => {
     // Switch to the tree; the seeded drafts render as proposed nodes.
     await clickInWebview(instance.cdp, 'tasks', '[data-testid="tab-tree"]');
     await sleep(500);
-    expect(await elementExistsInWebview(instance.cdp, 'tasks', '[data-testid="tree-node-DRAFT-1"]')).toBe(true);
-    expect(await elementExistsInWebview(instance.cdp, 'tasks', '[data-testid="tree-node-DRAFT-2"]')).toBe(true);
+    expect(
+      await elementExistsInWebview(instance.cdp, 'tasks', '[data-testid="tree-node-DRAFT-1"]')
+    ).toBe(true);
+    expect(
+      await elementExistsInWebview(instance.cdp, 'tasks', '[data-testid="tree-node-DRAFT-2"]')
+    ).toBe(true);
 
     // Promote all proposed → ONE promoteDrafts message → the bulk core runs cross-view.
     const clicked = await clickInWebview(instance.cdp, 'tasks', '[data-testid="tree-promote-all"]');
@@ -2167,7 +2300,8 @@ describe('Tree promote-all cross-view (CDP)', () => {
     expect(landed).toBe(true);
 
     // The dependent's dependency was remapped to the promoted TASK id (no DRAFT left).
-    const usesBaseFile = fs.readdirSync(tasksDir(workspacePath))
+    const usesBaseFile = fs
+      .readdirSync(tasksDir(workspacePath))
       .map((f) => fs.readFileSync(path.join(tasksDir(workspacePath), f), 'utf-8'))
       .find((c) => /title:\s*Uses base/.test(c));
     expect(usesBaseFile).toBeDefined();
@@ -2192,6 +2326,7 @@ bun run test && bun run lint && bun run typecheck && bun run test:playwright
 ```
 
 Expected: PASS. Record the exact new totals against the branch-base baselines captured at the start:
+
 - **Unit:** baseline + new suites (`promoteDrafts`, `searchTasks`, `categoriesConfig`, `mcpReadHandlers`) + the added cases in `treeDerived`/`TasksController`/`mcpWriteHandlers`.
 - **Playwright:** baseline + the new `tree-canvas` draft-render test, with the 11b delta (promote-all now posts one `promoteDrafts` message).
 - **CDP:** baseline + `tree-promote` (port 9344).

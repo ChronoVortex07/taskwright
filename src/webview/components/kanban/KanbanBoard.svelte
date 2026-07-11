@@ -211,11 +211,7 @@
         data-label={key}
         data-testid="label-section-{key}"
       >
-        <div
-          class="label-section-header"
-          role="button"
-          tabindex="0"
-        >
+        <div class="label-section-header">
           <span class="label-title">{group.label}</span>
           <span class="label-count">{group.tasks.length}</span>
         </div>

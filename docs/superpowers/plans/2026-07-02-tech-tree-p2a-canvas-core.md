@@ -761,9 +761,9 @@ import { loadTreeBoardFromParser } from '../core/treeDerived';
 3. Default the persisted tab to `'tree'` — **change only the `loadPersistedState` fallback; leave the field initializer alone.** Keep `src/providers/TasksController.ts:73` as `private viewMode: TasksViewMode = 'kanban';`. Do **not** set the field to `'tree'`: `setViewMode` early-returns when the mode is unchanged (`if (this.viewMode === mode) return;`, `TasksController.ts:892`), so a `'tree'` field would make `setViewMode('tree')` on a fresh controller post nothing — the Step 1 test `setViewMode(tree) posts activeTabChanged tree…` would then fail (it asserts `posted` contains `{ type: 'activeTabChanged', tab: 'tree' }`). Change **only** the `loadPersistedState` fallback:
 
 ```ts
-    this.viewMode = legacyDrafts
-      ? 'drafts'
-      : this.context.globalState.get<TasksViewMode>('backlog.viewMode', 'tree');
+this.viewMode = legacyDrafts
+  ? 'drafts'
+  : this.context.globalState.get<TasksViewMode>('backlog.viewMode', 'tree');
 ```
 
 Tree stays the effective default because both providers (`TasksViewProvider.resolveWebviewView`, `TasksPanelProvider.reveal`) call `loadPersistedState()` before the first `refresh()`. All four Step 1 controller tests stay green with the field kept at `'kanban'`: `defaults the persisted view mode to tree` and `respects a persisted kanban choice` both drive `loadPersistedState()`; `emits treeLayoutUpdated…` calls `refresh()` directly (field `'kanban'` is not a special mode, so it still loads the tree board and emits); `setViewMode(tree)…` runs against a fresh `'kanban'` controller, so the `this.viewMode === mode` guard does not short-circuit. (Do **not** adopt the alternative of switching off tree first in the test — it would require clearing `posted` mid-test and would still emit a `viewModeChanged` from the intermediate `setViewMode('kanban')`, tripping the second assertion.)
@@ -771,44 +771,43 @@ Tree stays the effective default because both providers (`TasksViewProvider.reso
 4. In `refresh()`, replace the `treeStates` block (currently `let treeStates … loadTreeStateFromParser`) with a board load:
 
 ```ts
-      let treeBoard: Awaited<ReturnType<typeof loadTreeBoardFromParser>> | undefined;
-      if (this.dataSourceMode !== 'cross-branch') {
-        try {
-          treeBoard = await loadTreeBoardFromParser(this.parser);
-        } catch {
-          treeBoard = undefined;
-        }
-      }
+let treeBoard: Awaited<ReturnType<typeof loadTreeBoardFromParser>> | undefined;
+if (this.dataSourceMode !== 'cross-branch') {
+  try {
+    treeBoard = await loadTreeBoardFromParser(this.parser);
+  } catch {
+    treeBoard = undefined;
+  }
+}
 ```
 
 Update the enrichment lookup inside `tasks.map(...)` to read from `treeBoard?.states`:
 
 ```ts
-        const derived = treeBoard?.states.get(task.id.trim().toUpperCase());
+const derived = treeBoard?.states.get(task.id.trim().toUpperCase());
 ```
 
 5. Gate the legacy `viewModeChanged` off for the tree tab (the tree tab is driven only by `activeTabChanged`). Replace the unconditional `viewModeChanged` post in `refresh()` with:
 
 ```ts
-      if (this.viewMode !== 'tree') {
-        this.host.postMessage({
-          type: 'viewModeChanged',
-          viewMode:
-            this.viewMode === 'drafts' || this.viewMode === 'archived' ? 'list' : this.viewMode,
-        });
-      }
+if (this.viewMode !== 'tree') {
+  this.host.postMessage({
+    type: 'viewModeChanged',
+    viewMode: this.viewMode === 'drafts' || this.viewMode === 'archived' ? 'list' : this.viewMode,
+  });
+}
 ```
 
 6. Emit `treeLayoutUpdated` immediately after the `tasksUpdated` post:
 
 ```ts
-      this.host.postMessage({ type: 'tasksUpdated', tasks: tasksWithBlocks });
-      this.host.postMessage({
-        type: 'treeLayoutUpdated',
-        laneOrder: treeBoard?.laneOrder ?? [],
-        bandOrder: treeBoard?.bandOrder ?? [],
-        warnings: treeBoard?.warnings ?? [],
-      });
+this.host.postMessage({ type: 'tasksUpdated', tasks: tasksWithBlocks });
+this.host.postMessage({
+  type: 'treeLayoutUpdated',
+  laneOrder: treeBoard?.laneOrder ?? [],
+  bandOrder: treeBoard?.bandOrder ?? [],
+  warnings: treeBoard?.warnings ?? [],
+});
 ```
 
 (When `treeBoard` is undefined — cross-branch mode — this emits empty arrays, which the webview renders as the empty-state notice.)
@@ -816,12 +815,12 @@ Update the enrichment lookup inside `tasks.map(...)` to read from `treeBoard?.st
 7. In `setViewMode`, keep the legacy `viewModeChanged` out for tree by extending the existing guard:
 
 ```ts
-    if (!isDashboard && !isDocs && !isDecisions && mode !== 'tree') {
-      this.host.postMessage({
-        type: 'viewModeChanged',
-        viewMode: isDrafts || isArchived ? 'list' : mode,
-      });
-    }
+if (!isDashboard && !isDocs && !isDecisions && mode !== 'tree') {
+  this.host.postMessage({
+    type: 'viewModeChanged',
+    viewMode: isDrafts || isArchived ? 'list' : mode,
+  });
+}
 ```
 
 (`'tree'` is not in `specialModes`, so switching tree↔kanban↔list reuses the already-loaded task set + the `treeLayoutUpdated` sent on the prior refresh — no extra reload needed.)
@@ -881,12 +880,12 @@ export type { TreeLayout } from '../../core/treeLayout';
 Prepend to `primaryTabs`:
 
 ```ts
-  const primaryTabs: Tab[] = [
-    { mode: 'tree', label: 'Tree' },
-    { mode: 'kanban', label: 'Kanban' },
-    { mode: 'list', label: 'List' },
-    { mode: 'dashboard', label: 'Dashboard' },
-  ];
+const primaryTabs: Tab[] = [
+  { mode: 'tree', label: 'Tree' },
+  { mode: 'kanban', label: 'Kanban' },
+  { mode: 'list', label: 'List' },
+  { mode: 'dashboard', label: 'Dashboard' },
+];
 ```
 
 Add a Lucide icon branch (a `git-fork`/network glyph) as the first case in the primary-tab `{#if tab.mode === ...}` chain:
@@ -904,22 +903,22 @@ Add a Lucide icon branch (a `git-fork`/network glyph) as the first case in the p
 Add the import beside the other view imports:
 
 ```ts
-  import TechTreeCanvas from '../tree/TechTreeCanvas.svelte';
+import TechTreeCanvas from '../tree/TechTreeCanvas.svelte';
 ```
 
 Initialize the active tab to `'tree'` so the tree tab shows first — this avoids a brief kanban flash before the controller's first `activeTabChanged` message lands. Change `Tasks.svelte:22` from `'kanban'` to `'tree'`:
 
 ```ts
-  let activeTab = $state<TabMode>('tree');
+let activeTab = $state<TabMode>('tree');
 ```
 
 Add tree state (near the other `$state` declarations):
 
 ```ts
-  // Tech-tree layout vocabulary (from the controller's treeLayoutUpdated).
-  let laneOrder = $state<string[]>([]);
-  let bandOrder = $state<string[]>([]);
-  let treeWarnings = $state<string[]>([]);
+// Tech-tree layout vocabulary (from the controller's treeLayoutUpdated).
+let laneOrder = $state<string[]>([]);
+let bandOrder = $state<string[]>([]);
+let treeWarnings = $state<string[]>([]);
 ```
 
 Add a case to the `onMessage` switch:
@@ -978,18 +977,18 @@ Create `src/webview/components/tree/TechTreeCanvas.svelte` as a temporary stub (
 In `e2e/tasks.spec.ts`, the test `only 3 primary tabs visible plus overflow trigger` now sees four primary tabs. Update it:
 
 ```ts
-    test('primary tabs visible plus overflow trigger', async ({ page }) => {
-      await expect(page.locator('[data-testid="tab-tree"]')).toBeVisible();
-      await expect(page.locator('[data-testid="tab-kanban"]')).toBeVisible();
-      await expect(page.locator('[data-testid="tab-list"]')).toBeVisible();
-      await expect(page.locator('[data-testid="tab-dashboard"]')).toBeVisible();
-      await expect(page.locator('[data-testid="overflow-menu-btn"]')).toBeVisible();
+test('primary tabs visible plus overflow trigger', async ({ page }) => {
+  await expect(page.locator('[data-testid="tab-tree"]')).toBeVisible();
+  await expect(page.locator('[data-testid="tab-kanban"]')).toBeVisible();
+  await expect(page.locator('[data-testid="tab-list"]')).toBeVisible();
+  await expect(page.locator('[data-testid="tab-dashboard"]')).toBeVisible();
+  await expect(page.locator('[data-testid="overflow-menu-btn"]')).toBeVisible();
 
-      await expect(page.locator('[data-testid="tab-drafts"]')).not.toBeVisible();
-      await expect(page.locator('[data-testid="tab-archived"]')).not.toBeVisible();
-      await expect(page.locator('[data-testid="tab-docs"]')).not.toBeVisible();
-      await expect(page.locator('[data-testid="tab-decisions"]')).not.toBeVisible();
-    });
+  await expect(page.locator('[data-testid="tab-drafts"]')).not.toBeVisible();
+  await expect(page.locator('[data-testid="tab-archived"]')).not.toBeVisible();
+  await expect(page.locator('[data-testid="tab-docs"]')).not.toBeVisible();
+  await expect(page.locator('[data-testid="tab-decisions"]')).not.toBeVisible();
+});
 ```
 
 (Grep `e2e/` for any other test asserting a primary-tab count and update likewise; at time of writing only `tasks.spec.ts` has one.)
@@ -2200,7 +2199,12 @@ async function setupTreeView(page: Parameters<typeof installVsCodeMock>[0]) {
   });
   await postMessageToWebview(page, { type: 'milestonesUpdated', milestones: [] });
   await postMessageToWebview(page, { type: 'tasksUpdated', tasks: treeTasks() });
-  await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder, bandOrder, warnings: [] });
+  await postMessageToWebview(page, {
+    type: 'treeLayoutUpdated',
+    laneOrder,
+    bandOrder,
+    warnings: [],
+  });
   await postMessageToWebview(page, { type: 'activeTabChanged', tab: 'tree' });
   await page.waitForTimeout(150);
   await expect(page.locator('[data-testid="tree-canvas"]')).toBeVisible();
@@ -2272,12 +2276,22 @@ test.describe('Tech tree canvas', () => {
     await page.locator('[data-testid="tree-viewport"]').evaluate((el) => {
       for (let i = 0; i < 20; i++) {
         el.dispatchEvent(
-          new WheelEvent('wheel', { deltaY: 120, ctrlKey: true, clientX: 400, clientY: 300, bubbles: true, cancelable: true })
+          new WheelEvent('wheel', {
+            deltaY: 120,
+            ctrlKey: true,
+            clientX: 400,
+            clientY: 300,
+            bubbles: true,
+            cancelable: true,
+          })
         );
       }
     });
     await page.waitForTimeout(50);
-    await expect(page.locator('[data-testid="tree-node-TASK-1"]')).toHaveAttribute('data-lod', 'far');
+    await expect(page.locator('[data-testid="tree-node-TASK-1"]')).toHaveAttribute(
+      'data-lod',
+      'far'
+    );
     const afterTransform = await surface.getAttribute('style');
     expect(afterTransform).not.toBe(beforeTransform);
   });
@@ -2287,7 +2301,13 @@ test.describe('Tech tree canvas', () => {
     const before = await surface.getAttribute('style');
     await page.locator('[data-testid="tree-viewport"]').evaluate((el) => {
       el.dispatchEvent(
-        new WheelEvent('wheel', { deltaX: 120, deltaY: 80, ctrlKey: false, bubbles: true, cancelable: true })
+        new WheelEvent('wheel', {
+          deltaX: 120,
+          deltaY: 80,
+          ctrlKey: false,
+          bubbles: true,
+          cancelable: true,
+        })
       );
     });
     await page.waitForTimeout(50);
@@ -2325,7 +2345,12 @@ test.describe('Tech tree canvas', () => {
         } as Task,
       ],
     });
-    await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder: [], bandOrder: [], warnings: [] });
+    await postMessageToWebview(page, {
+      type: 'treeLayoutUpdated',
+      laneOrder: [],
+      bandOrder: [],
+      warnings: [],
+    });
     await page.waitForTimeout(80);
     await expect(page.locator('[data-testid="tree-empty-state"]')).toBeVisible();
   });

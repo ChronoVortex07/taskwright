@@ -51,8 +51,7 @@ describe('release metadata is reconciled with package.json', () => {
   });
 
   it('keywords name every supported dispatch agent', () => {
-    const agents =
-      pkg.contributes.configuration.properties['taskwright.dispatchAgent'].enum ?? [];
+    const agents = pkg.contributes.configuration.properties['taskwright.dispatchAgent'].enum ?? [];
     expect(agents.length).toBeGreaterThan(0);
     const keywordBlob = pkg.keywords.map((k) => k.toLowerCase()).join(' ');
     for (const agent of agents) {

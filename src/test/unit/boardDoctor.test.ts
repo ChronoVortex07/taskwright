@@ -264,12 +264,8 @@ describe('diagnoseBoard', () => {
     });
 
     it('does not flag the worktree outside git-auto, or when healthy', () => {
-      expect(
-        diagnoseBoard(makeInput({ syncMode: 'git', boardWorktreeOk: false }))
-      ).toEqual([]);
-      expect(
-        diagnoseBoard(makeInput({ syncMode: 'git-auto', boardWorktreeOk: true }))
-      ).toEqual([]);
+      expect(diagnoseBoard(makeInput({ syncMode: 'git', boardWorktreeOk: false }))).toEqual([]);
+      expect(diagnoseBoard(makeInput({ syncMode: 'git-auto', boardWorktreeOk: true }))).toEqual([]);
     });
 
     it('flags stray state dirs in the primary backlog/ under git-auto', () => {
@@ -287,9 +283,9 @@ describe('diagnoseBoard', () => {
     });
 
     it('does not flag strays outside git-auto', () => {
-      expect(
-        diagnoseBoard(makeInput({ syncMode: 'off', primaryStateDirs: ['tasks'] }))
-      ).toEqual([]);
+      expect(diagnoseBoard(makeInput({ syncMode: 'off', primaryStateDirs: ['tasks'] }))).toEqual(
+        []
+      );
     });
 
     it('flags a hand-flipped mode: off/git with no tasks dir but a leftover board worktree', () => {

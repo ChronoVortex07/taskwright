@@ -50,6 +50,7 @@
         type="text"
         class="search-input"
         placeholder="Search decisions..."
+        aria-label="Search decisions"
         data-testid="decisions-search-input"
         bind:value={searchQuery}
       />

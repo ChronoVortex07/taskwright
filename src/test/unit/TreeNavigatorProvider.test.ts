@@ -185,9 +185,7 @@ describe('TreeNavigatorProvider', () => {
     } as unknown as vscode.Webview;
 
     const mockWVView = { webview: mockWebview, visible: true } as unknown as vscode.WebviewView;
-    const provider = new TreeNavigatorProvider(extensionUri, parser, (msg) =>
-      relayed.push(msg)
-    );
+    const provider = new TreeNavigatorProvider(extensionUri, parser, (msg) => relayed.push(msg));
 
     // Use resolveWebviewView to register the message handler
     provider.resolveWebviewView(mockWVView);

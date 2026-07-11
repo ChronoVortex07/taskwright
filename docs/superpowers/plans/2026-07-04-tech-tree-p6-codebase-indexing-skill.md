@@ -2,11 +2,12 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. **Worker routing (directive-locked):** Task 1 & Task 4 are **Opus** (cross-cutting model change / judgment); Task 2 & Task 3 are self-contained specs for a **DeepSeek** worker (`ch worker --profile deepseek --spec <file> --worktree --scope <paths>`), each followed by a per-slice **Opus HARD-read-only review** — verify the gates yourself, never on the worker's say-so.
 
-**Goal:** Bootstrap an initial tech-tree when Taskwright is mounted over an **existing** repo. P6 delivers three dependency-ordered workstreams: (1) a **foundation model fix** — *status-carrying drafts*: a draft becomes a provisional/discardable **overlay orthogonal to completion status** (the marker is `folder === 'drafts'`, never a synthetic `status: Draft`), so a draft can be **Done**, and promote/demote **preserve** the draft's real status; (2) a new **`create_milestone`** MCP tool wrapping the existing `BacklogWriter.createMilestone`; and (3) an **`/index-codebase` skill** that reads git history + module structure + docs ("forensics") to reconstruct the already-built foundation as **Done baseline drafts**, mine `TODO`/`FIXME` gaps as **To-Do drafts**, and apply everything **as drafts** the human reviews and promotes on the canvas. Parity: every tool the skill drives is one a human can drive via P3/P4; subscription-safe — never `claude -p`. P6 **completes the tech-tree spec set (P1–P6)**.
+**Goal:** Bootstrap an initial tech-tree when Taskwright is mounted over an **existing** repo. P6 delivers three dependency-ordered workstreams: (1) a **foundation model fix** — _status-carrying drafts_: a draft becomes a provisional/discardable **overlay orthogonal to completion status** (the marker is `folder === 'drafts'`, never a synthetic `status: Draft`), so a draft can be **Done**, and promote/demote **preserve** the draft's real status; (2) a new **`create_milestone`** MCP tool wrapping the existing `BacklogWriter.createMilestone`; and (3) an **`/index-codebase` skill** that reads git history + module structure + docs ("forensics") to reconstruct the already-built foundation as **Done baseline drafts**, mine `TODO`/`FIXME` gaps as **To-Do drafts**, and apply everything **as drafts** the human reviews and promotes on the canvas. Parity: every tool the skill drives is one a human can drive via P3/P4; subscription-safe — never `claude -p`. P6 **completes the tech-tree spec set (P1–P6)**.
 
 **Scope boundary (P6).** This plan implements the P6 architecture directives (`.superpowers/tech-tree-run/p6-architecture-directives.md`) in full: the D2 status-carrying-drafts foundation change (Task 1), the `create_milestone` tool D3/D4/D5/D6 (Task 2), the `/index-codebase` skill D7/D8 (Task 3), and docs + full gate + close (Task 4). It does **not** add semantic/embedding search (baseline keyword only), a `create_milestone {order}` param (D4 — dropped; band order is creation order), a config-line milestone clone (D3 — wraps the writer instead), any new webview message/component (drafts already render via P4 GAP-1's `folder==='drafts'` arm), any new frontmatter, or any promote/subtask MCP tool for the skill (D8 — the human promotes; coarse granularity). Executing the resulting bootstrap tasks is P5's job.
 
 **Architecture.** The changes span three seams, all reusing existing cores (parity):
+
 - **Draft model (`src/core`)** — `createTaskCore.ts` relaxes the `draft && status` throw so a draft may carry a valid status; `BacklogWriter.createDraft` writes the given status (default = `config.default_status`, else `To Do`) instead of hard `'Draft'`; `BacklogParser.getDrafts` reflects the **real** frontmatter status (legacy `status: Draft` files aliased to the board default on read); `BacklogWriter.promoteDraft` **preserves** status on promote (Done draft → Done task); `BacklogWriter.demoteTask` **preserves** status on demote (symmetric). The provisional marker stays `folder === 'drafts'` — the webview `isDraft` readers (`TreeNode`/`DetailPopover`/`TechTreeCanvas`, folder arm) are **unchanged**, so P1–P5 rendering is preserved.
 - **MCP write tool (`src/mcp`)** — `createMilestoneHandler(deps, {name, description?})` wrapping `BacklogWriter.createMilestone` (idempotent on a case-insensitive name; reserved-guard `Backburner` only; `invalidateMilestoneCache` after write), registered via `runTool`. Schema `{ name, description? }` — **no `order`**.
 - **The skill** — `.claude/skills/index-codebase/SKILL.md`, house format, encoding the Survey → Forensics → Reconstruct → Mine-gaps → Propose-as-drafts (confirm-before-write) → Hand-off-to-review loop, with baseline = **Done draft**, gap = **To-Do draft**, dedupe against the live board, and drafts emitted in dependency order.
@@ -99,25 +100,26 @@ Following the directives' build slices (`§Build slices`, dep order) **exactly**
 
 - [ ] Run `rg -n "'Draft'|\"Draft\"|status === 'Draft'|folder === 'drafts'" src` and reconcile against the table below (verified at `ec635f8`). For each **production** site, confirm the stated verdict holds before you finish; adjust code so **P1–P5 behavior is preserved**. **Also survey the tests** — `rg -n "status === 'Draft'|status:\s*Draft" src/test` — because every test assertion that encodes the old synthetic-`'Draft'` status goes RED under D2 (e.g. the GAP-2 draft test at `mcpWriteHandlers.test.ts:108`, updated in Step 3d). Enumerate the full RED set here **before** you implement so nothing surfaces only at the Step 7 catch-all. Record the survey in the task's implementation notes (`edit_task`).
 
-| # | Site | What it does | Verdict |
-|---|------|--------------|---------|
-| 1 | `BacklogParser.ts:284` (`getDrafts`) | forces `status:'Draft'` on read | **CHANGE (2c)** — reflect real status; alias legacy `'Draft'` → board default |
-| 2 | `BacklogParser.ts:1008` (`parseStatus`) | maps on-disk `status: Draft` → the `'Draft'` TaskStatus | **KEEP** — this is the backward-compat hook; `getDrafts`/`promoteDraft` alias its output to the board default |
-| 3 | `BacklogWriter.ts:776` (`createDraft`) | hard-writes `status:'Draft'` | **CHANGE (2b)** — write the given status; default `config.default_status ?? 'To Do'` |
-| 4 | `BacklogWriter.ts:401` (`promoteDraft`) | resets `status = default_status` | **CHANGE (2d)** — preserve real status; only reset a legacy/blank `'Draft'` |
-| 5 | `BacklogWriter.ts:449` (`demoteTask`) | sets `status = 'Draft'` | **CHANGE (2e)** — preserve the task's real status (symmetric); folder is the marker |
-| 6 | `TreeNode.svelte:38` `isDraft = status==='Draft' \|\| folder==='drafts'` | provisional node styling | **SAFE — do NOT change** (the `folder` arm covers a To-Do/Done draft; drafts always carry `folder:'drafts'` from `getTasksFromFolder`, BacklogParser.ts:242) |
-| 7 | `TechTreeCanvas.svelte:142` promote-all filter | `status==='Draft' \|\| folder==='drafts'` | **SAFE — do NOT change** (folder arm) |
-| 8 | `DetailPopover.svelte:42` `isDraft` | popover restricts drafts to Promote/edit | **SAFE — do NOT change** (folder arm) |
-| 9 | `handlers.ts:709` `draft: task.folder === 'drafts'` | board-summary `draft` flag | **SAFE** — folder-based |
-| 10 | `TaskDetailProvider.ts:524` `isDraft: task.folder === 'drafts'` | detail panel draft flag | **SAFE** — folder-based |
-| 11 | `statusColors` (`statusToClass`, lowercase-keyed — no literal `'Draft'` in src) | badge color by status | **VERIFY (cosmetic)** — a To-Do/Done draft now renders its real status color in the list/drafts tab (expected under the orthogonal-draft model); tree/popover provisional styling stays folder-driven, so nodes still read as proposed |
-| 12 | Kanban board + `drafts` tab | `getTasks()` never reads `drafts/`; the drafts **tab** is `viewMode==='drafts'`/`activeTab==='drafts'` (tab-driven, not status-driven — `TasksController.ts:241`, `Tasks.svelte`/`TabBar.svelte`) | **SAFE** — a draft in the drafts tab now shows its real status badge (cosmetic, expected) |
-| 13 | Cross-branch loaders | scan `tasks/`, not `drafts/`; sync-on excludes the board ref | **SAFE** — no draft-status dependence |
+| #   | Site                                                                            | What it does                                                                                                                                                                                      | Verdict                                                                                                                                                                                                                                |
+| --- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `BacklogParser.ts:284` (`getDrafts`)                                            | forces `status:'Draft'` on read                                                                                                                                                                   | **CHANGE (2c)** — reflect real status; alias legacy `'Draft'` → board default                                                                                                                                                          |
+| 2   | `BacklogParser.ts:1008` (`parseStatus`)                                         | maps on-disk `status: Draft` → the `'Draft'` TaskStatus                                                                                                                                           | **KEEP** — this is the backward-compat hook; `getDrafts`/`promoteDraft` alias its output to the board default                                                                                                                          |
+| 3   | `BacklogWriter.ts:776` (`createDraft`)                                          | hard-writes `status:'Draft'`                                                                                                                                                                      | **CHANGE (2b)** — write the given status; default `config.default_status ?? 'To Do'`                                                                                                                                                   |
+| 4   | `BacklogWriter.ts:401` (`promoteDraft`)                                         | resets `status = default_status`                                                                                                                                                                  | **CHANGE (2d)** — preserve real status; only reset a legacy/blank `'Draft'`                                                                                                                                                            |
+| 5   | `BacklogWriter.ts:449` (`demoteTask`)                                           | sets `status = 'Draft'`                                                                                                                                                                           | **CHANGE (2e)** — preserve the task's real status (symmetric); folder is the marker                                                                                                                                                    |
+| 6   | `TreeNode.svelte:38` `isDraft = status==='Draft' \|\| folder==='drafts'`        | provisional node styling                                                                                                                                                                          | **SAFE — do NOT change** (the `folder` arm covers a To-Do/Done draft; drafts always carry `folder:'drafts'` from `getTasksFromFolder`, BacklogParser.ts:242)                                                                           |
+| 7   | `TechTreeCanvas.svelte:142` promote-all filter                                  | `status==='Draft' \|\| folder==='drafts'`                                                                                                                                                         | **SAFE — do NOT change** (folder arm)                                                                                                                                                                                                  |
+| 8   | `DetailPopover.svelte:42` `isDraft`                                             | popover restricts drafts to Promote/edit                                                                                                                                                          | **SAFE — do NOT change** (folder arm)                                                                                                                                                                                                  |
+| 9   | `handlers.ts:709` `draft: task.folder === 'drafts'`                             | board-summary `draft` flag                                                                                                                                                                        | **SAFE** — folder-based                                                                                                                                                                                                                |
+| 10  | `TaskDetailProvider.ts:524` `isDraft: task.folder === 'drafts'`                 | detail panel draft flag                                                                                                                                                                           | **SAFE** — folder-based                                                                                                                                                                                                                |
+| 11  | `statusColors` (`statusToClass`, lowercase-keyed — no literal `'Draft'` in src) | badge color by status                                                                                                                                                                             | **VERIFY (cosmetic)** — a To-Do/Done draft now renders its real status color in the list/drafts tab (expected under the orthogonal-draft model); tree/popover provisional styling stays folder-driven, so nodes still read as proposed |
+| 12  | Kanban board + `drafts` tab                                                     | `getTasks()` never reads `drafts/`; the drafts **tab** is `viewMode==='drafts'`/`activeTab==='drafts'` (tab-driven, not status-driven — `TasksController.ts:241`, `Tasks.svelte`/`TabBar.svelte`) | **SAFE** — a draft in the drafts tab now shows its real status badge (cosmetic, expected)                                                                                                                                              |
+| 13  | Cross-branch loaders                                                            | scan `tasks/`, not `drafts/`; sync-on excludes the board ref                                                                                                                                      | **SAFE** — no draft-status dependence                                                                                                                                                                                                  |
 
 > **Backward-compat decision (existing on-disk `status: Draft` drafts) — LOCKED:** treat a parsed/frontmatter `'Draft'` as a **migrate-on-read alias** to the board default (`config.default_status ?? 'To Do'`). `getDrafts` (2c) and `promoteDraft` (2d) both apply the alias; the file is **not** rewritten on read (only on the next promote/edit). `parseStatus` (site 2) is left untouched so the alias input is stable. Net effect: a pre-P6 draft that literally says `status: Draft` behaves exactly as before (renders provisional, promotes to the board default); a new P6 draft with a real status round-trips and promotes to that status.
 
 > **Symmetric new consequence (Done baseline drafts satisfy `status === doneStatus`) — EXPECTED / INTENDED, not a P1–P5 regression:** once a draft carries a real status, a **Done** baseline draft matches the board's done status, so the `status === doneStatus` readers now see a draft as done. No Done drafts existed pre-P6, so none of these predicates ever fired on a draft before — every effect below is intended:
+>
 > - `treeLayout.ts:42` `isDone` (bug-lane ordering, sort at :117-118) — a Done draft sorts as done. Cosmetic; fine.
 > - `treeGate.ts:27` `computeBlockedBy` — a dependent of a Done baseline draft becomes **UNLOCKED** (`dependencySatisfied` keys off `status === doneStatus`). This is **exactly the point**: it is what lets a Done baseline unlock its gap To-Do dependents.
 > - `listMilestonesHandler` `doneCount` (`handlers.ts:650`, `if (t.status === doneStatus) agg.doneCount++`) — a Done draft counts toward its age's done tally. Intended.
@@ -129,22 +131,26 @@ Following the directives' build slices (`§Build slices`, dep order) **exactly**
 - [ ] **3a — `createTaskCore.test.ts` (draft accepts a valid status; the throw is gone).** The file's `makeDeps()` stubs `createDraft`/`createTask`/`updateTask` (createTaskCore.test.ts:7-35). **Replace** the existing `it('draft create with an explicit status throws (drafts are always Draft)', ...)` (lines 153-159) with the inverted contract, and **add** a positive control:
 
 ```ts
-  it('draft create accepts a valid status and passes it to createDraft (P6/D2a)', async () => {
-    const m = makeDeps();
-    await createTaskWithTreeFields(m.deps, { title: 'Baseline', draft: true, status: 'Done' });
-    expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, {
-      title: 'Baseline', description: undefined, status: 'Done',
-    });
-    expect(m.createTask).not.toHaveBeenCalled();
+it('draft create accepts a valid status and passes it to createDraft (P6/D2a)', async () => {
+  const m = makeDeps();
+  await createTaskWithTreeFields(m.deps, { title: 'Baseline', draft: true, status: 'Done' });
+  expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, {
+    title: 'Baseline',
+    description: undefined,
+    status: 'Done',
   });
+  expect(m.createTask).not.toHaveBeenCalled();
+});
 
-  it('draft create with no status passes status: undefined (writer applies the default)', async () => {
-    const m = makeDeps();
-    await createTaskWithTreeFields(m.deps, { title: 'Gap', draft: true });
-    expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, {
-      title: 'Gap', description: undefined, status: undefined,
-    });
+it('draft create with no status passes status: undefined (writer applies the default)', async () => {
+  const m = makeDeps();
+  await createTaskWithTreeFields(m.deps, { title: 'Gap', draft: true });
+  expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, {
+    title: 'Gap',
+    description: undefined,
+    status: undefined,
   });
+});
 ```
 
 > **Also fix the two existing `createDraft` call assertions** that will break once the core passes `status` in the opts object (exact-match `toHaveBeenCalledWith`): line 80 `{ title: 'Spike', description: 'd' }` → `{ title: 'Spike', description: 'd', status: undefined }`; line 127 `{ title: 'Spike caching', description: undefined }` → `{ title: 'Spike caching', description: undefined, status: undefined }`.
@@ -154,48 +160,60 @@ Following the directives' build slices (`§Build slices`, dep order) **exactly**
 `createDraft` describe (BacklogWriter.test.ts:1776) — change the existing default-status assertion and add given-status + config-default cases. The existing test at 1776-1795 calls `writer.createDraft('/fake/backlog')` (no parser) and asserts `frontmatter.status === 'Draft'`; change that assertion to `'To Do'` (default when unspecified + no parser). Add:
 
 ```ts
-    it('writes the given status when specified (P6/D2b — a Done baseline draft)', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      mockReaddirSync([]);
-      await writer.createDraft('/fake/backlog', undefined, { title: 'Baseline', status: 'Done' });
-      const writtenContent = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
-      const match = writtenContent.match(/^---\n([\s\S]*?)\n---/);
-      const frontmatter = yaml.load(match![1]) as Record<string, unknown>;
-      expect(frontmatter.status).toBe('Done');
-    });
+it('writes the given status when specified (P6/D2b — a Done baseline draft)', async () => {
+  vi.mocked(fs.existsSync).mockReturnValue(true);
+  mockReaddirSync([]);
+  await writer.createDraft('/fake/backlog', undefined, { title: 'Baseline', status: 'Done' });
+  const writtenContent = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+  const match = writtenContent.match(/^---\n([\s\S]*?)\n---/);
+  const frontmatter = yaml.load(match![1]) as Record<string, unknown>;
+  expect(frontmatter.status).toBe('Done');
+});
 
-    it('defaults unspecified status to config.default_status via the parser', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      mockReaddirSync([]);
-      vi.spyOn(mockParser, 'getConfig').mockResolvedValue({ default_status: 'Backlog' } as never);
-      await writer.createDraft('/fake/backlog', mockParser, { title: 'X' });
-      const writtenContent = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
-      const match = writtenContent.match(/^---\n([\s\S]*?)\n---/);
-      const frontmatter = yaml.load(match![1]) as Record<string, unknown>;
-      expect(frontmatter.status).toBe('Backlog');
-    });
+it('defaults unspecified status to config.default_status via the parser', async () => {
+  vi.mocked(fs.existsSync).mockReturnValue(true);
+  mockReaddirSync([]);
+  vi.spyOn(mockParser, 'getConfig').mockResolvedValue({ default_status: 'Backlog' } as never);
+  await writer.createDraft('/fake/backlog', mockParser, { title: 'X' });
+  const writtenContent = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+  const match = writtenContent.match(/^---\n([\s\S]*?)\n---/);
+  const frontmatter = yaml.load(match![1]) as Record<string, unknown>;
+  expect(frontmatter.status).toBe('Backlog');
+});
 ```
 
 `promoteDraft` describe (BacklogWriter.test.ts:1660) — the existing "should update status from Draft to To Do" test (1697-1731) feeds a **legacy** `status: Draft` source and asserts written `'To Do'`; that still passes under the alias (leave it, it now pins the backward-compat path). **Add** the status-preserve cases:
 
 ```ts
-    it('preserves a real status on promote (P6/D2d — Done draft → Done task)', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      mockReaddirSync([]);
-      vi.spyOn(mockParser, 'getTask').mockResolvedValue({
-        id: 'DRAFT-1', title: 'Baseline', status: 'Done', folder: 'drafts',
-        filePath: '/fake/backlog/drafts/draft-1 - Baseline.md',
-        description: '', labels: [], assignee: [], dependencies: [],
-        acceptanceCriteria: [], definitionOfDone: [],
-      } as never);
-      vi.spyOn(mockParser, 'getConfig').mockResolvedValue({});
-      vi.mocked(fs.readFileSync).mockReturnValue('---\nid: DRAFT-1\ntitle: Baseline\nstatus: Done\n---\n');
-      await writer.promoteDraft('DRAFT-1', mockParser);
-      const writtenContent = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
-      const frontmatter = yaml.load(writtenContent.match(/^---\n([\s\S]*?)\n---/)![1]) as Record<string, unknown>;
-      expect(frontmatter.status).toBe('Done');
-      expect(frontmatter.id).toBe('TASK-1');
-    });
+it('preserves a real status on promote (P6/D2d — Done draft → Done task)', async () => {
+  vi.mocked(fs.existsSync).mockReturnValue(true);
+  mockReaddirSync([]);
+  vi.spyOn(mockParser, 'getTask').mockResolvedValue({
+    id: 'DRAFT-1',
+    title: 'Baseline',
+    status: 'Done',
+    folder: 'drafts',
+    filePath: '/fake/backlog/drafts/draft-1 - Baseline.md',
+    description: '',
+    labels: [],
+    assignee: [],
+    dependencies: [],
+    acceptanceCriteria: [],
+    definitionOfDone: [],
+  } as never);
+  vi.spyOn(mockParser, 'getConfig').mockResolvedValue({});
+  vi.mocked(fs.readFileSync).mockReturnValue(
+    '---\nid: DRAFT-1\ntitle: Baseline\nstatus: Done\n---\n'
+  );
+  await writer.promoteDraft('DRAFT-1', mockParser);
+  const writtenContent = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
+  const frontmatter = yaml.load(writtenContent.match(/^---\n([\s\S]*?)\n---/)![1]) as Record<
+    string,
+    unknown
+  >;
+  expect(frontmatter.status).toBe('Done');
+  expect(frontmatter.id).toBe('TASK-1');
+});
 ```
 
 `demoteTask` describe (BacklogWriter.test.ts:3221) — the existing test (3222-3235) feeds `status: In Progress` and asserts the written content contains `status: Draft`; **change** that assertion to `expect(writtenContent).toContain('status: In Progress')` and rename it to `'should preserve the task status on demote (P6/D2e)'`.
@@ -203,15 +221,17 @@ Following the directives' build slices (`§Build slices`, dep order) **exactly**
 - [ ] **3c — `BacklogParser.test.ts` (getDrafts reflects the real status).** In the `getDrafts` describe (~2180): the first test (2185-2197) feeds `status: To Do` and asserts `drafts[0].status === 'Draft'` → **change** to `'To Do'`. The "should enforce Draft status on all drafts" test (2199-2214) feeds `status: In Progress` and asserts `'Draft'` → **rename** to `'reflects the real frontmatter status of a draft (P6/D2c)'` and **change** the assertion to `'In Progress'`. Add a legacy-alias case:
 
 ```ts
-      it('aliases a legacy status: Draft on-disk draft to the board default (P6 back-compat)', async () => {
-        vi.mocked(fs.existsSync).mockReturnValue(true);
-        (fs.readdirSync as ReturnType<typeof vi.fn>).mockReturnValue(['draft-1 - Legacy.md']);
-        vi.mocked(fs.readFileSync).mockReturnValue('---\nid: DRAFT-1\ntitle: Legacy\nstatus: Draft\n---\n');
-        const parser = new BacklogParser('/fake/backlog');
-        const drafts = await parser.getDrafts();
-        expect(drafts[0].status).toBe('To Do'); // no config default → 'To Do'
-        expect(drafts[0].folder).toBe('drafts'); // provisional marker intact
-      });
+it('aliases a legacy status: Draft on-disk draft to the board default (P6 back-compat)', async () => {
+  vi.mocked(fs.existsSync).mockReturnValue(true);
+  (fs.readdirSync as ReturnType<typeof vi.fn>).mockReturnValue(['draft-1 - Legacy.md']);
+  vi.mocked(fs.readFileSync).mockReturnValue(
+    '---\nid: DRAFT-1\ntitle: Legacy\nstatus: Draft\n---\n'
+  );
+  const parser = new BacklogParser('/fake/backlog');
+  const drafts = await parser.getDrafts();
+  expect(drafts[0].status).toBe('To Do'); // no config default → 'To Do'
+  expect(drafts[0].folder).toBe('drafts'); // provisional marker intact
+});
 ```
 
 > **Harness note:** these `getDrafts` tests mock `fs` and construct a bare `new BacklogParser('/fake/backlog')` with no config on disk, so `getConfig()` yields no `default_status` and the alias fallback is `'To Do'`. Confirm the existing describe's `fs` mock setup (it already mocks `existsSync`/`readdirSync`/`readFileSync`).
@@ -219,18 +239,24 @@ Following the directives' build slices (`§Build slices`, dep order) **exactly**
 - [ ] **3d — `mcpWriteHandlers.test.ts` (end-to-end Done-draft round-trip; demote-preserve).** Append to the `draft lifecycle` describe (mcpWriteHandlers.test.ts:174) — the **key P6 acceptance test** (real files, tmpdir `deps()` idiom, no `vi.mock('fs')`):
 
 ```ts
-  it('a Done baseline draft round-trips its status and promotes to a Done task (P6/D2)', async () => {
-    const d = deps();
-    const draft = await createTaskHandler(d, { title: 'Auth subsystem', draft: true, status: 'Done', category: 'Platform' });
-    expect(draft.id).toBe('DRAFT-1');
-    const file = fs.readFileSync(
-      path.join(backlogPath, 'drafts', 'draft-1 - Auth-subsystem.md'), 'utf-8'
-    );
-    expect(file).toMatch(/^status:\s*Done/m); // NOT a synthetic 'Draft'
-    const promoted = await promoteDraftHandler(d, { taskId: 'DRAFT-1' });
-    expect(promoted.id).toMatch(/^TASK-\d+$/);
-    expect(promoted.status).toBe('Done'); // preserved on promote
+it('a Done baseline draft round-trips its status and promotes to a Done task (P6/D2)', async () => {
+  const d = deps();
+  const draft = await createTaskHandler(d, {
+    title: 'Auth subsystem',
+    draft: true,
+    status: 'Done',
+    category: 'Platform',
   });
+  expect(draft.id).toBe('DRAFT-1');
+  const file = fs.readFileSync(
+    path.join(backlogPath, 'drafts', 'draft-1 - Auth-subsystem.md'),
+    'utf-8'
+  );
+  expect(file).toMatch(/^status:\s*Done/m); // NOT a synthetic 'Draft'
+  const promoted = await promoteDraftHandler(d, { taskId: 'DRAFT-1' });
+  expect(promoted.id).toMatch(/^TASK-\d+$/);
+  expect(promoted.status).toBe('Done'); // preserved on promote
+});
 ```
 
 And **update** the existing `demotes a task to a draft` test (mcpWriteHandlers.test.ts:183-188): it creates a task with no status (→ default `'To Do'`) and asserts `demoted.status === 'Draft'`; under demote-preserve the demoted draft keeps `'To Do'` → change the assertion to `expect(demoted.status).toBe('To Do')`. (The `promotes a draft to a task` test at 175-181 creates a no-status draft → default `'To Do'` → promote preserves `'To Do'`, so it **passes unchanged** — leave it.)
@@ -240,15 +266,15 @@ Also **update** the existing `draft create writes priority + milestone into the 
 - [ ] **3e — `treeGate.test.ts` (positive control: a Done baseline draft unlocks its dependent — EXPECTED under the orthogonal-draft model).** Append to the `computeBlockedBy / isLocked` describe (treeGate.test.ts:51; use the file's `task()`/`byId()` helpers at :12-28). This is a **positive control** — it is green **before and after** the model change (`computeBlockedBy` is unchanged) and documents/guards the intended consequence that a Done draft (which `getDrafts` now surfaces with its real `Done` status) satisfies a dependent's gate:
 
 ```ts
-  it('a Done baseline draft satisfies a dependent (P6/D2 — Done draft unlocks its gap dependent)', () => {
-    const dependent = task({ id: 'TASK-2', dependencies: ['DRAFT-1'] });
-    const map = byId([
-      dependent,
-      task({ id: 'DRAFT-1', status: 'Done', folder: 'drafts' }), // a Done baseline draft
-    ]);
-    expect(computeBlockedBy(dependent, map, done)).toEqual([]); // unlocked
-    expect(isLocked(dependent, map, done)).toBe(false);
-  });
+it('a Done baseline draft satisfies a dependent (P6/D2 — Done draft unlocks its gap dependent)', () => {
+  const dependent = task({ id: 'TASK-2', dependencies: ['DRAFT-1'] });
+  const map = byId([
+    dependent,
+    task({ id: 'DRAFT-1', status: 'Done', folder: 'drafts' }), // a Done baseline draft
+  ]);
+  expect(computeBlockedBy(dependent, map, done)).toEqual([]); // unlocked
+  expect(isLocked(dependent, map, done)).toBe(false);
+});
 ```
 
 > The `listMilestonesHandler` `doneCount` facet of the same consequence (a Done draft counts toward its age's done tally, via the identical `status === doneStatus` predicate at handlers.ts:650) is already proven by the Step 3d Done-draft round-trip's `status: Done` file assertion — no separate handler test is needed here.
@@ -256,7 +282,7 @@ Also **update** the existing `draft create writes priority + milestone into the 
 ### Step 4: Run the tests to verify they fail
 
 - [ ] Run: `bun run test -- createTaskCore BacklogWriter BacklogParser mcpWriteHandlers`
-  Expected: FAIL — the throw-test inversion, createDraft given/default status, promoteDraft/demoteTask preserve, getDrafts real-status, the updated GAP-2 draft test (now asserting `status: To Do`), and the Done-draft round-trip all fail before the implementation lands. (Positive controls: the no-status draft still routes with `status: undefined`; the legacy `'Draft'` alias still resolves to the board default; the Step 3e `treeGate` Done-draft-unlock test is green throughout.)
+      Expected: FAIL — the throw-test inversion, createDraft given/default status, promoteDraft/demoteTask preserve, getDrafts real-status, the updated GAP-2 draft test (now asserting `status: To Do`), and the Done-draft round-trip all fail before the implementation lands. (Positive controls: the no-status draft still routes with `status: undefined`; the legacy `'Draft'` alias still resolves to the board default; the Step 3e `treeGate` Done-draft-unlock test is green throughout.)
 
 ### Step 5: Implement the model change
 
@@ -265,9 +291,9 @@ Also **update** the existing `draft create writes priority + milestone into the 
 Delete (createTaskCore.ts:85-87):
 
 ```ts
-  if (args.draft && args.status !== undefined) {
-    throw new Error('drafts always have status Draft; do not set status on a draft.');
-  }
+if (args.draft && args.status !== undefined) {
+  throw new Error('drafts always have status Draft; do not set status on a draft.');
+}
 ```
 
 Replace the draft branch (createTaskCore.ts:90-94):
@@ -321,38 +347,38 @@ to (use the parser to resolve the board default):
 Then resolve the status just before building `frontmatter` and use it in place of the hard `'Draft'` (BacklogWriter.ts:773-782). Replace:
 
 ```ts
-    const today = nowTimestamp();
-    const frontmatter: FrontmatterData = {
-      id: draftId,
-      title,
-      status: 'Draft',
-      labels: [],
-      assignee: [],
-      dependencies: [],
-      created_date: today,
-      updated_date: today,
-    };
+const today = nowTimestamp();
+const frontmatter: FrontmatterData = {
+  id: draftId,
+  title,
+  status: 'Draft',
+  labels: [],
+  assignee: [],
+  dependencies: [],
+  created_date: today,
+  updated_date: today,
+};
 ```
 
 with:
 
 ```ts
-    // P6/D2b: a draft carries a real status (the drafts/ folder is the provisional marker,
-    // not a synthetic 'Draft'). Default to the board default when unspecified so authoring a
-    // draft without a status, then promoting, is byte-identical to the pre-P6 flow.
-    const config = parser ? await parser.getConfig() : undefined;
-    const status = opts?.status?.trim() || config?.default_status || 'To Do';
-    const today = nowTimestamp();
-    const frontmatter: FrontmatterData = {
-      id: draftId,
-      title,
-      status,
-      labels: [],
-      assignee: [],
-      dependencies: [],
-      created_date: today,
-      updated_date: today,
-    };
+// P6/D2b: a draft carries a real status (the drafts/ folder is the provisional marker,
+// not a synthetic 'Draft'). Default to the board default when unspecified so authoring a
+// draft without a status, then promoting, is byte-identical to the pre-P6 flow.
+const config = parser ? await parser.getConfig() : undefined;
+const status = opts?.status?.trim() || config?.default_status || 'To Do';
+const today = nowTimestamp();
+const frontmatter: FrontmatterData = {
+  id: draftId,
+  title,
+  status,
+  labels: [],
+  assignee: [],
+  dependencies: [],
+  created_date: today,
+  updated_date: today,
+};
 ```
 
 > `parser` was previously the unused `_parser`; it is now read for `getConfig()`. All production/test callers pass either `deps.parser` (createTaskCore) or nothing (the four `BacklogWriter.test.ts` direct calls) — the `parser ? … : undefined` guard keeps the no-parser callers on the `'To Do'` fallback.
@@ -386,23 +412,23 @@ with:
 - [ ] **5d — `BacklogWriter.promoteDraft` (preserve status).** Replace (BacklogWriter.ts:400-402):
 
 ```ts
-    frontmatter.id = newTaskId;
-    frontmatter.status = config.default_status || 'To Do';
-    frontmatter.updated_date = nowTimestamp();
+frontmatter.id = newTaskId;
+frontmatter.status = config.default_status || 'To Do';
+frontmatter.updated_date = nowTimestamp();
 ```
 
 with:
 
 ```ts
-    frontmatter.id = newTaskId;
-    // P6/D2d: preserve the draft's real status on promote — a Done draft promotes to a Done
-    // task (drafts are orthogonal to status). Only a legacy/blank synthetic 'Draft' (which has
-    // no real status to preserve) is reset to the board default.
-    const rawStatus = String(frontmatter.status ?? '').trim();
-    if (!rawStatus || rawStatus.toLowerCase() === 'draft') {
-      frontmatter.status = config.default_status || 'To Do';
-    }
-    frontmatter.updated_date = nowTimestamp();
+frontmatter.id = newTaskId;
+// P6/D2d: preserve the draft's real status on promote — a Done draft promotes to a Done
+// task (drafts are orthogonal to status). Only a legacy/blank synthetic 'Draft' (which has
+// no real status to preserve) is reset to the board default.
+const rawStatus = String(frontmatter.status ?? '').trim();
+if (!rawStatus || rawStatus.toLowerCase() === 'draft') {
+  frontmatter.status = config.default_status || 'To Do';
+}
+frontmatter.updated_date = nowTimestamp();
 ```
 
 > `frontmatter.status` here is the **raw** value from `extractFrontmatter` (the file on disk), not `parseStatus`'s normalization — so a P6 draft's real status (`'Done'`, `'To Do'`, …) is preserved verbatim, and only the literal legacy `Draft` string is reset.
@@ -410,19 +436,19 @@ with:
 - [ ] **5e — `BacklogWriter.demoteTask` (preserve status, symmetric).** Replace (BacklogWriter.ts:448-450):
 
 ```ts
-    frontmatter.id = newDraftId;
-    frontmatter.status = 'Draft';
-    frontmatter.updated_date = nowTimestamp();
+frontmatter.id = newDraftId;
+frontmatter.status = 'Draft';
+frontmatter.updated_date = nowTimestamp();
 ```
 
 with:
 
 ```ts
-    frontmatter.id = newDraftId;
-    // P6/D2e: preserve the task's real status on demote (symmetric with promoteDraft) — the
-    // drafts/ folder is the provisional marker, so demoting no longer clobbers status to a
-    // synthetic 'Draft' (which would silently lose e.g. a Done task's status).
-    frontmatter.updated_date = nowTimestamp();
+frontmatter.id = newDraftId;
+// P6/D2e: preserve the task's real status on demote (symmetric with promoteDraft) — the
+// drafts/ folder is the provisional marker, so demoting no longer clobbers status to a
+// synthetic 'Draft' (which would silently lose e.g. a Done task's status).
+frontmatter.updated_date = nowTimestamp();
 ```
 
 ### Step 6: Run the tests to green (targeted)
@@ -493,7 +519,10 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 describe('createMilestoneHandler', () => {
   it('creates the first milestone as m-0, writes the file, and list_milestones reflects it', async () => {
     const d = deps();
-    const res = await createMilestoneHandler(d, { name: 'Foundation', description: 'The baseline age.' });
+    const res = await createMilestoneHandler(d, {
+      name: 'Foundation',
+      description: 'The baseline age.',
+    });
     expect(res).toEqual({ created: true, id: 'm-0', milestone: 'Foundation' });
     const files = fs.readdirSync(path.join(backlogPath, 'milestones'));
     expect(files.some((f) => /^m-0 - Foundation\.md$/.test(f))).toBe(true);
@@ -518,14 +547,20 @@ describe('createMilestoneHandler', () => {
     expect(a.id).toBe('m-0');
     expect(b.id).toBe('m-1');
     const bands = await listMilestonesHandler(d);
-    const order = bands.filter((x) => x.name === 'Alpha' || x.name === 'Beta').sort((x, y) => x.order - y.order);
+    const order = bands
+      .filter((x) => x.name === 'Alpha' || x.name === 'Beta')
+      .sort((x, y) => x.order - y.order);
     expect(order.map((x) => x.name)).toEqual(['Alpha', 'Beta']); // Alpha (m-0) left of Beta (m-1)
   });
 
   it('rejects the reserved Backburner band (case-insensitive) — D6', async () => {
     const d = deps();
-    await expect(createMilestoneHandler(d, { name: 'Backburner' })).rejects.toThrow(/reserved|Backburner/i);
-    await expect(createMilestoneHandler(d, { name: 'backburner' })).rejects.toThrow(/reserved|Backburner/i);
+    await expect(createMilestoneHandler(d, { name: 'Backburner' })).rejects.toThrow(
+      /reserved|Backburner/i
+    );
+    await expect(createMilestoneHandler(d, { name: 'backburner' })).rejects.toThrow(
+      /reserved|Backburner/i
+    );
   });
 
   it('rejects a blank name', async () => {
@@ -535,7 +570,9 @@ describe('createMilestoneHandler', () => {
   it('passes the description through to the milestone file', async () => {
     const d = deps();
     await createMilestoneHandler(d, { name: 'Gamma', description: 'Third age notes.' });
-    const file = fs.readdirSync(path.join(backlogPath, 'milestones')).find((f) => /^m-0 - Gamma/.test(f))!;
+    const file = fs
+      .readdirSync(path.join(backlogPath, 'milestones'))
+      .find((f) => /^m-0 - Gamma/.test(f))!;
     const content = fs.readFileSync(path.join(backlogPath, 'milestones', file), 'utf-8');
     expect(content).toContain('Third age notes.');
   });
@@ -545,7 +582,7 @@ describe('createMilestoneHandler', () => {
 ### Step 2: Run the tests to verify they fail
 
 - [ ] Run: `bun run test -- mcpWriteHandlers`
-  Expected: FAIL — `createMilestoneHandler` does not exist.
+      Expected: FAIL — `createMilestoneHandler` does not exist.
 
 ### Step 3: Add `createMilestoneHandler` to `handlers.ts`
 
@@ -597,19 +634,19 @@ export async function createMilestoneHandler(
 - [ ] Add `createMilestoneHandler` to the `./handlers` import block (server.ts:23-44 — insert alongside `createCategoryHandler`). Then register the tool immediately after the `create_category` block (server.ts:223-234), wrapped in `runTool`:
 
 ```ts
-  server.registerTool(
-    'create_milestone',
-    {
-      title: 'Create milestone',
-      description:
-        'Add a new milestone band (age) to the board. Milestones are ordered by CREATION order (oldest → newest, left → right on the tech-tree), so create them in chronological order. Idempotent: an existing milestone (case-insensitive name) returns { created:false, id, milestone } rather than erroring. The reserved virtual band "Backburner" (the rightmost band for tasks with no milestone) is refused. See list_milestones for the current bands.',
-      inputSchema: {
-        name: z.string().describe('The milestone/age name, e.g. "v1.0" or "Foundation".'),
-        description: z.string().optional().describe('Optional milestone description.'),
-      },
+server.registerTool(
+  'create_milestone',
+  {
+    title: 'Create milestone',
+    description:
+      'Add a new milestone band (age) to the board. Milestones are ordered by CREATION order (oldest → newest, left → right on the tech-tree), so create them in chronological order. Idempotent: an existing milestone (case-insensitive name) returns { created:false, id, milestone } rather than erroring. The reserved virtual band "Backburner" (the rightmost band for tasks with no milestone) is refused. See list_milestones for the current bands.',
+    inputSchema: {
+      name: z.string().describe('The milestone/age name, e.g. "v1.0" or "Foundation".'),
+      description: z.string().optional().describe('Optional milestone description.'),
     },
-    async (args) => runTool(() => createMilestoneHandler(deps, args))
-  );
+  },
+  async (args) => runTool(() => createMilestoneHandler(deps, args))
+);
 ```
 
 ### Step 5: Build + tests + typecheck
@@ -655,9 +692,9 @@ Co-Authored-By: <DeepSeek model line per AGENTS.md>"
 
 ### Step 1: Create the skill (byte-copy the content below)
 
-- [ ] Create `.claude/skills/index-codebase/SKILL.md` with exactly this content (frontmatter matches the house YAML-fence format of `.claude/skills/create-task/SKILL.md:1-5`). The written file's **first** line must be `---` and its **last** line the final rule-of-thumb; do **NOT** copy the plan's surrounding fenced-code wrapper (the `` ```markdown `` opening line and its matching closing fence below) — that fence is only the plan's delimiter, not part of the skill file:
+- [ ] Create `.claude/skills/index-codebase/SKILL.md` with exactly this content (frontmatter matches the house YAML-fence format of `.claude/skills/create-task/SKILL.md:1-5`). The written file's **first** line must be `---` and its **last** line the final rule-of-thumb; do **NOT** copy the plan's surrounding fenced-code wrapper (the ` ```markdown ` opening line and its matching closing fence below) — that fence is only the plan's delimiter, not part of the skill file:
 
-````markdown
+```markdown
 ---
 name: index-codebase
 description: Bootstrap an initial Taskwright tech-tree over an EXISTING repo. Reads git history, module structure, and docs ("forensics") to reconstruct the already-built foundation as Done baseline drafts and mine visible gaps (TODO/FIXME) as To-Do drafts, then applies everything as draft nodes the human reviews and promotes on the board. Use when the user says /index-codebase, or asks to "bootstrap the tree", "index the codebase", "reconstruct the board from the repo", or "populate the tech-tree from history". Re-runnable and deduped against the live board; never promotes for you.
@@ -680,7 +717,7 @@ proposal from the repo, not bypassing review.
 - Best on a **fresh** Taskwright mount over a repo with real history — an empty (or nearly
   empty) board that needs a foundation for new work to attach to.
 - Not for authoring a single feature's tasks from a brief — that is `/create-task`. This skill
-  reconstructs the *existing* structure; it does not decompose new scope.
+  reconstructs the _existing_ structure; it does not decompose new scope.
 
 ## Subscription safety
 
@@ -723,7 +760,7 @@ subsystems, releases, and decisions, not per-file detail.
    is clearly a defect.
 
 5. **Propose as drafts (confirm before writing)** — first print a **reconstruction summary**:
-   *N lanes (X new), M ages, K Done baseline drafts, J To-Do gap drafts, and the key edges.*
+   _N lanes (X new), M ages, K Done baseline drafts, J To-Do gap drafts, and the key edges._
    **Wait for the user's confirmation** before any write — lanes (`create_category`) and ages
    (`create_milestone`) land in config/on-disk immediately, and Done baseline drafts touch the
    board. On confirmation, write in this order so every reference resolves:
@@ -770,7 +807,7 @@ before each write, dedupe against the live board:
 - Reuse a lane before creating one; a new lane is a decision to surface, not assume.
 - Confirm the reconstruction summary before writing; never promote — the human does.
 - Subscription-safe: forensics via Bash/Read/Grep/Glob, writes via MCP, never `claude -p`.
-````
+```
 
 ### Step 2: Sanity-check the skill loads
 
@@ -819,7 +856,7 @@ Co-Authored-By: <DeepSeek model line per AGENTS.md>"
 ```markdown
 - **Tech-tree codebase-indexing skill + status-carrying drafts (P6)** ✅: bootstraps an initial
   tree over an **existing** repo. Foundation fix — **status-carrying drafts**: a draft is a
-  provisional/discardable *overlay* orthogonal to completion status (the marker is
+  provisional/discardable _overlay_ orthogonal to completion status (the marker is
   `folder==='drafts'`, never a synthetic `status: Draft`), so a draft can be **Done**.
   `create_task {draft:true}` now accepts a valid `status` (`src/core/createTaskCore.ts`; an unknown
   status is still rejected by the MCP handler), `BacklogWriter.createDraft` writes the given status
@@ -859,6 +896,7 @@ bun run build && bun run test && bun run lint && bun run typecheck && bun run te
 ```
 
 Expected: PASS. Record the exact new totals against the branch-base baselines captured in Task 1 Step 1:
+
 - **Unit:** baseline + the new/updated cases (`createTaskCore`, `BacklogWriter`, `BacklogParser`, `mcpWriteHandlers`).
 - **Playwright + CDP:** baseline (no webview change; the draft-model regression was already proven at Task 1 Step 8 — re-run here as the close gate).
 - Lint zero-warning; typecheck clean. (Windows: the ~22 known upstream POSIX-path unit failures are pre-existing and unrelated — do not "fix".)

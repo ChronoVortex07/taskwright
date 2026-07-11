@@ -2,9 +2,17 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { launchVsCode, closeVsCode, type VsCodeInstance } from './lib/vscode-launcher';
-import { createTestWorkspace, resetTestWorkspace, cleanupTestWorkspace } from './lib/test-workspace';
+import {
+  createTestWorkspace,
+  resetTestWorkspace,
+  cleanupTestWorkspace,
+} from './lib/test-workspace';
 import { waitForExtensionReady, waitForWebviewContent } from './lib/wait-helpers';
-import { clickInWebview, elementExistsInWebview, clearWebviewSessionCache } from './lib/webview-helpers';
+import {
+  clickInWebview,
+  elementExistsInWebview,
+  clearWebviewSessionCache,
+} from './lib/webview-helpers';
 import { dismissNotifications, resetEditorState, executeCommand, sleep } from './lib/cdp-helpers';
 
 const CDP_PORT = 9344;
@@ -93,8 +101,12 @@ describe('Tree promote-all cross-view (CDP)', () => {
     // the initial tree-mode load unions drafts. (getDrafts() re-reads the folder each call.)
     await executeCommand(instance.cdp, 'taskwright.refresh');
     await sleep(750);
-    expect(await elementExistsInWebview(instance.cdp, 'tasks', '[data-testid="tree-node-DRAFT-1"]')).toBe(true);
-    expect(await elementExistsInWebview(instance.cdp, 'tasks', '[data-testid="tree-node-DRAFT-2"]')).toBe(true);
+    expect(
+      await elementExistsInWebview(instance.cdp, 'tasks', '[data-testid="tree-node-DRAFT-1"]')
+    ).toBe(true);
+    expect(
+      await elementExistsInWebview(instance.cdp, 'tasks', '[data-testid="tree-node-DRAFT-2"]')
+    ).toBe(true);
 
     // Promote all proposed → ONE promoteDrafts message → the bulk core runs cross-view.
     const clicked = await clickInWebview(instance.cdp, 'tasks', '[data-testid="tree-promote-all"]');

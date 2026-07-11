@@ -130,10 +130,10 @@
       <span class="tp-chip">{age}</span>
     </div>
     <div class="tp-head-actions">
-      <button class="tp-icon" data-testid="tp-expand" title="Open full details" onclick={() => onExpand(task.id)}>
+      <button class="tp-icon" data-testid="tp-expand" title="Open full details" aria-label="Open full details" onclick={() => onExpand(task.id)}>
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg>
       </button>
-      <button class="tp-icon" data-testid="tp-close" title="Close" onclick={onClose}>
+      <button class="tp-icon" data-testid="tp-close" title="Close" aria-label="Close" onclick={onClose}>
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
       </button>
     </div>

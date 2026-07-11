@@ -5,10 +5,10 @@ Taskwright ships its four workflow skills — `create-task`, `execute-task`, `in
 (`.claude/skills/`, bundled to `dist/skills/` at build time). Both agents get the same full,
 progressively-disclosed skill packages — nothing is reduced to a flattened prompt:
 
-| Agent          | Discovery surface                    | Installed by                                                    |
-| -------------- | ------------------------------------ | --------------------------------------------------------------- |
-| Claude Code    | `<repo>/.claude/skills/<name>/`      | `Taskwright: Set Up Claude Code Integration` (`installTaskwrightSkills`) |
-| Codex (& other AGENTS.md agents) | `<repo>/.agents/skills/<name>/` | `Taskwright: Set Up Codex Integration` (`installAgentSkills`) |
+| Agent                            | Discovery surface               | Installed by                                                             |
+| -------------------------------- | ------------------------------- | ------------------------------------------------------------------------ |
+| Claude Code                      | `<repo>/.claude/skills/<name>/` | `Taskwright: Set Up Claude Code Integration` (`installTaskwrightSkills`) |
+| Codex (& other AGENTS.md agents) | `<repo>/.agents/skills/<name>/` | `Taskwright: Set Up Codex Integration` (`installAgentSkills`)            |
 
 `.agents/skills/` is Codex's canonical, vendor-neutral discovery surface. Codex scans it (repo root,
 cwd, and `$HOME/.agents/skills`), reads each skill's `name` + `description` up front, and loads the

@@ -105,7 +105,10 @@ const stubDeps = (task?: { id: string; title: string }) => ({
 
 describe('bootstrapTaskWorktree', () => {
   it('creates .worktrees/<branch>, seeds the active task inside it, and returns the contract shape', async () => {
-    const result = await bootstrapTaskWorktree(stubDeps({ id: 'TASK-7', title: 'Add login' }), 'TASK-7');
+    const result = await bootstrapTaskWorktree(
+      stubDeps({ id: 'TASK-7', title: 'Add login' }),
+      'TASK-7'
+    );
 
     // Deterministic branch + repo-root-relative path (locked contract).
     expect(result.branch).toBe('task-7-add-login');
@@ -492,17 +495,16 @@ to:
 insert:
 
 ```ts
-
-  server.registerTool(
-    'start_task',
-    {
-      title: 'Start task',
-      description:
-        "Create (or reuse) the task's isolated .worktrees/<branch> worktree and seed its active task, from any primary-rooted session — the same bootstrap the board Dispatch action performs. This server cannot re-root itself mid-session, so it returns a relaunchHint: open a NEW session with its working directory set to the returned worktreeAbs, then run /execute-task there. Idempotent — an existing worktree is reused (created:false). Returns { created, taskId, branch, worktree, worktreeAbs, relaunchHint }.",
-      inputSchema: { taskId: z.string().describe('Task ID to start, e.g. TASK-7.') },
-    },
-    async (args) => runTool(() => startTaskHandler(deps, args))
-  );
+server.registerTool(
+  'start_task',
+  {
+    title: 'Start task',
+    description:
+      "Create (or reuse) the task's isolated .worktrees/<branch> worktree and seed its active task, from any primary-rooted session — the same bootstrap the board Dispatch action performs. This server cannot re-root itself mid-session, so it returns a relaunchHint: open a NEW session with its working directory set to the returned worktreeAbs, then run /execute-task there. Idempotent — an existing worktree is reused (created:false). Returns { created, taskId, branch, worktree, worktreeAbs, relaunchHint }.",
+    inputSchema: { taskId: z.string().describe('Task ID to start, e.g. TASK-7.') },
+  },
+  async (args) => runTool(() => startTaskHandler(deps, args))
+);
 ```
 
 > `runTool` (`server.ts:56`) wraps a throw (unknown id / non-git) into the uniform `{ error: { message } }` result with `isError:true`. The registration itself is not unit-tested (primary-build caveat); it is covered by typecheck + the handler unit test, which exercises the same `startTaskHandler(deps, args)` call the registration makes.

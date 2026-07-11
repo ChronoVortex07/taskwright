@@ -171,9 +171,15 @@
       class="column-header"
       data-status={status}
       onclick={handleHeaderClick}
-      onkeydown={(e) => e.key === 'Enter' && handleHeaderClick(e as unknown as MouseEvent)}
+      onkeydown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleHeaderClick(e as unknown as MouseEvent);
+        }
+      }}
       role="button"
       tabindex="0"
+      aria-expanded={!collapsed}
     >
       <span class="collapse-icon">{collapsed ? '▸' : '▾'}</span>
       <span class="column-title">{label}</span>

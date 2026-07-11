@@ -2,7 +2,11 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { launchVsCode, closeVsCode, type VsCodeInstance } from './lib/vscode-launcher';
-import { createTestWorkspace, resetTestWorkspace, cleanupTestWorkspace } from './lib/test-workspace';
+import {
+  createTestWorkspace,
+  resetTestWorkspace,
+  cleanupTestWorkspace,
+} from './lib/test-workspace';
 import { waitForExtensionReady, waitForWebviewContent } from './lib/wait-helpers';
 import {
   clickInWebview,
@@ -74,7 +78,8 @@ async function waitForTaskFile(
     for (const f of fs.existsSync(dir) ? fs.readdirSync(dir) : []) {
       if (!f.endsWith('.md')) continue;
       const content = fs.readFileSync(path.join(dir, f), 'utf-8');
-      if (new RegExp(`^id:\\s*${taskId}\\b`, 'm').test(content) && predicate(content)) return content;
+      if (new RegExp(`^id:\\s*${taskId}\\b`, 'm').test(content) && predicate(content))
+        return content;
     }
     await sleep(250);
   }

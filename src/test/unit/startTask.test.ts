@@ -33,7 +33,10 @@ const stubDeps = (task?: { id: string; title: string }) => ({
 
 describe('bootstrapTaskWorktree', () => {
   it('creates .worktrees/<branch>, seeds the active task inside it, and returns the contract shape', async () => {
-    const result = await bootstrapTaskWorktree(stubDeps({ id: 'TASK-7', title: 'Add login' }), 'TASK-7');
+    const result = await bootstrapTaskWorktree(
+      stubDeps({ id: 'TASK-7', title: 'Add login' }),
+      'TASK-7'
+    );
 
     // Deterministic branch + repo-root-relative path (locked contract).
     expect(result.branch).toBe('task-7-add-login');

@@ -51,9 +51,12 @@ describe('planMigrationSteps (S0–S6 classifier)', () => {
   });
 
   it('S4 v1 marker: cleaned as the last step of any migration', () => {
-    expect(
-      planMigrationSteps(facts({ hasStateDirs: true, hasMaterializedMarker: true }))
-    ).toEqual(['seed-fresh', 'add-worktree', 'verified-move', 'clean-marker']);
+    expect(planMigrationSteps(facts({ hasStateDirs: true, hasMaterializedMarker: true }))).toEqual([
+      'seed-fresh',
+      'add-worktree',
+      'verified-move',
+      'clean-marker',
+    ]);
   });
 
   it('S6 already migrated: noop (plus marker cleanup when one lingers)', () => {

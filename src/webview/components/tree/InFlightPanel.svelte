@@ -28,6 +28,8 @@
     class="inflight-toggle"
     data-testid="inflight-toggle"
     title={collapsed ? 'Show in-flight' : 'Hide in-flight'}
+    aria-label={collapsed ? 'Show in-flight' : 'Hide in-flight'}
+    aria-expanded={!collapsed}
     onclick={() => (collapsed = !collapsed)}
   >
     {#if collapsed}

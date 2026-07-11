@@ -91,6 +91,7 @@
   <textarea
     class="editable-title"
     data-testid="title-input"
+    aria-label="Task title"
     bind:value={titleValue}
     bind:this={titleEl}
     disabled={isReadOnly}
@@ -104,6 +105,7 @@
       class="dropdown-select status-select status-{statusClass}"
       style={statusInlineStyle}
       data-testid="status-select"
+      aria-label="Status"
       value={status}
       disabled={isReadOnly}
       onchange={handleStatusChange}
@@ -119,6 +121,7 @@
       <select
         class="dropdown-select priority-select {priorityClass}"
         data-testid="priority-select"
+        aria-label="Priority"
         value={priority || ''}
         disabled={isReadOnly}
         onchange={handlePriorityChange}

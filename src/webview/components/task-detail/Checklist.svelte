@@ -133,15 +133,17 @@
             class="checklist-checkbox"
             onclick={() => !isReadOnly && onToggle(listType, item.id)}
             aria-pressed={item.checked}
+            aria-label={'Toggle: ' + item.text}
             disabled={isReadOnly}
             data-testid="{listType}-toggle-{item.id}"
           >
-            <span class="checkbox">{item.checked ? '☑' : '☐'}</span>
+            <span class="checkbox" aria-hidden="true">{item.checked ? '☑' : '☐'}</span>
           </button>
           {#if editingItemId === item.id}
             <input
               class="checklist-item-input"
               type="text"
+              aria-label="Edit checklist item"
               bind:value={editingText}
               onblur={saveEdit}
               onkeydown={handleEditKeydown}
@@ -172,6 +174,7 @@
               onclick={() => deleteItem(item.id)}
               data-testid="{listType}-delete-{item.id}"
               title="Remove item"
+              aria-label={'Remove: ' + item.text}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
@@ -188,6 +191,7 @@
         type="text"
         class="checklist-add-input"
         placeholder="Add item..."
+        aria-label="Add checklist item"
         bind:value={newItemText}
         onkeydown={handleAddKeydown}
         data-testid="{listType}-add-input"

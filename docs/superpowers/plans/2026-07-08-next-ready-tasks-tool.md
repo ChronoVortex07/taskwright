@@ -35,7 +35,7 @@ _Every task's requirements implicitly include this section._
 ### Design notes bound before coding (read once)
 
 1. **"Every dependency Done" == "not locked".** The board derivation already computes `blockedBy` (deps not at the Done status and not in completed/archive) and `locked = blockedBy.length > 0` per task (`src/core/treeGate.ts` `computeBlockedBy`, surfaced via `src/core/treeDerived.ts` `board.states`). So the READY conditions "every dependency is Done" and "not locked/blocked" are the **same** check — implement both via `!derived.locked`. No re-derivation.
-2. **"Live claim".** A task is claimed by a *live* session when `task.claimedBy` is set AND the claim is **not stale**. Reuse `isClaimStale(claimedAt, stalenessMs, now)` (`src/core/claims.ts`). Match `resolveClaimAction` semantics exactly (`src/core/claimResolution.ts`): when `stalenessMs <= 0` (staleness disabled) every claim is treated as **live** (never stale). Staleness window = `stalenessMsFromHours(DEFAULT_CLAIM_STALENESS_HOURS)`, `DEFAULT_CLAIM_STALENESS_HOURS = 12` (mirrors the `taskwright.claimStalenessHours` setting default in `package.json`; the vscode-free MCP server cannot read VS Code settings, so the pure-core constant is the fallback).
+2. **"Live claim".** A task is claimed by a _live_ session when `task.claimedBy` is set AND the claim is **not stale**. Reuse `isClaimStale(claimedAt, stalenessMs, now)` (`src/core/claims.ts`). Match `resolveClaimAction` semantics exactly (`src/core/claimResolution.ts`): when `stalenessMs <= 0` (staleness disabled) every claim is treated as **live** (never stale). Staleness window = `stalenessMsFromHours(DEFAULT_CLAIM_STALENESS_HOURS)`, `DEFAULT_CLAIM_STALENESS_HOURS = 12` (mirrors the `taskwright.claimStalenessHours` setting default in `package.json`; the vscode-free MCP server cannot read VS Code settings, so the pure-core constant is the fallback).
 3. **"In the merge queue".** The shared queue lives at `<commonDir>/taskwright/merge-queue.json` (`src/core/mergeQueue.ts` `mergeQueuePath`); each `QueueEntry` has `active`/`activeAt` (True while the head performs its merge). A task with **any** queue entry is mid-integration (its head entry flips `active` during the merge), so the handler excludes **every** queued task id — `queue.entries.map(e => e.taskId)`. The handler reads `commonDir` via `git rev-parse --git-common-dir` and is **fail-open**: no git / no queue file ⇒ nothing to exclude (mirrors `getActiveTask`'s queue-position lookup).
 4. **Universe = active tasks only.** The handler passes `parser.getTasks()` (folder `tasks`) — **not** drafts. A draft is a proposal that must be promoted before it can be dispatched, so drafts are never "ready". This is the deliberate difference from `get_board` (which unions tasks + drafts). The pure core additionally guards `folder === 'completed' | 'archive'` defensively.
 5. **Sort.** Primary key: priority via `priorityRank(task.priority, priorities)` ascending (rank 0 = highest; unknown/absent sorts last — `src/core/priorityOrder.ts`). Secondary: `ordinal` ascending, tasks with no ordinal last. Final stable tiebreak: `id.localeCompare`.
@@ -144,9 +144,9 @@ describe('selectReadyTasks', () => {
     });
     const tasks = [live, stale];
     // Live claim hides TASK-1; a stale claim is abandoned/reclaimable ⇒ TASK-2 stays.
-    expect(selectReadyTasks(tasks, boardOf(tasks), opts({ now: now.getTime() })).map((t) => t.id)).toEqual(
-      ['TASK-2']
-    );
+    expect(
+      selectReadyTasks(tasks, boardOf(tasks), opts({ now: now.getTime() })).map((t) => t.id)
+    ).toEqual(['TASK-2']);
   });
 
   it('treats every claim as live when staleness is disabled (stalenessMs <= 0)', () => {
@@ -157,9 +157,9 @@ describe('selectReadyTasks', () => {
       claimedAt: claimTimestamp(new Date(now.getTime() - 100 * 3600_000)), // ancient, but…
     });
     // …staleness disabled ⇒ the claim is still LIVE ⇒ excluded (matches resolveClaimAction).
-    expect(selectReadyTasks([old], boardOf([old]), opts({ stalenessMs: 0, now: now.getTime() }))).toEqual(
-      []
-    );
+    expect(
+      selectReadyTasks([old], boardOf([old]), opts({ stalenessMs: 0, now: now.getTime() }))
+    ).toEqual([]);
   });
 
   it('excludes a task that is currently in the merge queue', () => {
@@ -192,10 +192,9 @@ describe('selectReadyTasks', () => {
       T({ id: 'TASK-3', category: 'Features', priority: 'medium' }), // no milestone ⇒ Backburner
     ];
     const board = boardOf(tasks);
-    expect(selectReadyTasks(tasks, board, opts({ category: 'Features' })).map((t) => t.id)).toEqual([
-      'TASK-1',
-      'TASK-3',
-    ]);
+    expect(selectReadyTasks(tasks, board, opts({ category: 'Features' })).map((t) => t.id)).toEqual(
+      ['TASK-1', 'TASK-3']
+    );
     expect(selectReadyTasks(tasks, board, opts({ milestone: 'v1' })).map((t) => t.id)).toEqual([
       'TASK-1',
       'TASK-2',
@@ -641,23 +640,23 @@ export async function nextReadyTasksHandler(
 and add directly below:
 
 ```ts
-  server.registerTool(
-    'next_ready_tasks',
-    {
-      title: 'Next ready tasks',
-      description:
-        'List the tasks that are READY to execute right now — status not Done, every dependency Done (unblocked), no live claim by another session, and not already in the merge queue — sorted by priority then ordinal. Returns the same compact rows as get_board ({ id, title, status, priority?, category?, milestone?, type?, causedBy?, dependencies, blockedBy, locked, draft }). Use this to pull the next unit(s) of work to dispatch. Drafts are excluded (promote first). Filter by category / milestone; cap with limit.',
-      inputSchema: {
-        limit: z.number().optional().describe('Max ready tasks to return (default: all).'),
-        category: z.string().optional().describe('Lane filter (incl. reserved "Bugs"/"Misc").'),
-        milestone: z
-          .string()
-          .optional()
-          .describe('Band filter ("Backburner" matches an unset milestone).'),
-      },
+server.registerTool(
+  'next_ready_tasks',
+  {
+    title: 'Next ready tasks',
+    description:
+      'List the tasks that are READY to execute right now — status not Done, every dependency Done (unblocked), no live claim by another session, and not already in the merge queue — sorted by priority then ordinal. Returns the same compact rows as get_board ({ id, title, status, priority?, category?, milestone?, type?, causedBy?, dependencies, blockedBy, locked, draft }). Use this to pull the next unit(s) of work to dispatch. Drafts are excluded (promote first). Filter by category / milestone; cap with limit.',
+    inputSchema: {
+      limit: z.number().optional().describe('Max ready tasks to return (default: all).'),
+      category: z.string().optional().describe('Lane filter (incl. reserved "Bugs"/"Misc").'),
+      milestone: z
+        .string()
+        .optional()
+        .describe('Band filter ("Backburner" matches an unset milestone).'),
     },
-    async (args) => jsonContent(await nextReadyTasksHandler(deps, args))
-  );
+  },
+  async (args) => jsonContent(await nextReadyTasksHandler(deps, args))
+);
 ```
 
 - [ ] **Step 6: Run the tests + typecheck**

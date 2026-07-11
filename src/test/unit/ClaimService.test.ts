@@ -124,7 +124,10 @@ default_status: 'To Do'
         });
 
         const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
-        const task = parser.parseTaskContent(written, '/fake/backlog/tasks/task-1 - Sample-task.md');
+        const task = parser.parseTaskContent(
+          written,
+          '/fake/backlog/tasks/task-1 - Sample-task.md'
+        );
         expect(task?.status).toBe('In Progress');
         expect(task?.claimedBy).toBe('@alice');
       });
@@ -137,7 +140,10 @@ default_status: 'To Do'
         });
 
         const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
-        const task = parser.parseTaskContent(written, '/fake/backlog/tasks/task-1 - Sample-task.md');
+        const task = parser.parseTaskContent(
+          written,
+          '/fake/backlog/tasks/task-1 - Sample-task.md'
+        );
         expect(task?.status).toBe('In Progress');
       });
 
@@ -149,7 +155,10 @@ default_status: 'To Do'
         });
 
         const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
-        const task = parser.parseTaskContent(written, '/fake/backlog/tasks/task-1 - Sample-task.md');
+        const task = parser.parseTaskContent(
+          written,
+          '/fake/backlog/tasks/task-1 - Sample-task.md'
+        );
         expect(task?.status).toBe('Done');
       });
 
@@ -168,7 +177,10 @@ default_status: 'Backlog'
         });
 
         const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
-        const task = parser.parseTaskContent(written, '/fake/backlog/tasks/task-1 - Sample-task.md');
+        const task = parser.parseTaskContent(
+          written,
+          '/fake/backlog/tasks/task-1 - Sample-task.md'
+        );
         // The task has status "To Do" but the config only has ["Backlog"]. Since
         // "To Do" ≠ "Backlog" (statuses[0]), no transition occurs — status stays "To Do".
         // The inProgressStatus fallback ("In Progress") is unused here because the
@@ -176,7 +188,7 @@ default_status: 'Backlog'
         expect(task?.status).toBe('To Do');
       });
 
-      it('uses the board\'s second configured status (not a hardcoded value)', async () => {
+      it("uses the board's second configured status (not a hardcoded value)", async () => {
         const customConfig = `project_name: Test
 statuses: ['Open', 'Working', 'Review', 'Closed']
 default_status: 'Open'
@@ -191,7 +203,10 @@ default_status: 'Open'
         });
 
         const written = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
-        const task = parser.parseTaskContent(written, '/fake/backlog/tasks/task-1 - Sample-task.md');
+        const task = parser.parseTaskContent(
+          written,
+          '/fake/backlog/tasks/task-1 - Sample-task.md'
+        );
         expect(task?.status).toBe('Working');
       });
 

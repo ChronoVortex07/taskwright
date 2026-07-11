@@ -48,6 +48,7 @@
         type="text"
         class="search-input"
         placeholder="Search documents..."
+        aria-label="Search documents"
         data-testid="docs-search-input"
         bind:value={searchQuery}
       />

@@ -401,6 +401,7 @@
       type="text"
       class="search-input"
       placeholder="Search tasks..."
+      aria-label="Search tasks"
       value={searchQuery}
       oninput={(e) => onSearchChange((e.target as HTMLInputElement).value)}
       data-testid="search-input"
@@ -429,6 +430,7 @@
     <div class="filter-buttons">
       <select
         class="status-filter"
+        aria-label="Filter by status"
         value={currentFilter}
         onchange={(e) => onFilterChange((e.target as HTMLSelectElement).value)}
         data-testid="status-filter"
@@ -441,6 +443,7 @@
       </select>
       <select
         class="milestone-filter"
+        aria-label="Filter by milestone"
         value={currentMilestone}
         onchange={(e) => onMilestoneChange((e.target as HTMLSelectElement).value)}
         data-testid="milestone-filter"
@@ -453,6 +456,7 @@
       {#if allLabels.length > 0}
         <select
           class="label-filter"
+          aria-label="Filter by label"
           value={currentLabel}
           onchange={(e) => onLabelChange((e.target as HTMLSelectElement).value)}
           data-testid="label-filter"
@@ -465,6 +469,7 @@
       {/if}
       <select
         class="priority-filter"
+        aria-label="Filter by priority"
         value={currentPriority}
         onchange={(e) => onPriorityChange((e.target as HTMLSelectElement).value)}
         data-testid="priority-filter"

@@ -58,9 +58,7 @@ describe('parseWorktreeEntries', () => {
     const entries = parseWorktreeEntries(
       'worktree /a\r\nHEAD abc\r\nbranch refs/heads/feature/x\r\n'
     );
-    expect(entries).toEqual([
-      { path: '/a', branch: 'feature/x', detached: false, bare: false },
-    ]);
+    expect(entries).toEqual([{ path: '/a', branch: 'feature/x', detached: false, bare: false }]);
   });
 
   it('returns [] for empty output and ignores leading noise before the first `worktree` line', () => {
@@ -148,7 +146,8 @@ function targetGitExec(primaryRoot: string, worktreeAbs: string, opts: ExecOpts 
     if (args[0] === 'merge') return { stdout: '', stderr: '' };
     if (args[0] === 'worktree') return { stdout: '', stderr: '' }; // remove / prune
     if (args[0] === 'branch') return { stdout: '', stderr: '' };
-    if (args[0] === 'rev-parse' && args.includes('refs/heads/main')) return { stdout: 'abc', stderr: '' };
+    if (args[0] === 'rev-parse' && args.includes('refs/heads/main'))
+      return { stdout: 'abc', stderr: '' };
     if (args[0] === 'rev-parse') throw new Error('no ref');
     return { stdout: '', stderr: '' };
   };
@@ -268,8 +267,10 @@ describe('requestMergeHandler — explicit worktree target (root-override, DRAFT
     fs.mkdirSync(primaryRoot, { recursive: true });
     // rev-parse --git-dir returns .git with NO /.git/worktrees/ segment => primary.
     const primaryExec: GitExecFn = async (_c, args) => {
-      if (args.join(' ') === 'rev-parse --git-dir') return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
-      if (args.join(' ') === 'rev-parse --git-common-dir') return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
+      if (args.join(' ') === 'rev-parse --git-dir')
+        return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
+      if (args.join(' ') === 'rev-parse --git-common-dir')
+        return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
       if (args[0] === 'symbolic-ref') return { stdout: 'main', stderr: '' };
       return { stdout: '', stderr: '' };
     };
@@ -335,13 +336,19 @@ describe('requestMergeHandler — explicit worktree target (root-override, DRAFT
     const listCalls: string[][] = [];
     const exec: GitExecFn = async (_c, args) => {
       if (args[0] === 'worktree' && args[1] === 'list') listCalls.push(args);
-      if (args.join(' ') === 'rev-parse --git-dir') return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
-      if (args.join(' ') === 'rev-parse --git-common-dir') return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
+      if (args.join(' ') === 'rev-parse --git-dir')
+        return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
+      if (args.join(' ') === 'rev-parse --git-common-dir')
+        return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
       if (args[0] === 'symbolic-ref') return { stdout: 'main', stderr: '' };
       return { stdout: '', stderr: '' };
     };
     const r = await requestMergeHandler(
-      makeHandlerDeps(primaryRoot, { gitExec: exec, board: recordingBoard(), fsDeps: makeMemFsDeps() }),
+      makeHandlerDeps(primaryRoot, {
+        gitExec: exec,
+        board: recordingBoard(),
+        fsDeps: makeMemFsDeps(),
+      }),
       { taskId: 'TASK-7', worktree: '../evil' }
     );
     expect(r.status).toBe('aborted');

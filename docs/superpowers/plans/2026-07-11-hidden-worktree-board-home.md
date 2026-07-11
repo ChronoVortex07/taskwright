@@ -47,11 +47,13 @@
 ### Task 1: `git-auto` in the sync-config core + package.json
 
 **Files:**
+
 - Modify: `src/core/syncConfig.ts:10` (`SyncMode`), `:31-36` (`coerceMode`)
 - Modify: `package.json` (`taskwright.sync.mode` enum, ~line 74)
 - Test: `src/test/unit/syncConfig.test.ts` (existing file — add cases)
 
 **Interfaces:**
+
 - Produces: `type SyncMode = 'off' | 'git' | 'git-auto'` — every later task imports this.
 - Legacy coercions unchanged: `'local'→'off'`, `'github'→'git'`, unknown→`'off'`.
 
@@ -78,10 +80,12 @@ it('still coerces legacy values with git-auto present', () => {
 ### Task 2: mode-aware board home in `boardRoot.ts`
 
 **Files:**
+
 - Modify: `src/core/boardRoot.ts`
 - Test: `src/test/unit/boardRoot.test.ts` (existing — add cases)
 
 **Interfaces:**
+
 - Produces (all exported from `boardRoot.ts`):
 
 ```ts
@@ -89,13 +93,16 @@ export interface BoardHome {
   primaryRoot: string;
   mode: SyncMode;
   /** Where tasks/drafts/completed/archive/milestones live. */
-  backlogPath: string;   // git-auto: <primary>/.taskwright/board/backlog ; else <primary>/backlog
+  backlogPath: string; // git-auto: <primary>/.taskwright/board/backlog ; else <primary>/backlog
   /** Where config.yml + docs/ + decisions/ live — always the repo backlog. */
-  configRoot: string;    // <primary>/backlog
+  configRoot: string; // <primary>/backlog
 }
 export function boardWorktreePathFor(primaryRoot: string): string; // <primary>/.taskwright/board
 export function boardHomeFor(primaryRoot: string, mode: SyncMode): BoardHome; // pure
-export async function resolveBoardHome(cwd: string, deps?: ResolveBoardRootDeps & { readMode?: () => SyncMode }): Promise<BoardHome>;
+export async function resolveBoardHome(
+  cwd: string,
+  deps?: ResolveBoardRootDeps & { readMode?: () => SyncMode }
+): Promise<BoardHome>;
 ```
 
 - `resolveBoardHome` composes: `resolvePrimaryWorktreeRoot(cwd)` → resolve common dir (`git rev-parse --git-common-dir` via the same exec, `path.resolve(primaryRoot, out)`) → `readSyncConfig(syncConfigPath(commonDir), nodeFs)` → `boardHomeFor`. `readMode` injectable for tests. On any git failure → mode `'off'`, primary-local shape (existing fallback behavior).
@@ -132,6 +139,7 @@ Plus a `resolveBoardHome` test with a fake exec returning porcelain + common-dir
 ### Task 3: `boardWorktree.ts` — lifecycle of the hidden worktree
 
 **Files:**
+
 - Create: `src/core/boardWorktree.ts`
 - Test: `src/test/unit/boardWorktree.test.ts`
 
@@ -140,17 +148,26 @@ Plus a `resolveBoardHome` test with a fake exec returning porcelain + common-dir
 ```ts
 export type BoardWorktreeStatus = 'ok' | 'dir-missing' | 'unregistered' | 'no-branch';
 export interface EnsureBoardWorktreeResult {
-  path: string;            // <primary>/.taskwright/board
-  created: boolean;        // false when already ok
+  path: string; // <primary>/.taskwright/board
+  created: boolean; // false when already ok
   seeded: 'existing' | 'from-local-ref' | 'from-remote' | 'none';
 }
-export async function boardWorktreeStatusOf(primaryRoot: string, ref: string, deps?): Promise<BoardWorktreeStatus>;
+export async function boardWorktreeStatusOf(
+  primaryRoot: string,
+  ref: string,
+  deps?
+): Promise<BoardWorktreeStatus>;
 export async function ensureBoardWorktree(opts: {
-  primaryRoot: string; ref: string; remote: string; exec?: BoardGitExec; pathExists?: (p: string) => boolean;
+  primaryRoot: string;
+  ref: string;
+  remote: string;
+  exec?: BoardGitExec;
+  pathExists?: (p: string) => boolean;
 }): Promise<EnsureBoardWorktreeResult>;
 ```
 
 Behavior of `ensureBoardWorktree` (mirrors `WorktreeService.createWorktree`, fixed path):
+
 1. If dir exists and `git -C <dir> rev-parse --git-dir` succeeds → `{ created: false, seeded: 'existing' }`.
 2. `git worktree prune` (clears stale registrations, e.g. after `git clean -dfx`).
 3. Branch resolution: local `refs/heads/<ref>` exists → use it (`seeded: 'from-local-ref'`); else `fetchRef(primaryRoot, remote, ref)` non-null → `git branch <ref> <fetchedSha>` (`seeded: 'from-remote'`); else create an empty root: `snapshotBoardToRef` is NOT called here — a truly fresh seed is enableSync's job (Task 6); instead commit an empty tree root (`git commit-tree $(git hash-object -t tree /dev/null …)`) — concretely: `read-tree --empty` + `write-tree` + `commit-tree <tree> -m "chore(taskwright): board branch root"` with the isolated index `<primary>/.taskwright/board.index`, then `git branch <ref> <sha>` (`seeded: 'none'`).
@@ -171,6 +188,7 @@ Behavior of `ensureBoardWorktree` (mirrors `WorktreeService.createWorktree`, fix
 ### Task 4: `autoSync.ts` — commit, sync, scheduler
 
 **Files:**
+
 - Create: `src/core/autoSync.ts`
 - Test: `src/test/unit/autoSync.test.ts`
 
@@ -222,6 +240,7 @@ export class BoardSyncScheduler {
 ### Task 5: migration cores (`boardHomeMigration.ts`)
 
 **Files:**
+
 - Create: `src/core/boardHomeMigration.ts`
 - Test: `src/test/unit/boardHomeMigration.test.ts`
 
@@ -229,22 +248,41 @@ export class BoardSyncScheduler {
 
 ```ts
 export interface MigrationFacts {
-  hasStateDirs: boolean;           // any of the five under <primary>/backlog
-  trackedBoardFiles: string[];     // git ls-files -- <boardTrackedPaths>
+  hasStateDirs: boolean; // any of the five under <primary>/backlog
+  trackedBoardFiles: string[]; // git ls-files -- <boardTrackedPaths>
   localRefTip: string | null;
   boardWorktreeOk: boolean;
-  hasMaterializedMarker: boolean;  // .taskwright/board.materialized
+  hasMaterializedMarker: boolean; // .taskwright/board.materialized
 }
-export type MigrationStep = 'untrack' | 'seed-fresh' | 'seed-fold-ref' | 'add-worktree' | 'verified-move' | 'clean-marker' | 'noop';
+export type MigrationStep =
+  | 'untrack'
+  | 'seed-fresh'
+  | 'seed-fold-ref'
+  | 'add-worktree'
+  | 'verified-move'
+  | 'clean-marker'
+  | 'noop';
 export function planMigrationSteps(facts: MigrationFacts): MigrationStep[];
 // already migrated (boardWorktreeOk && !hasStateDirs) → ['clean-marker'?...,'noop']
 // tracked files → 'untrack' first; ref exists → 'seed-fold-ref' else 'seed-fresh'; always 'add-worktree' then 'verified-move' when hasStateDirs.
 
-export function verifyMove(primary: BoardFileMap, board: BoardFileMap, conflictPaths: ReadonlySet<string>): { ok: boolean; missing: string[] };
+export function verifyMove(
+  primary: BoardFileMap,
+  board: BoardFileMap,
+  conflictPaths: ReadonlySet<string>
+): { ok: boolean; missing: string[] };
 // every primary path must be byte-equal in board OR listed in conflictPaths (the fold chose the other side, surfaced).
 
-export async function gatherMigrationFacts(primaryRoot: string, ref: string, deps?): Promise<MigrationFacts>;
-export async function executeVerifiedMove(opts: { primaryRoot: string; boardWorktree: string; exec?: BoardGitExec }): Promise<{ moved: number; lockedLeftBehind: string[] }>;
+export async function gatherMigrationFacts(
+  primaryRoot: string,
+  ref: string,
+  deps?
+): Promise<MigrationFacts>;
+export async function executeVerifiedMove(opts: {
+  primaryRoot: string;
+  boardWorktree: string;
+  exec?: BoardGitExec;
+}): Promise<{ moved: number; lockedLeftBehind: string[] }>;
 // per-file: byte-compare (or conflict-listed) then fs.rmSync(primary file, {force:true}) with one EBUSY/EPERM retry;
 // locked files are left + reported, never fatal. Empty state dirs removed afterwards (fs.rmdirSync, ignore failures).
 export function readBoardDirFileMap(root: string): BoardFileMap; // walk five state dirs under <root>/backlog → posix-rel map (reuses walk pattern from boardRef.listLocalBoardFiles, exported here for reuse)
@@ -259,17 +297,20 @@ export function readBoardDirFileMap(root: string): BoardFileMap; // walk five st
 ### Task 6: `enableSync` rework — mode picker + git-auto migration + reverse
 
 **Files:**
+
 - Modify: `src/extension.ts:324-380` (`runEnableSync`), `:570-583` (command handler)
 - Test: covered by Task 5 unit cores + Task 11 integration (extension glue is thin; VS Code APIs mocked-out already in existing extension tests only where feasible)
 
 **Behavior (replaces the current single-mode flow):**
+
 1. QuickPick: `git-auto` ("Hidden worktree + automatic sync — recommended") / `git` (current v2 behavior, unchanged path) / `off` (only offered when currently git-auto → reverse migration; from off/git it just sets the mode).
 2. `git` chosen → existing code path verbatim (gitignore + untrack + seed ref).
 3. `git-auto` chosen → `migrateToGitAuto(primaryRoot)`:
 
 ```ts
 async function migrateToGitAuto(primaryRoot: string): Promise<void> {
-  const ref = cfgRef(); const remote = cfgRemote();
+  const ref = cfgRef();
+  const remote = cfgRemote();
   // (a) hygiene shared with v2: applyBoardIgnore + git rm -r --cached --ignore-unmatch + commit (reuse lines 335-348 verbatim; commit message 'chore(taskwright): move board off code branches (git-auto)')
   // (b) pre-move safety snapshot: snapshotBoardToRef({parent: refTip ?? undefined, message: 'chore(taskwright): pre-git-auto safety snapshot'})
   // (c) fold: if refTip existed OR fetchRef(remote) → runBoardAutoSync is NOT used here; instead the snapshot in (b) already parented on the old tip (ours = live board, history continues); remote fold happens on first sync.
@@ -297,6 +338,7 @@ Key detail: step (b)+(e) ordering means the worktree add IS the move-in; the onl
 ### Task 7: primary-root accessor threading
 
 **Files:**
+
 - Modify: `src/core/BacklogParser.ts:150-161` — ctor gains `primaryRoot?: string`; add:
 
 ```ts
@@ -312,7 +354,8 @@ private contentRoot(): string {
 }
 ```
 
-  and switch `getDocuments()` (`:1012`) / `getDecisions()` (`:1042`) to `path.join(this.contentRoot(), 'docs' | 'decisions')`.
+and switch `getDocuments()` (`:1012`) / `getDecisions()` (`:1042`) to `path.join(this.contentRoot(), 'docs' | 'decisions')`.
+
 - Modify every `path.dirname(parser.getBacklogPath())` → `parser.getPrimaryRoot()`: `src/providers/doctorActions.ts:75,154`, `claimActions.ts:41`, `intakeActions.ts:53`, `planActions.ts:16`, `dispatchActions.ts:40`, `TaskDetailProvider.ts:505,872,890`, `TasksController.ts:318,329,1006`; `extension.ts:1665-1668` (`activeRootDir()` uses the manager's `primaryRoot`, next bullet). Review `TaskDetailProvider.ts:1337` (`basename === 'backlog'` walk-up): it resolves a task file's repo — task files now live under `.taskwright/board/backlog/`, the walk-up still finds a `backlog` dir; change it to prefer `parser.getPrimaryRoot()` when the file is under the parser's `getBacklogPath()`.
 - Modify: `src/core/BacklogWorkspaceManager.ts:4-10` — `BacklogRoot` gains `primaryRoot: string`; `discover()` fills it from a new return of `resolveWorkspaceBacklogRoot` (extend `BacklogDirectoryResolution` with optional `primaryRoot`) falling back to `path.dirname(backlogPath)`.
 - Modify parser construction sites to pass `primaryRoot` + config path: `extension.ts` (parser creation), `src/mcp/server.ts:93`, `src/mcp/handlers.ts:292-296` (Task 9 finishes the MCP side).
@@ -328,12 +371,14 @@ private contentRoot(): string {
 ### Task 8: board doctor — three new findings + repairs
 
 **Files:**
+
 - Modify: `src/core/boardDoctor.ts:26-43` (types), `:70-94` (input/facts), `diagnoseBoard`, `gatherDoctorFacts`, `runBoardDoctor`
 - Modify: `src/providers/doctorActions.ts:53-138` (labels + applyRepair)
 - Modify: `src/mcp/server.ts:246` (`board_doctor` description — append the three new types)
 - Test: `src/test/unit/boardDoctor.test.ts` (existing — add cases)
 
 **Interfaces:**
+
 - `DoctorFindingType` += `'board-worktree-missing' | 'board-strays-in-primary' | 'board-mode-mismatch'`
 - `DoctorRepair` += `'repair-board-worktree' | 'fold-primary-strays' | 'restore-board-to-primary'`
 - `BoardDoctorInput` += `{ syncMode?: SyncMode; boardWorktreeOk?: boolean; primaryStateDirs?: string[]; primaryTasksPresent?: boolean; boardBranchExists?: boolean }`
@@ -356,16 +401,25 @@ private contentRoot(): string {
 ### Task 9: MCP server + handlers wiring
 
 **Files:**
+
 - Modify: `src/mcp/server.ts:86-98` — root resolution + parser construction:
 
 ```ts
 const root = process.env.TASKWRIGHT_ROOT?.trim() || process.cwd();
 const home = await resolveBoardHomeSafe(root); // wraps resolveBoardHome; falls back to the current resolveWorkspaceBacklogRoot result on any error
-const backlogPath = home?.backlogPath ?? ((await resolveWorkspaceBacklogRoot(root)).backlogPath || path.join(root, 'backlog'));
-const parser = new BacklogParser(backlogPath, home ? path.join(home.configRoot, 'config.yml') : undefined, undefined, home?.primaryRoot);
+const backlogPath =
+  home?.backlogPath ??
+  ((await resolveWorkspaceBacklogRoot(root)).backlogPath || path.join(root, 'backlog'));
+const parser = new BacklogParser(
+  backlogPath,
+  home ? path.join(home.configRoot, 'config.yml') : undefined,
+  undefined,
+  home?.primaryRoot
+);
 ```
 
-  (Note: in git-auto with the worktree missing — fresh clone, no extension yet — `resolveBoardHome`'s worktree-exists guard falls back to primary; the extension bootstraps on next activation. Document in a comment.)
+(Note: in git-auto with the worktree missing — fresh clone, no extension yet — `resolveBoardHome`'s worktree-exists guard falls back to primary; the extension bootstraps on next activation. Document in a comment.)
+
 - Modify: `src/mcp/handlers.ts:291-315` — `makePrimaryBoard(primaryRoot, exec)` becomes board-home aware:
 
 ```ts
@@ -379,7 +433,8 @@ export function makePrimaryBoard(primaryRoot: string, exec: GitExecFn, home?: Bo
 }
 ```
 
-  Call sites of `makePrimaryBoard` read the sync config once via `gitFacts` (`readSyncConfig(syncConfigPath(facts.commonDir))` — same pattern as `handlers.ts:561`).
+Call sites of `makePrimaryBoard` read the sync config once via `gitFacts` (`readSyncConfig(syncConfigPath(facts.commonDir))` — same pattern as `handlers.ts:561`).
+
 - Modify request_merge flow (`requestMergeHandler` in `handlers.ts`): when mode is `git-auto`, best-effort `await runBoardAutoSync({...})` BEFORE the finish (fold latest remote board) and AFTER a successful merge (publish the Done flip). Both wrapped in try/catch → console.error only; never affects the merge result.
 - Modify push/pull handlers (`handlers.ts:561,591`): when mode is `git-auto`, route to `runBoardAutoSync` (push → outcome mapped `{ pushed, commit?, rejected, conflicts }`; pull → same call, mapped to the pull result with `files: []` and a note the board worktree IS the live board); v2 `git` path untouched.
 - Test: `src/test/unit/mcpWriteHandlers.test.ts` / `mcpReadHandlers.test.ts` — extend `makePrimaryBoard` test (exists per TASK-82 coverage) for the git-auto checkout cwd; handler-routing unit tests with injected sync config.
@@ -393,6 +448,7 @@ export function makePrimaryBoard(primaryRoot: string, exec: GitExecFn, home?: Bo
 ### Task 10: extension activation wiring + status bar + selector
 
 **Files:**
+
 - Modify: `src/extension.ts`:
   - After manager discovery (where `backlogFolder` is computed): resolve the board home for `workspaceRootPath`; if mode `git-auto`: `await ensureBoardWorktree(...)` (S5 bootstrap — first activation after a clone), then stray-heal: if `readBoardDirFileMap(primaryRoot)` non-empty → run the `fold-primary-strays` repair silently + one info notification.
   - `FileWatcher` (`:531-535`): construct with the resolved board home `backlogPath` (git-auto → the worktree backlog) — it already receives `backlogFolder`; make `backlogFolder` the home-resolved path so every downstream consumer follows.
@@ -400,7 +456,7 @@ export function makePrimaryBoard(primaryRoot: string, exec: GitExecFn, home?: Bo
   - `activeRootDir()` (`:1665-1668`): `manager.getActiveRoot()?.primaryRoot ?? path.dirname(backlogPath)`.
   - Doctor call sites (`:1639-1660`): pass `{ syncMode, ref }` through to `runBoardDoctor`.
 - Modify: `src/core/boardSyncUx.ts` — `formatBoardSyncStatusBar`: `git-auto` states: idle `$(sync) Board Sync: Auto`, pending-push `$(cloud-upload) Board Sync: Auto (n ahead)` (state gains `aheadCount?: number`), error/conflict states reuse the existing shapes; `buildBoardSyncQuickPickItems('git-auto')` → `[Sync Now, Push Board, Pull Board, Switch Mode…]` (`action: 'sync' | 'push' | 'pull' | 'enableSync'`).
-- Modify: `src/language/documentSelector.ts` — add `{ language: 'markdown', pattern: `**/${backlogDir}/milestones/**/*.md` }`.
+- Modify: `src/language/documentSelector.ts` — add `{ language: 'markdown', pattern: `**/${backlogDir}/milestones/**/\*.md` }`.
 - Test: `src/test/unit/boardSyncUx.test.ts` (existing — add git-auto presentation cases); `src/test/unit/documentSelector.test.ts` if present, else covered by typecheck.
 
 - [x] **Step 1: Failing boardSyncUx tests** (git-auto text/tooltip/quick-pick items).
@@ -412,9 +468,11 @@ export function makePrimaryBoard(primaryRoot: string, exec: GitExecFn, home?: Bo
 ### Task 11: integration test suite — migration matrix + round-trips
 
 **Files:**
+
 - Create: `src/test/unit/gitAutoIntegration.test.ts` (Vitest, real temp git repos via `src/test/unit/helpers/tempGitRepo.ts`; follow `boardRef.test.ts`'s integration patterns — real `defaultBoardExec`, no VS Code)
 
 Scenarios (each its own `it`, sequential, generous timeouts like the Board Sync suites — 30s file-level per the deflake baseline):
+
 1. **S1 migrate**: repo with ignored board → simulate `migrateToGitAuto`'s core steps (hygiene/snapshot/ensure/verify/move via the exported cores — the extension glue is not imported) → board files present in worktree, absent in primary, `verifyMove` ok.
 2. **S2 migrate**: board files TRACKED + stale 4-dir gitignore block + one uncommitted board edit → untrack keeps working-tree content; fenced block upgraded to 5 dirs; edit survives into the worktree.
 3. **S3 migrate**: pre-existing `taskwright-board` ref with divergent content + a bare "remote" clone ahead → snapshot parents on old tip; first `runBoardAutoSync` folds remote (two-parent merge, conflicts surfaced when same task edited); push fast-forwards.
@@ -437,6 +495,7 @@ Scenarios (each its own `it`, sequential, generous timeouts like the Board Sync 
 ### Task 12: docs
 
 **Files:**
+
 - Modify: `CLAUDE.md` — Board Sync v2 bullet: add the `git-auto` third mode paragraph (one physical board in the hidden worktree; event-driven auto-sync; migration via enableSync; Backlog.md-CLI root-layout divergence documented as git-auto-only).
 - Modify: `AGENTS.md` — Board Sync section: same, agent-facing (mode set `off | git | git-auto`; in git-auto push/pull still exist as manual escape hatches; never edit board files by hand — unchanged).
 

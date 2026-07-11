@@ -46,11 +46,11 @@ Decisions locked during brainstorming:
 All optional; all Taskwright-only; all written via the surgical `frontmatterEdit.ts` path so
 canonical Backlog.md fields are untouched.
 
-| Field | Type | On | Semantics |
-|-------|------|-----|-----------|
-| `category` | `string` | tasks | The lane. Free-form single value. Absent/empty ⇒ **Misc** lane. |
-| `type` | `'bug'` | bugs | Marks a bug node → **Bug lane** regardless of `category`. (Field already exists in `Task`.) |
-| `caused_by` | `string` | bugs | Task ID that introduced the bug. Optional at filing; **required to complete** (§5.2). |
+| Field       | Type     | On    | Semantics                                                                                   |
+| ----------- | -------- | ----- | ------------------------------------------------------------------------------------------- |
+| `category`  | `string` | tasks | The lane. Free-form single value. Absent/empty ⇒ **Misc** lane.                             |
+| `type`      | `'bug'`  | bugs  | Marks a bug node → **Bug lane** regardless of `category`. (Field already exists in `Task`.) |
+| `caused_by` | `string` | bugs  | Task ID that introduced the bug. Optional at filing; **required to complete** (§5.2).       |
 
 `dependencies: string[]` (existing) remains the **gating** relation. `caused_by` is a **reference**
 relation, never a gate. `priority` (existing) doubles as bug **severity** and is a **user-defined
@@ -91,7 +91,7 @@ A pure module (e.g. `src/core/treeLayout.ts`) maps `Task[]` → placement, with 
 2. **Band (age):** `milestone` resolved to its canonical id/name, ordered by config `milestones`;
    no milestone ⇒ `Backburner` (always rightmost).
 3. **Depth within a band:** longest path of Done-gating `dependencies` among nodes in the same band
-   (prereqs push right). Cross-band dependencies are allowed; a dependency pointing to a *later* band
+   (prereqs push right). Cross-band dependencies are allowed; a dependency pointing to a _later_ band
    is a **soft warning** (surfaced, not blocked) since you cannot logically require a future age.
 4. **In-cell order:** existing `ordinal` (fractional index), then `priority`, then id — reusing
    `ordinalUtils.compareByOrdinal`.
@@ -125,7 +125,7 @@ A pure module (e.g. `src/core/treeLayout.ts`) maps `Task[]` → placement, with 
 
 ## 7. MCP & command surface (P1 scope)
 
-P1 exposes the fields and enforces the rules; the *rich* traversal tools are P4.
+P1 exposes the fields and enforces the rules; the _rich_ traversal tools are P4.
 
 - `create_task` / `edit_task`: accept and validate `category`, `type: 'bug'`, `caused_by`; reject
   cycles on dependency edits.

@@ -376,66 +376,132 @@ Append to `src/test/unit/TasksController.test.ts` (inside the top-level `describ
 ```ts
 describe('TasksController — P3b drag writes', () => {
   it('reslotTask: category via TreeFieldService.setCategory, milestone via updateTask (resolved)', async () => {
-    const setCat = vi.spyOn(TreeFieldService.prototype, 'setCategory').mockResolvedValue('Features');
-    const updateSpy = vi.spyOn(BacklogWriter.prototype, 'updateTask').mockResolvedValue(undefined as never);
+    const setCat = vi
+      .spyOn(TreeFieldService.prototype, 'setCategory')
+      .mockResolvedValue('Features');
+    const updateSpy = vi
+      .spyOn(BacklogWriter.prototype, 'updateTask')
+      .mockResolvedValue(undefined as never);
     (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
-      id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [], dependencies: [],
-      acceptanceCriteria: [], definitionOfDone: [], filePath: '/fake/backlog/tasks/task-1.md',
+      id: 'TASK-1',
+      title: 'T',
+      status: 'To Do',
+      labels: [],
+      assignee: [],
+      dependencies: [],
+      acceptanceCriteria: [],
+      definitionOfDone: [],
+      filePath: '/fake/backlog/tasks/task-1.md',
     } as Task);
     (mockParser.resolveMilestone as ReturnType<typeof vi.fn>).mockResolvedValue('v1');
     const controller = new TasksController(host, mockParser, mockContext);
-    await controller.handleMessage({ type: 'reslotTask', taskId: 'TASK-1', category: 'Features', milestone: 'v1' });
+    await controller.handleMessage({
+      type: 'reslotTask',
+      taskId: 'TASK-1',
+      category: 'Features',
+      milestone: 'v1',
+    });
     expect(setCat).toHaveBeenCalledWith('TASK-1', 'Features', mockParser);
     expect(updateSpy).toHaveBeenCalledWith('TASK-1', { milestone: 'v1' }, mockParser);
   });
 
   it('reslotTask: Misc clears the category, Backburner clears the milestone', async () => {
-    const clearCat = vi.spyOn(TreeFieldService.prototype, 'clearCategory').mockResolvedValue(undefined as never);
-    const updateSpy = vi.spyOn(BacklogWriter.prototype, 'updateTask').mockResolvedValue(undefined as never);
+    const clearCat = vi
+      .spyOn(TreeFieldService.prototype, 'clearCategory')
+      .mockResolvedValue(undefined as never);
+    const updateSpy = vi
+      .spyOn(BacklogWriter.prototype, 'updateTask')
+      .mockResolvedValue(undefined as never);
     (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
-      id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [], dependencies: [],
-      acceptanceCriteria: [], definitionOfDone: [], filePath: '/fake/backlog/tasks/task-1.md',
+      id: 'TASK-1',
+      title: 'T',
+      status: 'To Do',
+      labels: [],
+      assignee: [],
+      dependencies: [],
+      acceptanceCriteria: [],
+      definitionOfDone: [],
+      filePath: '/fake/backlog/tasks/task-1.md',
     } as Task);
     const controller = new TasksController(host, mockParser, mockContext);
-    await controller.handleMessage({ type: 'reslotTask', taskId: 'TASK-1', category: 'Misc', milestone: 'Backburner' });
+    await controller.handleMessage({
+      type: 'reslotTask',
+      taskId: 'TASK-1',
+      category: 'Misc',
+      milestone: 'Backburner',
+    });
     expect(clearCat).toHaveBeenCalledWith('TASK-1', mockParser);
     // Backburner clears milestone via an empty string (updateTask omits empty milestone on write).
     expect(updateSpy).toHaveBeenCalledWith('TASK-1', { milestone: '' }, mockParser);
   });
 
   it('addDependency: writes task[taskId].dependencies += dependsOn (deduped) via updateTask', async () => {
-    const updateSpy = vi.spyOn(BacklogWriter.prototype, 'updateTask').mockResolvedValue(undefined as never);
+    const updateSpy = vi
+      .spyOn(BacklogWriter.prototype, 'updateTask')
+      .mockResolvedValue(undefined as never);
     (mockParser.getTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: 'TASK-1', dependencies: [] }, { id: 'TASK-2', dependencies: [] },
+      { id: 'TASK-1', dependencies: [] },
+      { id: 'TASK-2', dependencies: [] },
     ]);
     (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
-      id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [], dependencies: [],
-      acceptanceCriteria: [], definitionOfDone: [], filePath: '/fake/backlog/tasks/task-1.md',
+      id: 'TASK-1',
+      title: 'T',
+      status: 'To Do',
+      labels: [],
+      assignee: [],
+      dependencies: [],
+      acceptanceCriteria: [],
+      definitionOfDone: [],
+      filePath: '/fake/backlog/tasks/task-1.md',
     } as Task);
     const controller = new TasksController(host, mockParser, mockContext);
-    await controller.handleMessage({ type: 'addDependency', taskId: 'TASK-1', dependsOn: 'TASK-2' });
+    await controller.handleMessage({
+      type: 'addDependency',
+      taskId: 'TASK-1',
+      dependsOn: 'TASK-2',
+    });
     expect(updateSpy).toHaveBeenCalledWith('TASK-1', { dependencies: ['TASK-2'] }, mockParser);
   });
 
   it('addDependency: refuses a cycle (no write)', async () => {
-    const updateSpy = vi.spyOn(BacklogWriter.prototype, 'updateTask').mockResolvedValue(undefined as never);
+    const updateSpy = vi
+      .spyOn(BacklogWriter.prototype, 'updateTask')
+      .mockResolvedValue(undefined as never);
     // TASK-2 already depends on TASK-1, so adding TASK-2 to TASK-1 closes 1→2→1.
     (mockParser.getTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: 'TASK-1', dependencies: [] }, { id: 'TASK-2', dependencies: ['TASK-1'] },
+      { id: 'TASK-1', dependencies: [] },
+      { id: 'TASK-2', dependencies: ['TASK-1'] },
     ]);
     const controller = new TasksController(host, mockParser, mockContext);
-    await controller.handleMessage({ type: 'addDependency', taskId: 'TASK-1', dependsOn: 'TASK-2' });
+    await controller.handleMessage({
+      type: 'addDependency',
+      taskId: 'TASK-1',
+      dependsOn: 'TASK-2',
+    });
     expect(updateSpy).not.toHaveBeenCalled();
   });
 
   it('removeDependency: writes the pruned dependency array via updateTask', async () => {
-    const updateSpy = vi.spyOn(BacklogWriter.prototype, 'updateTask').mockResolvedValue(undefined as never);
+    const updateSpy = vi
+      .spyOn(BacklogWriter.prototype, 'updateTask')
+      .mockResolvedValue(undefined as never);
     (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
-      id: 'TASK-1', title: 'T', status: 'To Do', labels: [], assignee: [], dependencies: ['TASK-2', 'TASK-3'],
-      acceptanceCriteria: [], definitionOfDone: [], filePath: '/fake/backlog/tasks/task-1.md',
+      id: 'TASK-1',
+      title: 'T',
+      status: 'To Do',
+      labels: [],
+      assignee: [],
+      dependencies: ['TASK-2', 'TASK-3'],
+      acceptanceCriteria: [],
+      definitionOfDone: [],
+      filePath: '/fake/backlog/tasks/task-1.md',
     } as Task);
     const controller = new TasksController(host, mockParser, mockContext);
-    await controller.handleMessage({ type: 'removeDependency', taskId: 'TASK-1', dependsOn: 'TASK-2' });
+    await controller.handleMessage({
+      type: 'removeDependency',
+      taskId: 'TASK-1',
+      dependsOn: 'TASK-2',
+    });
     expect(updateSpy).toHaveBeenCalledWith('TASK-1', { dependencies: ['TASK-3'] }, mockParser);
   });
 });
@@ -578,14 +644,14 @@ Add the three cases in `handleMessage`, immediately after the existing `reorderT
 In `src/providers/TreeNavigatorProvider.ts`, extend the relay condition (`TreeNavigatorProvider.ts:41-47`):
 
 ```ts
-      if (
-        message.type === 'navigatorFilterChanged' ||
-        message.type === 'navigatorLaneToggle' ||
-        message.type === 'navigatorJump' ||
-        message.type === 'navigatorMinimapPan'
-      ) {
-        this.relayToBoard(message as unknown as ExtensionMessage);
-      }
+if (
+  message.type === 'navigatorFilterChanged' ||
+  message.type === 'navigatorLaneToggle' ||
+  message.type === 'navigatorJump' ||
+  message.type === 'navigatorMinimapPan'
+) {
+  this.relayToBoard(message as unknown as ExtensionMessage);
+}
 ```
 
 - [ ] **Step 7: Run tests + typecheck**
@@ -801,22 +867,22 @@ Create `src/webview/components/tree/DragLayer.svelte`:
 In `src/webview/components/tree/TechTreeCanvas.svelte`, extend the `treeGeometry` import (`TechTreeCanvas.svelte:4-12`) and add the geometry inverse + the vscode-free cycle guard + `DragLayer`:
 
 ```ts
-  import {
-    deriveGeometry,
-    fitToView,
-    zoomAt,
-    clampViewport,
-    lodTier,
-    screenToWorld,
-    cellAt,
-    reslotTargets,
-    DRAG_THRESHOLD,
-    type Viewport,
-    type GeometryNode,
-    type Point,
-  } from '../../lib/treeGeometry';
-  import { wouldCreateCycle } from '../../../core/treeGate';
-  import DragLayer, { type DragState } from './DragLayer.svelte';
+import {
+  deriveGeometry,
+  fitToView,
+  zoomAt,
+  clampViewport,
+  lodTier,
+  screenToWorld,
+  cellAt,
+  reslotTargets,
+  DRAG_THRESHOLD,
+  type Viewport,
+  type GeometryNode,
+  type Point,
+} from '../../lib/treeGeometry';
+import { wouldCreateCycle } from '../../../core/treeGate';
+import DragLayer, { type DragState } from './DragLayer.svelte';
 ```
 
 > **Import-path note:** `TechTreeCanvas.svelte` is at `src/webview/components/tree/`, so `../../../core/treeGate` reaches `src/core/treeGate.ts` — the same depth `KanbanBoard.svelte`/`ListView.svelte` use for `../../../core/ordinalUtils`. This is the client-side `wouldCreateCycle` UX gate (directive 8); the extension re-validates (Task 2). **This step touches nothing below the import block** — all state/handler changes land in Step 3 as one edit (M1).
@@ -828,255 +894,256 @@ In `src/webview/components/tree/TechTreeCanvas.svelte`, extend the `treeGeometry
 Replace this exact existing block (`TechTreeCanvas.svelte:254-283`):
 
 ```ts
-  // Pan by dragging empty canvas.
-  let panning = $state(false);
-  let panStart = { x: 0, y: 0, tx: 0, ty: 0 };
-  function onPointerDown(e: PointerEvent) {
-    const target = e.target as HTMLElement;
-    if (target.closest('.tree-toolbar') || target.closest('.tree-popover')) return;
-    // Band headers live inside the viewport; capturing the pointer here would
-    // swallow their native click (same reason `.tree-node` returns early), so
-    // the milestone popover would never open. Let the header's onclick fire.
-    if (target.closest('.tree-node') || target.closest('.tree-band-header')) return;
-    closePopover();
-    closeMilestone();
-    panning = true;
-    panStart = { x: e.clientX, y: e.clientY, tx: vp.tx, ty: vp.ty };
-    viewportEl?.setPointerCapture(e.pointerId);
-  }
-  function onPointerMove(e: PointerEvent) {
-    if (!panning) return;
-    setViewport({
-      scale: vp.scale,
-      tx: panStart.tx + (e.clientX - panStart.x),
-      ty: panStart.ty + (e.clientY - panStart.y),
-    });
-  }
-  function onPointerUp(e: PointerEvent) {
-    if (!panning) return;
-    panning = false;
-    viewportEl?.releasePointerCapture?.(e.pointerId);
-    persistNow();
-  }
+// Pan by dragging empty canvas.
+let panning = $state(false);
+let panStart = { x: 0, y: 0, tx: 0, ty: 0 };
+function onPointerDown(e: PointerEvent) {
+  const target = e.target as HTMLElement;
+  if (target.closest('.tree-toolbar') || target.closest('.tree-popover')) return;
+  // Band headers live inside the viewport; capturing the pointer here would
+  // swallow their native click (same reason `.tree-node` returns early), so
+  // the milestone popover would never open. Let the header's onclick fire.
+  if (target.closest('.tree-node') || target.closest('.tree-band-header')) return;
+  closePopover();
+  closeMilestone();
+  panning = true;
+  panStart = { x: e.clientX, y: e.clientY, tx: vp.tx, ty: vp.ty };
+  viewportEl?.setPointerCapture(e.pointerId);
+}
+function onPointerMove(e: PointerEvent) {
+  if (!panning) return;
+  setViewport({
+    scale: vp.scale,
+    tx: panStart.tx + (e.clientX - panStart.x),
+    ty: panStart.ty + (e.clientY - panStart.y),
+  });
+}
+function onPointerUp(e: PointerEvent) {
+  if (!panning) return;
+  panning = false;
+  viewportEl?.releasePointerCapture?.(e.pointerId);
+  persistNow();
+}
 ```
 
 with the unified machine — one contiguous block (the existing early-return guards and the `panning` grabbing-cursor class are preserved inside it):
 
 ```ts
-  // P3b gesture machine. `pending` is the pre-threshold press; `drag` is the promoted gesture.
-  type Pending =
-    | { kind: 'pan'; startX: number; startY: number; tx: number; ty: number }
-    | { kind: 'node'; id: string; startX: number; startY: number }
-    | { kind: 'connect'; id: string; dir: 'needs' | 'unlocks'; startX: number; startY: number };
-  let pending: Pending | null = null;
-  let drag = $state<DragState | null>(null);
+// P3b gesture machine. `pending` is the pre-threshold press; `drag` is the promoted gesture.
+type Pending =
+  | { kind: 'pan'; startX: number; startY: number; tx: number; ty: number }
+  | { kind: 'node'; id: string; startX: number; startY: number }
+  | { kind: 'connect'; id: string; dir: 'needs' | 'unlocks'; startX: number; startY: number };
+let pending: Pending | null = null;
+let drag = $state<DragState | null>(null);
 
-  const targets = $derived(reslotTargets(geometry, laneOrder, bandOrder));
+const targets = $derived(reslotTargets(geometry, laneOrder, bandOrder));
 
-  /** In-webview cycle/dupe/self gate for a candidate edge task[taskId].dependencies += dependsOn. */
-  function connectValid(taskId: string, dependsOn: string): boolean {
-    const a = taskId.trim().toUpperCase();
-    const b = dependsOn.trim().toUpperCase();
-    if (a === b) return false; // self
-    const dep = layoutNodes.find((t) => t.id.trim().toUpperCase() === a);
-    if (dep?.dependencies.some((d) => d.trim().toUpperCase() === b)) return false; // dupe
-    return !wouldCreateCycle(layoutNodes, taskId, dependsOn);
-  }
+/** In-webview cycle/dupe/self gate for a candidate edge task[taskId].dependencies += dependsOn. */
+function connectValid(taskId: string, dependsOn: string): boolean {
+  const a = taskId.trim().toUpperCase();
+  const b = dependsOn.trim().toUpperCase();
+  if (a === b) return false; // self
+  const dep = layoutNodes.find((t) => t.id.trim().toUpperCase() === a);
+  if (dep?.dependencies.some((d) => d.trim().toUpperCase() === b)) return false; // dupe
+  return !wouldCreateCycle(layoutNodes, taskId, dependsOn);
+}
 
-  /** World point under a client event, relative to the viewport. */
-  function worldAt(e: PointerEvent): Point {
-    const rect = viewportEl!.getBoundingClientRect();
-    return screenToWorld(vp, e.clientX - rect.left, e.clientY - rect.top);
-  }
+/** World point under a client event, relative to the viewport. */
+function worldAt(e: PointerEvent): Point {
+  const rect = viewportEl!.getBoundingClientRect();
+  return screenToWorld(vp, e.clientX - rect.left, e.clientY - rect.top);
+}
 
-  /** Node id under a world point (topmost box hit), else null. */
-  function nodeAt(p: Point): string | null {
-    for (const [id, box] of geometry.nodes) {
-      if (p.x >= box.x && p.x <= box.x + box.width && p.y >= box.y && p.y <= box.y + box.height) {
-        return id;
-      }
+/** Node id under a world point (topmost box hit), else null. */
+function nodeAt(p: Point): string | null {
+  for (const [id, box] of geometry.nodes) {
+    if (p.x >= box.x && p.x <= box.x + box.width && p.y >= box.y && p.y <= box.y + box.height) {
+      return id;
     }
-    return null;
   }
+  return null;
+}
 
-  // Pan by dragging empty canvas.
-  let panning = $state(false);
-  let panStart = { x: 0, y: 0, tx: 0, ty: 0 };
+// Pan by dragging empty canvas.
+let panning = $state(false);
+let panStart = { x: 0, y: 0, tx: 0, ty: 0 };
 
-  function onPointerDown(e: PointerEvent) {
-    const target = e.target as HTMLElement;
-    if (target.closest('.tree-toolbar') || target.closest('.tree-popover')) return;
-    if (target.closest('.tree-band-header')) return; // let the milestone popover open
-    if (target.closest('.tree-edge-remove')) return; // edge ✕ handles its own click (Task 6)
+function onPointerDown(e: PointerEvent) {
+  const target = e.target as HTMLElement;
+  if (target.closest('.tree-toolbar') || target.closest('.tree-popover')) return;
+  if (target.closest('.tree-band-header')) return; // let the milestone popover open
+  if (target.closest('.tree-edge-remove')) return; // edge ✕ handles its own click (Task 6)
 
-    const handle = target.closest('.tree-connect-handle') as HTMLElement | null;
-    if (handle) {
-      // (a) connect-handle press — starts a connect gesture on threshold (Task 4 renders handles).
-      e.stopPropagation();
-      pending = {
-        kind: 'connect',
-        id: handle.dataset.connectId ?? '',
-        dir: (handle.dataset.connectDir as 'needs' | 'unlocks') ?? 'unlocks',
-        startX: e.clientX,
-        startY: e.clientY,
-      };
-      viewportEl?.setPointerCapture(e.pointerId);
-      return;
-    }
-
-    const node = target.closest('.tree-node') as HTMLElement | null;
-    if (node) {
-      // (b) node-body press — select on click, reslot on drag.
-      pending = { kind: 'node', id: node.dataset.nodeId ?? '', startX: e.clientX, startY: e.clientY };
-      viewportEl?.setPointerCapture(e.pointerId);
-      return;
-    }
-
-    // (c) empty viewport — pan on drag, click-in-place create on click.
-    closePopover();
-    closeMilestone();
-    pending = { kind: 'pan', startX: e.clientX, startY: e.clientY, tx: vp.tx, ty: vp.ty };
-    panStart = { x: e.clientX, y: e.clientY, tx: vp.tx, ty: vp.ty };
+  const handle = target.closest('.tree-connect-handle') as HTMLElement | null;
+  if (handle) {
+    // (a) connect-handle press — starts a connect gesture on threshold (Task 4 renders handles).
+    e.stopPropagation();
+    pending = {
+      kind: 'connect',
+      id: handle.dataset.connectId ?? '',
+      dir: (handle.dataset.connectDir as 'needs' | 'unlocks') ?? 'unlocks',
+      startX: e.clientX,
+      startY: e.clientY,
+    };
     viewportEl?.setPointerCapture(e.pointerId);
+    return;
   }
 
-  function onPointerMove(e: PointerEvent) {
-    if (!pending) return;
-    const dist = Math.hypot(e.clientX - pending.startX, e.clientY - pending.startY);
-
-    if (pending.kind === 'pan') {
-      if (!panning && dist < DRAG_THRESHOLD) return;
-      panning = true;
-      setViewport({
-        scale: vp.scale,
-        tx: panStart.tx + (e.clientX - panStart.x),
-        ty: panStart.ty + (e.clientY - panStart.y),
-      });
-      return;
-    }
-
-    if (dist < DRAG_THRESHOLD && !drag) return;
-    const cursor = worldAt(e);
-
-    if (pending.kind === 'node') {
-      const overId = nodeAt(cursor);
-      const t = layoutNodes.find((n) => n.id === pending!.id);
-      // Bugs are reorder-only (M2): Task 5's reslotValid shows cross-lane red and its
-      // onReslotDrop never posts reslotTask for a bug.
-      const cell = cellAt(geometry, cursor.x, cursor.y);
-      const laneT = laneTargetAt(cursor.y);
-      const bandT = bandTargetAt(cursor.x);
-      drag = {
-        mode: 'reslot',
-        taskId: pending.id,
-        cursor,
-        targetLane: laneT?.name ?? cell.lane,
-        targetBand: bandT?.name ?? cell.band,
-        valid: reslotValid(t, laneT?.name ?? cell.lane, bandT?.name ?? cell.band, overId),
-      };
-      dragLaneTarget = laneT ?? null;
-      dragBandTarget = bandT ?? null;
-      return;
-    }
-
-    if (pending.kind === 'connect') {
-      const overId = nodeAt(cursor);
-      const edge = connectEdge(pending.id, pending.dir, overId);
-      drag = {
-        mode: 'connect',
-        fromId: pending.id,
-        dir: pending.dir,
-        cursor,
-        targetId: overId && overId !== pending.id ? overId : null,
-        valid: edge ? connectValid(edge.taskId, edge.dependsOn) : true, // empty target = create (valid)
-      };
-    }
+  const node = target.closest('.tree-node') as HTMLElement | null;
+  if (node) {
+    // (b) node-body press — select on click, reslot on drag.
+    pending = { kind: 'node', id: node.dataset.nodeId ?? '', startX: e.clientX, startY: e.clientY };
+    viewportEl?.setPointerCapture(e.pointerId);
+    return;
   }
 
-  function onPointerUp(e: PointerEvent) {
-    const p = pending;
-    pending = null;
-    viewportEl?.releasePointerCapture?.(e.pointerId);
-    if (!p) return;
-    const wasDrag = !!drag || panning;
+  // (c) empty viewport — pan on drag, click-in-place create on click.
+  closePopover();
+  closeMilestone();
+  pending = { kind: 'pan', startX: e.clientX, startY: e.clientY, tx: vp.tx, ty: vp.ty };
+  panStart = { x: e.clientX, y: e.clientY, tx: vp.tx, ty: vp.ty };
+  viewportEl?.setPointerCapture(e.pointerId);
+}
 
-    if (p.kind === 'pan') {
-      if (panning) {
-        panning = false;
-        persistNow();
-      } else {
-        // Click-in-place create (empty canvas): infer lane/band; Misc / Backburner defaults.
-        const world = worldAt(e);
-        const cell = cellAt(geometry, world.x, world.y);
-        onCreateInPlace?.({ mode: 'full', category: cell.lane, milestone: cell.band });
-      }
-      finishDrag();
-      return;
+function onPointerMove(e: PointerEvent) {
+  if (!pending) return;
+  const dist = Math.hypot(e.clientX - pending.startX, e.clientY - pending.startY);
+
+  if (pending.kind === 'pan') {
+    if (!panning && dist < DRAG_THRESHOLD) return;
+    panning = true;
+    setViewport({
+      scale: vp.scale,
+      tx: panStart.tx + (e.clientX - panStart.x),
+      ty: panStart.ty + (e.clientY - panStart.y),
+    });
+    return;
+  }
+
+  if (dist < DRAG_THRESHOLD && !drag) return;
+  const cursor = worldAt(e);
+
+  if (pending.kind === 'node') {
+    const overId = nodeAt(cursor);
+    const t = layoutNodes.find((n) => n.id === pending!.id);
+    // Bugs are reorder-only (M2): Task 5's reslotValid shows cross-lane red and its
+    // onReslotDrop never posts reslotTask for a bug.
+    const cell = cellAt(geometry, cursor.x, cursor.y);
+    const laneT = laneTargetAt(cursor.y);
+    const bandT = bandTargetAt(cursor.x);
+    drag = {
+      mode: 'reslot',
+      taskId: pending.id,
+      cursor,
+      targetLane: laneT?.name ?? cell.lane,
+      targetBand: bandT?.name ?? cell.band,
+      valid: reslotValid(t, laneT?.name ?? cell.lane, bandT?.name ?? cell.band, overId),
+    };
+    dragLaneTarget = laneT ?? null;
+    dragBandTarget = bandT ?? null;
+    return;
+  }
+
+  if (pending.kind === 'connect') {
+    const overId = nodeAt(cursor);
+    const edge = connectEdge(pending.id, pending.dir, overId);
+    drag = {
+      mode: 'connect',
+      fromId: pending.id,
+      dir: pending.dir,
+      cursor,
+      targetId: overId && overId !== pending.id ? overId : null,
+      valid: edge ? connectValid(edge.taskId, edge.dependsOn) : true, // empty target = create (valid)
+    };
+  }
+}
+
+function onPointerUp(e: PointerEvent) {
+  const p = pending;
+  pending = null;
+  viewportEl?.releasePointerCapture?.(e.pointerId);
+  if (!p) return;
+  const wasDrag = !!drag || panning;
+
+  if (p.kind === 'pan') {
+    if (panning) {
+      panning = false;
+      persistNow();
+    } else {
+      // Click-in-place create (empty canvas): infer lane/band; Misc / Backburner defaults.
+      const world = worldAt(e);
+      const cell = cellAt(geometry, world.x, world.y);
+      onCreateInPlace?.({ mode: 'full', category: cell.lane, milestone: cell.band });
     }
-
-    if (p.kind === 'node') {
-      if (!wasDrag) handleSelect(p.id); // click → open popover (replaces onclick)
-      else onReslotDrop(); // Task 5 fills this
-      finishDrag();
-      return;
-    }
-
-    // connect
-    if (wasDrag) onConnectDrop(); // Task 4 fills this
     finishDrag();
+    return;
   }
 
-  function onPointerLeave(e: PointerEvent) {
-    // Abort any in-flight gesture when the pointer leaves the viewport.
-    if (pending || drag) {
-      if (panning) {
-        panning = false;
-        persistNow();
-      }
-      pending = null;
-      finishDrag();
-      viewportEl?.releasePointerCapture?.(e.pointerId);
+  if (p.kind === 'node') {
+    if (!wasDrag)
+      handleSelect(p.id); // click → open popover (replaces onclick)
+    else onReslotDrop(); // Task 5 fills this
+    finishDrag();
+    return;
+  }
+
+  // connect
+  if (wasDrag) onConnectDrop(); // Task 4 fills this
+  finishDrag();
+}
+
+function onPointerLeave(e: PointerEvent) {
+  // Abort any in-flight gesture when the pointer leaves the viewport.
+  if (pending || drag) {
+    if (panning) {
+      panning = false;
+      persistNow();
     }
+    pending = null;
+    finishDrag();
+    viewportEl?.releasePointerCapture?.(e.pointerId);
   }
+}
 
-  function finishDrag() {
-    drag = null;
-    dragLaneTarget = null;
-    dragBandTarget = null;
-  }
+function finishDrag() {
+  drag = null;
+  dragLaneTarget = null;
+  dragBandTarget = null;
+}
 
-  // Reslot target strips highlighted under the cursor (band-expand visual, Task 5).
-  let dragLaneTarget = $state<{ name: string; y: number; height: number } | null>(null);
-  let dragBandTarget = $state<{ name: string; x: number; width: number } | null>(null);
-  function laneTargetAt(worldY: number) {
-    return targets.lanes.find((l) => worldY >= l.y && worldY < l.y + l.height) ?? null;
-  }
-  function bandTargetAt(worldX: number) {
-    return targets.bands.find((b) => worldX >= b.x && worldX < b.x + b.width) ?? null;
-  }
+// Reslot target strips highlighted under the cursor (band-expand visual, Task 5).
+let dragLaneTarget = $state<{ name: string; y: number; height: number } | null>(null);
+let dragBandTarget = $state<{ name: string; x: number; width: number } | null>(null);
+function laneTargetAt(worldY: number) {
+  return targets.lanes.find((l) => worldY >= l.y && worldY < l.y + l.height) ?? null;
+}
+function bandTargetAt(worldX: number) {
+  return targets.bands.find((b) => worldX >= b.x && worldX < b.x + b.width) ?? null;
+}
 
-  // Filled by Task 4 (connect) / Task 5 (reslot). Stubs keep the bundle green now.
-  function connectEdge(
-    _fromId: string,
-    _dir: 'needs' | 'unlocks',
-    _overId: string | null
-  ): { taskId: string; dependsOn: string } | null {
-    return null;
-  }
-  function reslotValid(
-    _t: Task | undefined,
-    _lane: string | undefined,
-    _band: string | undefined,
-    _overId: string | null
-  ): boolean {
-    return true;
-  }
-  function onReslotDrop() {
-    /* Task 5 */
-  }
-  function onConnectDrop() {
-    /* Task 4 */
-  }
+// Filled by Task 4 (connect) / Task 5 (reslot). Stubs keep the bundle green now.
+function connectEdge(
+  _fromId: string,
+  _dir: 'needs' | 'unlocks',
+  _overId: string | null
+): { taskId: string; dependsOn: string } | null {
+  return null;
+}
+function reslotValid(
+  _t: Task | undefined,
+  _lane: string | undefined,
+  _band: string | undefined,
+  _overId: string | null
+): boolean {
+  return true;
+}
+function onReslotDrop() {
+  /* Task 5 */
+}
+function onConnectDrop() {
+  /* Task 4 */
+}
 ```
 
 Then wire `onpointerleave` to the new handler on the viewport (`TechTreeCanvas.svelte:441`) — change `onpointerleave={onPointerUp}` to `onpointerleave={onPointerLeave}` (the pointer-leaving-mid-drag case now aborts cleanly rather than committing a stray pan).
@@ -1129,14 +1196,14 @@ Run the `svelte` MCP `svelte-autofixer` on `DragLayer.svelte`, `TechTreeCanvas.s
 The empty-canvas click now opens the create form with the inferred cell. Append to the landed `e2e/tree-authoring.spec.ts` (inside its `test.describe('Tree authoring — create form', …)` block):
 
 ```ts
-  test('clicking empty canvas opens the create form (click-in-place)', async ({ page }) => {
-    // A single click on empty viewport space (no node) opens the full form.
-    const viewport = page.locator('[data-testid="tree-viewport"]');
-    const box = (await viewport.boundingBox())!;
-    // Bottom-right corner is empty in the single-node fixture.
-    await page.mouse.click(box.x + box.width - 20, box.y + box.height - 20);
-    await expect(page.locator('[data-testid="create-form"]')).toBeVisible();
-  });
+test('clicking empty canvas opens the create form (click-in-place)', async ({ page }) => {
+  // A single click on empty viewport space (no node) opens the full form.
+  const viewport = page.locator('[data-testid="tree-viewport"]');
+  const box = (await viewport.boundingBox())!;
+  // Bottom-right corner is empty in the single-node fixture.
+  await page.mouse.click(box.x + box.width - 20, box.y + box.height - 20);
+  await expect(page.locator('[data-testid="create-form"]')).toBeVisible();
+});
 ```
 
 - [ ] **Step 8: Build + regression**
@@ -1201,31 +1268,31 @@ In `src/webview/components/tree/TreeNode.svelte`, add the handles as the first c
 Add the handle styles inside the `<style>` block (after `.tree-node-bar` rules, near `TreeNode.svelte:234`):
 
 ```css
-  .tree-connect-handle {
-    position: absolute;
-    top: 50%;
-    width: 14px;
-    height: 14px;
-    margin-top: -7px;
-    border-radius: 50%;
-    background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-    border: 2px solid var(--vscode-focusBorder);
-    cursor: crosshair;
-    z-index: 5;
-  }
-  .tree-connect-handle:hover {
-    background: var(--vscode-focusBorder);
-  }
-  .tree-connect-left {
-    left: -7px;
-  }
-  .tree-connect-right {
-    right: -7px;
-  }
-  /* Handles are meaningless at far LOD (nodes are pills). */
-  .tree-node.lod-far .tree-connect-handle {
-    display: none;
-  }
+.tree-connect-handle {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  border: 2px solid var(--vscode-focusBorder);
+  cursor: crosshair;
+  z-index: 5;
+}
+.tree-connect-handle:hover {
+  background: var(--vscode-focusBorder);
+}
+.tree-connect-left {
+  left: -7px;
+}
+.tree-connect-right {
+  right: -7px;
+}
+/* Handles are meaningless at far LOD (nodes are pills). */
+.tree-node.lod-far .tree-connect-handle {
+  display: none;
+}
 ```
 
 > The handle is a passive `<span>` (no JS handler) — the canvas's `.tree-viewport` `pointerdown` reads `data-connect-id`/`data-connect-dir` off `target.closest('.tree-connect-handle')` (Task 3 already handles this branch with `stopPropagation`). This keeps `TreeNode` presentational.
@@ -1235,39 +1302,39 @@ Add the handle styles inside the `<style>` block (after `.tree-node-bar` rules, 
 Replace the Task-3 stub `connectEdge` (the `return null;` version) with the locked direction mapping, and the stub `onConnectDrop` with the drop resolution:
 
 ```ts
-  /** Map a connect gesture (origin handle) + hovered target to an addDependency edge. */
-  function connectEdge(
-    fromId: string,
-    dir: 'needs' | 'unlocks',
-    overId: string | null
-  ): { taskId: string; dependsOn: string } | null {
-    if (!overId || overId === fromId) return null;
-    // right/unlocks: origin unlocks target ⇒ target depends on origin.
-    // left/needs:    origin needs target   ⇒ origin depends on target.
-    return dir === 'unlocks'
-      ? { taskId: overId, dependsOn: fromId }
-      : { taskId: fromId, dependsOn: overId };
-  }
+/** Map a connect gesture (origin handle) + hovered target to an addDependency edge. */
+function connectEdge(
+  fromId: string,
+  dir: 'needs' | 'unlocks',
+  overId: string | null
+): { taskId: string; dependsOn: string } | null {
+  if (!overId || overId === fromId) return null;
+  // right/unlocks: origin unlocks target ⇒ target depends on origin.
+  // left/needs:    origin needs target   ⇒ origin depends on target.
+  return dir === 'unlocks'
+    ? { taskId: overId, dependsOn: fromId }
+    : { taskId: fromId, dependsOn: overId };
+}
 
-  function onConnectDrop() {
-    if (!drag || drag.mode !== 'connect') return;
-    const overId = drag.targetId;
-    if (overId) {
-      const edge = connectEdge(drag.fromId, drag.dir, overId);
-      if (edge && connectValid(edge.taskId, edge.dependsOn)) {
-        vscode.postMessage({ type: 'addDependency', taskId: edge.taskId, dependsOn: edge.dependsOn });
-      }
-      return; // invalid target: no-op (DragLayer already showed red)
+function onConnectDrop() {
+  if (!drag || drag.mode !== 'connect') return;
+  const overId = drag.targetId;
+  if (overId) {
+    const edge = connectEdge(drag.fromId, drag.dir, overId);
+    if (edge && connectValid(edge.taskId, edge.dependsOn)) {
+      vscode.postMessage({ type: 'addDependency', taskId: edge.taskId, dependsOn: edge.dependsOn });
     }
-    // Drop on empty canvas → create a new pre-linked node (reuses P3a createTask.linkTo).
-    const cell = cellAt(geometry, drag.cursor.x, drag.cursor.y);
-    onCreateInPlace?.({
-      mode: 'full',
-      category: cell.lane,
-      milestone: cell.band,
-      linkTo: { taskId: drag.fromId, direction: drag.dir },
-    });
+    return; // invalid target: no-op (DragLayer already showed red)
   }
+  // Drop on empty canvas → create a new pre-linked node (reuses P3a createTask.linkTo).
+  const cell = cellAt(geometry, drag.cursor.x, drag.cursor.y);
+  onCreateInPlace?.({
+    mode: 'full',
+    category: cell.lane,
+    milestone: cell.band,
+    linkTo: { taskId: drag.fromId, direction: drag.dir },
+  });
+}
 ```
 
 - [ ] **Step 3: `TechTreeCanvas.svelte` — extend `onCreateInPlace` with `linkTo`**
@@ -1294,47 +1361,52 @@ The P3a `CreateTaskForm` never displays `linkTo`; it rides alongside the form as
 Extend the `createForm` state + `openCreateForm` signature (`Tasks.svelte:55-67`) to carry `linkTo`:
 
 ```ts
-  // Unified create form (hosted at root so it works from any tab).
-  let createForm = $state<{
-    mode: 'full' | 'quick';
-    bugMode: boolean;
+// Unified create form (hosted at root so it works from any tab).
+let createForm = $state<{
+  mode: 'full' | 'quick';
+  bugMode: boolean;
+  prefill?: { category?: string; milestone?: string; causedBy?: string };
+  linkTo?: { taskId: string; direction: 'needs' | 'unlocks' };
+} | null>(null);
+
+function openCreateForm(
+  mode: 'full' | 'quick',
+  opts?: {
+    bugMode?: boolean;
     prefill?: { category?: string; milestone?: string; causedBy?: string };
     linkTo?: { taskId: string; direction: 'needs' | 'unlocks' };
-  } | null>(null);
-
-  function openCreateForm(
-    mode: 'full' | 'quick',
-    opts?: {
-      bugMode?: boolean;
-      prefill?: { category?: string; milestone?: string; causedBy?: string };
-      linkTo?: { taskId: string; direction: 'needs' | 'unlocks' };
-    }
-  ) {
-    createForm = { mode, bugMode: opts?.bugMode ?? false, prefill: opts?.prefill, linkTo: opts?.linkTo };
   }
+) {
+  createForm = {
+    mode,
+    bugMode: opts?.bugMode ?? false,
+    prefill: opts?.prefill,
+    linkTo: opts?.linkTo,
+  };
+}
 ```
 
 Include `linkTo` in the posted `createTask` (`handleCreateSubmit`, `Tasks.svelte:69-84`) — read it from the outer `createForm` state (the form payload never carries it):
 
 ```ts
-  function handleCreateSubmit(payload: CreateTaskPayload) {
-    // Q1: map fields explicitly — never spread a payload into the message envelope
-    // (a spread carrying a `type` key would clobber the discriminant).
-    vscode.postMessage({
-      type: 'createTask',
-      title: payload.title,
-      description: payload.description,
-      priority: payload.priority,
-      category: payload.category,
-      milestone: payload.milestone,
-      taskType: payload.taskType,
-      causedBy: payload.causedBy,
-      openAfter: payload.openAfter,
-      // P3b drop-on-empty pre-link (undefined for every non-connect create).
-      linkTo: createForm?.linkTo,
-    });
-    createForm = null;
-  }
+function handleCreateSubmit(payload: CreateTaskPayload) {
+  // Q1: map fields explicitly — never spread a payload into the message envelope
+  // (a spread carrying a `type` key would clobber the discriminant).
+  vscode.postMessage({
+    type: 'createTask',
+    title: payload.title,
+    description: payload.description,
+    priority: payload.priority,
+    category: payload.category,
+    milestone: payload.milestone,
+    taskType: payload.taskType,
+    causedBy: payload.causedBy,
+    openAfter: payload.openAfter,
+    // P3b drop-on-empty pre-link (undefined for every non-connect create).
+    linkTo: createForm?.linkTo,
+  });
+  createForm = null;
+}
 ```
 
 Pass `linkTo` through the canvas `onCreateInPlace` handler (`Tasks.svelte:607-611`):
@@ -1380,34 +1452,34 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 - Modify: `src/webview/components/tree/TechTreeCanvas.svelte`, `src/webview/components/tree/AgeBandHeader.svelte`, `src/webview/components/tree/LaneBand.svelte`
 
-**Behavior (directive 9, spec §6):** dropping a dragged node **edits fields, not coordinates**. If the target **lane and band are unchanged** → in-cell **ordinal reorder** via `calculateOrdinalsForDrop` (`core/ordinalUtils`) + the existing `reorderTasks{updates}`. If the **lane or band changed** → `reslotTask{taskId, category?, milestone?}` (only the changed field(s)). The hovered `reslotTargets` strip highlights (band-expand visual, drawn by `DragLayer` + the Step 3 `AgeBandHeader`/`LaneBand` emphasis). **Bug rules (M2, review-fixed):** a bug (`type==='bug'`) is **reorder-only** — a drop onto another **lane** is refused (red, no-op), and a bug drop **never posts `reslotTask` at all** (so a horizontal drag can never assign a milestone); any in-lane drop resolves to an ordinal reorder. The band axis cannot be gated by literal comparison for bugs: a bug has `band: ''` and anchors at the leftmost column **under the first populated band's x-range**, so `bandAtX` always resolves *some* band and a literal `sameBand` check would mark **every** bug drag invalid — forbidding the in-lane ordinal reorder directive 9 requires. Hence the two-part enforcement: `reslotValid` gates the lane (red feedback); `onReslotDrop` hard-routes bugs to reorder-only. One-offs drag out of Misc as normal tasks.
+**Behavior (directive 9, spec §6):** dropping a dragged node **edits fields, not coordinates**. If the target **lane and band are unchanged** → in-cell **ordinal reorder** via `calculateOrdinalsForDrop` (`core/ordinalUtils`) + the existing `reorderTasks{updates}`. If the **lane or band changed** → `reslotTask{taskId, category?, milestone?}` (only the changed field(s)). The hovered `reslotTargets` strip highlights (band-expand visual, drawn by `DragLayer` + the Step 3 `AgeBandHeader`/`LaneBand` emphasis). **Bug rules (M2, review-fixed):** a bug (`type==='bug'`) is **reorder-only** — a drop onto another **lane** is refused (red, no-op), and a bug drop **never posts `reslotTask` at all** (so a horizontal drag can never assign a milestone); any in-lane drop resolves to an ordinal reorder. The band axis cannot be gated by literal comparison for bugs: a bug has `band: ''` and anchors at the leftmost column **under the first populated band's x-range**, so `bandAtX` always resolves _some_ band and a literal `sameBand` check would mark **every** bug drag invalid — forbidding the in-lane ordinal reorder directive 9 requires. Hence the two-part enforcement: `reslotValid` gates the lane (red feedback); `onReslotDrop` hard-routes bugs to reorder-only. One-offs drag out of Misc as normal tasks.
 
 - [ ] **Step 1: `TechTreeCanvas.svelte` — fill `reslotValid`**
 
 Replace the Task-3 stub `reslotValid` (the `return true;` version) with the bug-lane + validity rules:
 
 ```ts
-  /**
-   * Reslot validity (M2): bugs are reorder-only. A bug drop onto another LANE is
-   * refused here (red). The band axis is enforced in onReslotDrop (bug ⇒ never
-   * reslotTask) rather than by a literal band comparison: bugs have `band: ''` and
-   * anchor under the FIRST populated band's x-range, so bandAtX always resolves some
-   * band and a literal sameBand check would mark every bug drag invalid — forbidding
-   * the in-lane ordinal reorder directive 9 requires.
-   */
-  function reslotValid(
-    t: Task | undefined,
-    lane: string | undefined,
-    _band: string | undefined,
-    _overId: string | null
-  ): boolean {
-    if (!t) return false;
-    if (t.type === 'bug') {
-      // A bug stays on the Bugs lane; only in-lane drops are valid (they reorder).
-      return (lane ?? t.layout?.lane) === (t.layout?.lane ?? 'Bugs');
-    }
-    return true;
+/**
+ * Reslot validity (M2): bugs are reorder-only. A bug drop onto another LANE is
+ * refused here (red). The band axis is enforced in onReslotDrop (bug ⇒ never
+ * reslotTask) rather than by a literal band comparison: bugs have `band: ''` and
+ * anchor under the FIRST populated band's x-range, so bandAtX always resolves some
+ * band and a literal sameBand check would mark every bug drag invalid — forbidding
+ * the in-lane ordinal reorder directive 9 requires.
+ */
+function reslotValid(
+  t: Task | undefined,
+  lane: string | undefined,
+  _band: string | undefined,
+  _overId: string | null
+): boolean {
+  if (!t) return false;
+  if (t.type === 'bug') {
+    // A bug stays on the Bugs lane; only in-lane drops are valid (they reorder).
+    return (lane ?? t.layout?.lane) === (t.layout?.lane ?? 'Bugs');
   }
+  return true;
+}
 ```
 
 - [ ] **Step 2: `TechTreeCanvas.svelte` — fill `onReslotDrop`**
@@ -1415,79 +1487,79 @@ Replace the Task-3 stub `reslotValid` (the `return true;` version) with the bug-
 Replace the Task-3 stub `onReslotDrop` with the routing:
 
 ```ts
-  function onReslotDrop() {
-    if (!drag || drag.mode !== 'reslot') return;
-    const t = layoutNodes.find((n) => n.id === drag!.taskId);
-    if (!t || !t.layout) return;
-    if (!drag.valid) return; // bug cross-lane etc. — refused (DragLayer showed red)
+function onReslotDrop() {
+  if (!drag || drag.mode !== 'reslot') return;
+  const t = layoutNodes.find((n) => n.id === drag!.taskId);
+  if (!t || !t.layout) return;
+  if (!drag.valid) return; // bug cross-lane etc. — refused (DragLayer showed red)
 
-    // M2 (directive 9): bugs are reorder-only. NEVER post reslotTask for a bug — a
-    // horizontal drag must not assign a milestone; any in-lane drop reorders ordinal.
-    if (t.type === 'bug') {
-      const updates = inCellReorder(t, drag.cursor.y);
-      if (updates.length > 0) vscode.postMessage({ type: 'reorderTasks', updates });
-      return;
-    }
-
-    const fromLane = t.layout.lane;
-    const fromBand = t.layout.band || 'Backburner';
-    const toLane = drag.targetLane ?? fromLane;
-    const toBand = drag.targetBand ?? fromBand;
-    const laneChanged = toLane !== fromLane;
-    const bandChanged = toBand !== fromBand;
-
-    if (!laneChanged && !bandChanged) {
-      // Same cell → ordinal reorder among the cell's siblings (kanban path parity).
-      const updates = inCellReorder(t, drag.cursor.y);
-      if (updates.length > 0) vscode.postMessage({ type: 'reorderTasks', updates });
-      return;
-    }
-
-    // Lane and/or band changed → reslot the changed field(s) only.
-    const msg: { type: 'reslotTask'; taskId: string; category?: string; milestone?: string } = {
-      type: 'reslotTask',
-      taskId: t.id,
-    };
-    if (laneChanged) msg.category = toLane; // controller maps Misc → clearCategory
-    if (bandChanged) msg.milestone = toBand; // controller maps Backburner → clear
-    vscode.postMessage(msg);
+  // M2 (directive 9): bugs are reorder-only. NEVER post reslotTask for a bug — a
+  // horizontal drag must not assign a milestone; any in-lane drop reorders ordinal.
+  if (t.type === 'bug') {
+    const updates = inCellReorder(t, drag.cursor.y);
+    if (updates.length > 0) vscode.postMessage({ type: 'reorderTasks', updates });
+    return;
   }
 
-  /** In-cell ordinal reorder: order same-cell siblings, find the drop index by cursor Y. */
-  function inCellReorder(dragged: Task, cursorWorldY: number) {
-    const lane = dragged.layout!.lane;
-    const band = dragged.layout!.band;
-    const siblings = layoutNodes
-      .filter((n) => n.layout?.lane === lane && (n.layout?.band || '') === (band || ''))
-      .map((n) => ({ taskId: n.id, ordinal: n.ordinal, priority: n.priority }));
-    if (siblings.length <= 1) return [];
-    const sorted = sortSiblingsByBox(siblings);
-    // Drop index = count of siblings whose row-center is above the cursor.
-    let dropIndex = 0;
-    for (const s of sorted) {
-      const box = geometry.nodes.get(s.taskId);
-      if (box && box.y + box.height / 2 < cursorWorldY && s.taskId !== dragged.id) dropIndex++;
-    }
-    return calculateOrdinalsForDrop(
-      sorted,
-      { taskId: dragged.id, ordinal: dragged.ordinal, priority: dragged.priority },
-      dropIndex
-    );
+  const fromLane = t.layout.lane;
+  const fromBand = t.layout.band || 'Backburner';
+  const toLane = drag.targetLane ?? fromLane;
+  const toBand = drag.targetBand ?? fromBand;
+  const laneChanged = toLane !== fromLane;
+  const bandChanged = toBand !== fromBand;
+
+  if (!laneChanged && !bandChanged) {
+    // Same cell → ordinal reorder among the cell's siblings (kanban path parity).
+    const updates = inCellReorder(t, drag.cursor.y);
+    if (updates.length > 0) vscode.postMessage({ type: 'reorderTasks', updates });
+    return;
   }
 
-  function sortSiblingsByBox(cards: Array<{ taskId: string; ordinal?: number; priority?: string }>) {
-    return [...cards].sort((a, b) => {
-      const ba = geometry.nodes.get(a.taskId);
-      const bb = geometry.nodes.get(b.taskId);
-      return (ba?.y ?? 0) - (bb?.y ?? 0);
-    });
+  // Lane and/or band changed → reslot the changed field(s) only.
+  const msg: { type: 'reslotTask'; taskId: string; category?: string; milestone?: string } = {
+    type: 'reslotTask',
+    taskId: t.id,
+  };
+  if (laneChanged) msg.category = toLane; // controller maps Misc → clearCategory
+  if (bandChanged) msg.milestone = toBand; // controller maps Backburner → clear
+  vscode.postMessage(msg);
+}
+
+/** In-cell ordinal reorder: order same-cell siblings, find the drop index by cursor Y. */
+function inCellReorder(dragged: Task, cursorWorldY: number) {
+  const lane = dragged.layout!.lane;
+  const band = dragged.layout!.band;
+  const siblings = layoutNodes
+    .filter((n) => n.layout?.lane === lane && (n.layout?.band || '') === (band || ''))
+    .map((n) => ({ taskId: n.id, ordinal: n.ordinal, priority: n.priority }));
+  if (siblings.length <= 1) return [];
+  const sorted = sortSiblingsByBox(siblings);
+  // Drop index = count of siblings whose row-center is above the cursor.
+  let dropIndex = 0;
+  for (const s of sorted) {
+    const box = geometry.nodes.get(s.taskId);
+    if (box && box.y + box.height / 2 < cursorWorldY && s.taskId !== dragged.id) dropIndex++;
   }
+  return calculateOrdinalsForDrop(
+    sorted,
+    { taskId: dragged.id, ordinal: dragged.ordinal, priority: dragged.priority },
+    dropIndex
+  );
+}
+
+function sortSiblingsByBox(cards: Array<{ taskId: string; ordinal?: number; priority?: string }>) {
+  return [...cards].sort((a, b) => {
+    const ba = geometry.nodes.get(a.taskId);
+    const bb = geometry.nodes.get(b.taskId);
+    return (ba?.y ?? 0) - (bb?.y ?? 0);
+  });
+}
 ```
 
 Add `calculateOrdinalsForDrop` to the imports at the top of `TechTreeCanvas.svelte` (next to the `wouldCreateCycle` import from Task 3):
 
 ```ts
-  import { calculateOrdinalsForDrop } from '../../../core/ordinalUtils';
+import { calculateOrdinalsForDrop } from '../../../core/ordinalUtils';
 ```
 
 > **In-cell reorder scope (review-confirmed):** `calculateOrdinalsForDrop` (`core/ordinalUtils`) is the kanban-column reorder helper; here it is fed the same-cell sibling set sorted by rendered `y`. The Playwright coverage (Task 8) asserts an in-cell drag posts a `reorderTasks{updates}` message — **not** exact ordinal math (the drop-index heuristic is deliberately simple; the shared helper computes the fractional ordinals). This keeps the reslot routing testable without pinning pixel-precise ordinals.
@@ -1499,50 +1571,50 @@ Directive 9: the hovered strip gets "a highlight + AgeBandHeader/LaneBand emphas
 In `src/webview/components/tree/AgeBandHeader.svelte`, extend `Props` + destructure (`AgeBandHeader.svelte:4-10`):
 
 ```ts
-  interface Props {
-    bands: BandRange[];
-    scale: number;
-    tx: number;
-    onOpenMilestone: (band: string) => void;
-    /** Name of the band to emphasize while a reslot drag hovers it (null = none). */
-    emphasis?: string | null;
-  }
-  let { bands, scale, tx, onOpenMilestone, emphasis = null }: Props = $props();
+interface Props {
+  bands: BandRange[];
+  scale: number;
+  tx: number;
+  onOpenMilestone: (band: string) => void;
+  /** Name of the band to emphasize while a reslot drag hovers it (null = none). */
+  emphasis?: string | null;
+}
+let { bands, scale, tx, onOpenMilestone, emphasis = null }: Props = $props();
 ```
 
 Add the class to the header button (`AgeBandHeader.svelte:15-18`) — insert `class:emphasized={band.name === emphasis}` after the `class="tree-band-header"` line — and the style (after the `.tree-band-header` rule):
 
 ```css
-  .tree-band-header.emphasized {
-    color: var(--vscode-foreground);
-    background: color-mix(in srgb, var(--vscode-focusBorder) 18%, var(--vscode-editor-background));
-    border-left-color: var(--vscode-focusBorder);
-  }
+.tree-band-header.emphasized {
+  color: var(--vscode-foreground);
+  background: color-mix(in srgb, var(--vscode-focusBorder) 18%, var(--vscode-editor-background));
+  border-left-color: var(--vscode-focusBorder);
+}
 ```
 
 In `src/webview/components/tree/LaneBand.svelte`, the same shape — extend `Props` + destructure (`LaneBand.svelte:4-9`):
 
 ```ts
-  interface Props {
-    lanes: LaneRange[];
-    scale: number;
-    ty: number;
-    /** Name of the lane to emphasize while a reslot drag hovers it (null = none). */
-    emphasis?: string | null;
-  }
-  let { lanes, scale, ty, emphasis = null }: Props = $props();
+interface Props {
+  lanes: LaneRange[];
+  scale: number;
+  ty: number;
+  /** Name of the lane to emphasize while a reslot drag hovers it (null = none). */
+  emphasis?: string | null;
+}
+let { lanes, scale, ty, emphasis = null }: Props = $props();
 ```
 
 Add `class:emphasized={lane.name === emphasis}` to the label div (`LaneBand.svelte:14-18`, after `class="tree-lane-label"`) and the style (after the `.tree-lane-label` rule):
 
 ```css
-  .tree-lane-label.emphasized {
-    background: color-mix(in srgb, var(--vscode-focusBorder) 18%, var(--vscode-editor-background));
-    border-top-color: var(--vscode-focusBorder);
-  }
-  .tree-lane-label.emphasized span {
-    color: var(--vscode-foreground);
-  }
+.tree-lane-label.emphasized {
+  background: color-mix(in srgb, var(--vscode-focusBorder) 18%, var(--vscode-editor-background));
+  border-top-color: var(--vscode-focusBorder);
+}
+.tree-lane-label.emphasized span {
+  color: var(--vscode-foreground);
+}
 ```
 
 In `src/webview/components/tree/TechTreeCanvas.svelte`, feed the props at the two mounts (`TechTreeCanvas.svelte:447-448`). Change:
@@ -1608,66 +1680,76 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 In `src/webview/components/tree/EdgeLayer.svelte`, add an `onRemoveDependency` prop and a per-edge midpoint + hover state. Extend `Props` (`EdgeLayer.svelte:5-15`):
 
 ```ts
-  interface Props {
-    nodes: Map<string, NodeBox>;
-    tasks: Task[];
-    doneStatus: string;
-    hoveredId: string | null;
-    selectedId: string | null;
-    fadedIds: Set<string>;
-    width: number;
-    height: number;
-    /** Remove a prereq edge: dependent no longer depends on prereq. */
-    onRemoveDependency?: (dependentId: string, prereqId: string) => void;
-  }
-  let { nodes, tasks, doneStatus, hoveredId, selectedId, fadedIds, width, height, onRemoveDependency }: Props = $props();
+interface Props {
+  nodes: Map<string, NodeBox>;
+  tasks: Task[];
+  doneStatus: string;
+  hoveredId: string | null;
+  selectedId: string | null;
+  fadedIds: Set<string>;
+  width: number;
+  height: number;
+  /** Remove a prereq edge: dependent no longer depends on prereq. */
+  onRemoveDependency?: (dependentId: string, prereqId: string) => void;
+}
+let {
+  nodes,
+  tasks,
+  doneStatus,
+  hoveredId,
+  selectedId,
+  fadedIds,
+  width,
+  height,
+  onRemoveDependency,
+}: Props = $props();
 ```
 
 Add `from`/`to` anchors + a `mid` point to the `Edge` interface and its construction. Extend the interface (`EdgeLayer.svelte:17-23`):
 
 ```ts
-  interface Edge {
-    id: string;
-    from: string;
-    to: string;
-    d: string;
-    mid: { x: number; y: number };
-    kind: 'satisfied' | 'blocking' | 'bug';
-  }
+interface Edge {
+  id: string;
+  from: string;
+  to: string;
+  d: string;
+  mid: { x: number; y: number };
+  kind: 'satisfied' | 'blocking' | 'bug';
+}
 ```
 
 In the prereq-edge push (`EdgeLayer.svelte:41-48`), compute the midpoint from the anchors:
 
 ```ts
-        const { from, to } = edgeAnchors(sourceBox, targetBox);
-        out.push({
-          id: `${dep.id}->${t.id}`,
-          from: dep.id,
-          to: t.id,
-          d: bezierPath(from, to),
-          mid: { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 },
-          kind: done ? 'satisfied' : 'blocking',
-        });
+const { from, to } = edgeAnchors(sourceBox, targetBox);
+out.push({
+  id: `${dep.id}->${t.id}`,
+  from: dep.id,
+  to: t.id,
+  d: bezierPath(from, to),
+  mid: { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 },
+  kind: done ? 'satisfied' : 'blocking',
+});
 ```
 
 In the bug-edge push (`EdgeLayer.svelte:56-63`), add `mid` too (bug edges get no ✕, but the field is required):
 
 ```ts
-          const { from, to } = edgeAnchors(targetBox, causeBox);
-          out.push({
-            id: `bug:${t.id}->${cause.id}`,
-            from: t.id,
-            to: cause.id,
-            d: bezierPath(from, to),
-            mid: { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 },
-            kind: 'bug',
-          });
+const { from, to } = edgeAnchors(targetBox, causeBox);
+out.push({
+  id: `bug:${t.id}->${cause.id}`,
+  from: t.id,
+  to: cause.id,
+  d: bezierPath(from, to),
+  mid: { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 },
+  kind: 'bug',
+});
 ```
 
 Add a per-edge hover state and render the hit-path + ✕ for **non-bug** edges. Add above the `<svg>` markup (after the `visible` function, `EdgeLayer.svelte:74-78`):
 
 ```ts
-  let hoveredEdge = $state<string | null>(null);
+let hoveredEdge = $state<string | null>(null);
 ```
 
 Then, inside the `{#each edges as e (e.id)}` block (`EdgeLayer.svelte:97-113`), replace the single `<path>` with the visible edge + an invisible wide hit-path + a hover ✕:
@@ -1727,27 +1809,27 @@ Then, inside the `{#each edges as e (e.id)}` block (`EdgeLayer.svelte:97-113`), 
 Add the hit-path + ✕ styles (the layer stays `pointer-events:none`; only the hit-path and ✕ opt in). After `.edge-layer { … }` (`EdgeLayer.svelte:117-123`):
 
 ```css
-  .tree-edge-hit {
-    fill: none;
-    stroke: transparent;
-    stroke-width: 14;
-    pointer-events: stroke;
-    cursor: pointer;
-  }
-  .tree-edge-remove {
-    pointer-events: all;
-    cursor: pointer;
-  }
-  .tree-edge-remove-bg {
-    fill: var(--vscode-editorWidget-background, var(--vscode-editor-background));
-    stroke: var(--vscode-editorError-foreground, #f14c4c);
-    stroke-width: 1.5;
-  }
-  .tree-edge-remove-x {
-    stroke: var(--vscode-editorError-foreground, #f14c4c);
-    stroke-width: 2;
-    stroke-linecap: round;
-  }
+.tree-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.tree-edge-remove {
+  pointer-events: all;
+  cursor: pointer;
+}
+.tree-edge-remove-bg {
+  fill: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  stroke: var(--vscode-editorError-foreground, #f14c4c);
+  stroke-width: 1.5;
+}
+.tree-edge-remove-x {
+  stroke: var(--vscode-editorError-foreground, #f14c4c);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
 ```
 
 > **z-order / occlusion (review-confirmed):** `EdgeLayer` is the first child of `.tree-surface` (under the nodes), and the whole SVG keeps `pointer-events:none` except the `.tree-edge-hit` stroke and the `.tree-edge-remove` group — the standard opt-back-in overlay pattern, valid for SVG. A prereq edge's midpoint lies in the inter-node gap (NODE_WIDTH 208, COL_GAP 56 — not under a node), so the wide hit-stroke and ✕ receive pointer events there; during a canvas pointer capture the hit-path is unreachable, but edge removal is an idle-state interaction, so no conflict. The ✕ `onpointerdown` `stopPropagation` prevents the canvas machine from treating the click as a pan/create (the canvas `onPointerDown` also early-returns on `.tree-edge-remove`, added in Task 3).
@@ -1763,8 +1845,19 @@ In `src/webview/components/tree/DetailPopover.svelte`, add an `onRemovePrereq` p
 and add it to the `$props()` destructure (`DetailPopover.svelte:33`):
 
 ```ts
-  let { task, statuses, priorities, taskIdDisplay, x, y, onClose, onExpand, onQuickEdit, onAction, onRemovePrereq }: Props =
-    $props();
+let {
+  task,
+  statuses,
+  priorities,
+  taskIdDisplay,
+  x,
+  y,
+  onClose,
+  onExpand,
+  onQuickEdit,
+  onAction,
+  onRemovePrereq,
+}: Props = $props();
 ```
 
 Change the prereq chips block (`DetailPopover.svelte:171-176`) to add the ✕ button:
@@ -1794,18 +1887,18 @@ Change the prereq chips block (`DetailPopover.svelte:171-176`) to add the ✕ bu
 Add the ✕ button style (after `.tp-rel-chip.unmet` at `DetailPopover.svelte:325-328`):
 
 ```css
-  .tp-rel-remove {
-    all: unset;
-    cursor: pointer;
-    display: inline-flex;
-    margin-left: 3px;
-    vertical-align: middle;
-    opacity: 0.7;
-  }
-  .tp-rel-remove:hover {
-    opacity: 1;
-    color: var(--vscode-editorError-foreground, #f14c4c);
-  }
+.tp-rel-remove {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  margin-left: 3px;
+  vertical-align: middle;
+  opacity: 0.7;
+}
+.tp-rel-remove:hover {
+  opacity: 1;
+  color: var(--vscode-editorError-foreground, #f14c4c);
+}
 ```
 
 - [ ] **Step 3: `TechTreeCanvas.svelte` — wire both removal paths**
@@ -1879,51 +1972,51 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 In `src/webview/components/navigator/TreeNavigator.svelte`, import the shared threshold (extend the imports at the top of the file):
 
 ```ts
-  import { DRAG_THRESHOLD } from '../../lib/treeGeometry';
+import { DRAG_THRESHOLD } from '../../lib/treeGeometry';
 ```
 
 Add the threshold-gated pan handlers near `jump` (`TreeNavigator.svelte:50-52`):
 
 ```ts
-  let minimapEl: HTMLDivElement | undefined = $state();
-  let panning = $state(false);
-  let panPress: { x: number; y: number; pointerId: number } | null = null;
-  function emitPan(e: PointerEvent) {
-    if (!minimapEl) return;
-    const r = minimapEl.getBoundingClientRect();
-    const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-    const y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
-    vscode.postMessage({ type: 'navigatorMinimapPan', x, y });
-  }
-  function onMinimapDown(e: PointerEvent) {
-    // Q2: record the press only — capture + pan start after DRAG_THRESHOLD, so a
-    // plain click leaves the column buttons' onclick jump intact.
-    panPress = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
-  }
-  function onMinimapMove(e: PointerEvent) {
-    if (!panPress) return;
-    // Re-review m7 guard: a press that leaves the minimap under-threshold and is released
-    // outside never reaches onMinimapUp (no capture yet); without this, the stale panPress
-    // turns the next buttonless hover into an unintended pan.
-    if (!(e.buttons & 1)) {
-      panPress = null;
-      panning = false;
-      return;
-    }
-    if (!panning) {
-      if (Math.hypot(e.clientX - panPress.x, e.clientY - panPress.y) < DRAG_THRESHOLD) return;
-      panning = true;
-      minimapEl?.setPointerCapture(panPress.pointerId);
-    }
-    emitPan(e);
-  }
-  function onMinimapUp(e: PointerEvent) {
-    if (panning) minimapEl?.releasePointerCapture?.(e.pointerId);
-    panning = false;
+let minimapEl: HTMLDivElement | undefined = $state();
+let panning = $state(false);
+let panPress: { x: number; y: number; pointerId: number } | null = null;
+function emitPan(e: PointerEvent) {
+  if (!minimapEl) return;
+  const r = minimapEl.getBoundingClientRect();
+  const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+  const y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+  vscode.postMessage({ type: 'navigatorMinimapPan', x, y });
+}
+function onMinimapDown(e: PointerEvent) {
+  // Q2: record the press only — capture + pan start after DRAG_THRESHOLD, so a
+  // plain click leaves the column buttons' onclick jump intact.
+  panPress = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
+}
+function onMinimapMove(e: PointerEvent) {
+  if (!panPress) return;
+  // Re-review m7 guard: a press that leaves the minimap under-threshold and is released
+  // outside never reaches onMinimapUp (no capture yet); without this, the stale panPress
+  // turns the next buttonless hover into an unintended pan.
+  if (!(e.buttons & 1)) {
     panPress = null;
-    // Sub-threshold pointerup = plain click: nothing was emitted/captured; a column's
-    // onclick jump fires normally.
+    panning = false;
+    return;
   }
+  if (!panning) {
+    if (Math.hypot(e.clientX - panPress.x, e.clientY - panPress.y) < DRAG_THRESHOLD) return;
+    panning = true;
+    minimapEl?.setPointerCapture(panPress.pointerId);
+  }
+  emitPan(e);
+}
+function onMinimapUp(e: PointerEvent) {
+  if (panning) minimapEl?.releasePointerCapture?.(e.pointerId);
+  panning = false;
+  panPress = null;
+  // Sub-threshold pointerup = plain click: nothing was emitted/captured; a column's
+  // onclick jump fires normally.
+}
 ```
 
 Wire the handlers + `bind:this` onto `.nav-minimap` (`TreeNavigator.svelte:114`). The band columns keep their `onclick` jump (a sub-threshold click still jumps, Q2); dragging past the threshold pans:
@@ -1945,9 +2038,9 @@ Wire the handlers + `bind:this` onto `.nav-minimap` (`TreeNavigator.svelte:114`)
 In `src/webview/components/tasks/Tasks.svelte`, add state beside `jumpBand`/`jumpNonce` (`Tasks.svelte:48-49`):
 
 ```ts
-  let minimapPanX = $state(0);
-  let minimapPanY = $state(0);
-  let minimapPanNonce = $state(0);
+let minimapPanX = $state(0);
+let minimapPanY = $state(0);
+let minimapPanNonce = $state(0);
 ```
 
 Add a case to the `onMessage` switch after `navigatorJump` (`Tasks.svelte:175-178`):
@@ -1993,20 +2086,20 @@ Add the props to `Props` + `$props()` (after `jumpBand`/`jumpNonce`, `TechTreeCa
 Add an effect (next to the jump effect, `TechTreeCanvas.svelte:150-159`) that centers the viewport on the normalized minimap point when the nonce bumps:
 
 ```ts
-  // Minimap drag-to-pan: center the viewport on the normalized (x,y) world point.
-  let lastMinimapPanNonce = 0;
-  $effect(() => {
-    if (minimapPanNonce === lastMinimapPanNonce) return;
-    lastMinimapPanNonce = minimapPanNonce;
-    if (!viewportEl || geometry.width <= 0 || geometry.height <= 0) return;
-    const worldX = minimapPanX * geometry.width;
-    const worldY = minimapPanY * geometry.height;
-    setViewport({
-      scale: vp.scale,
-      tx: viewportEl.clientWidth / 2 - worldX * vp.scale,
-      ty: viewportEl.clientHeight / 2 - worldY * vp.scale,
-    });
+// Minimap drag-to-pan: center the viewport on the normalized (x,y) world point.
+let lastMinimapPanNonce = 0;
+$effect(() => {
+  if (minimapPanNonce === lastMinimapPanNonce) return;
+  lastMinimapPanNonce = minimapPanNonce;
+  if (!viewportEl || geometry.width <= 0 || geometry.height <= 0) return;
+  const worldX = minimapPanX * geometry.width;
+  const worldY = minimapPanY * geometry.height;
+  setViewport({
+    scale: vp.scale,
+    tx: viewportEl.clientWidth / 2 - worldX * vp.scale,
+    ty: viewportEl.clientHeight / 2 - worldY * vp.scale,
   });
+});
 ```
 
 > The `lastMinimapPanNonce` init-once read mirrors the `lastJumpNonce` pattern; the `svelte-autofixer` `state_referenced_locally` note is suppressed the same way (house precedent).
@@ -2014,12 +2107,12 @@ Add an effect (next to the jump effect, `TechTreeCanvas.svelte:150-159`) that ce
 Make Promote-all filter-aware. Replace the `promoteAll` function (`TechTreeCanvas.svelte:128-132`) and derive the promotable set:
 
 ```ts
-  const promotableDrafts = $derived(draftNodes.filter((t) => !fadedIds.has(t.id)));
-  function promoteAll() {
-    for (const t of promotableDrafts) {
-      vscode.postMessage({ type: 'promoteDraft', taskId: t.id });
-    }
+const promotableDrafts = $derived(draftNodes.filter((t) => !fadedIds.has(t.id)));
+function promoteAll() {
+  for (const t of promotableDrafts) {
+    vscode.postMessage({ type: 'promoteDraft', taskId: t.id });
   }
+}
 ```
 
 Update the button guard + count (`TechTreeCanvas.svelte:427-431`) to use the filtered set:
@@ -2037,66 +2130,96 @@ Update the button guard + count (`TechTreeCanvas.svelte:427-431`) to use the fil
 Append to `e2e/tree-navigator.spec.ts` (inside its top-level describe):
 
 ```ts
-  test('dragging the minimap posts navigatorMinimapPan', async ({ page }) => {
-    const minimap = page.locator('[data-testid="nav-minimap"]');
-    const box = (await minimap.boundingBox())!;
-    await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.5);
-    await page.mouse.down();
-    // Cross DRAG_THRESHOLD with intermediate steps (Q2: pan only starts past the threshold).
-    await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.5, { steps: 5 });
-    await page.mouse.up();
-    const msgs = await getPostedMessages(page);
-    expect(msgs.some((m) => m.type === 'navigatorMinimapPan')).toBe(true);
-  });
+test('dragging the minimap posts navigatorMinimapPan', async ({ page }) => {
+  const minimap = page.locator('[data-testid="nav-minimap"]');
+  const box = (await minimap.boundingBox())!;
+  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.5);
+  await page.mouse.down();
+  // Cross DRAG_THRESHOLD with intermediate steps (Q2: pan only starts past the threshold).
+  await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.5, { steps: 5 });
+  await page.mouse.up();
+  const msgs = await getPostedMessages(page);
+  expect(msgs.some((m) => m.type === 'navigatorMinimapPan')).toBe(true);
+});
 
-  test('a plain click on a minimap column still jumps, no pan (Q2)', async ({ page }) => {
-    await clearPostedMessages(page);
-    // Sub-threshold click: the column's onclick jump fires; no navigatorMinimapPan.
-    await page.locator('[data-testid="nav-minimap-v1"]').click();
-    const msgs = await getPostedMessages(page);
-    expect(msgs.some((m) => m.type === 'navigatorJump')).toBe(true);
-    expect(msgs.some((m) => m.type === 'navigatorMinimapPan')).toBe(false);
-  });
+test('a plain click on a minimap column still jumps, no pan (Q2)', async ({ page }) => {
+  await clearPostedMessages(page);
+  // Sub-threshold click: the column's onclick jump fires; no navigatorMinimapPan.
+  await page.locator('[data-testid="nav-minimap-v1"]').click();
+  const msgs = await getPostedMessages(page);
+  expect(msgs.some((m) => m.type === 'navigatorJump')).toBe(true);
+  expect(msgs.some((m) => m.type === 'navigatorMinimapPan')).toBe(false);
+});
 ```
 
 Append to `e2e/tree-canvas.spec.ts` (inside `test.describe('Tech tree canvas', …)`):
 
 ```ts
-  test('cross-branch mode shows the cross-branch empty-state copy (11c)', async ({ page }) => {
-    await postMessageToWebview(page, { type: 'dataSourceChanged', mode: 'cross-branch' });
-    await postMessageToWebview(page, { type: 'tasksUpdated', tasks: [] });
-    await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder: [], bandOrder: [], warnings: [] });
-    await page.waitForTimeout(80);
-    await expect(page.locator('[data-testid="tree-empty-state"]')).toContainText(
-      "isn't available in cross-branch mode"
-    );
+test('cross-branch mode shows the cross-branch empty-state copy (11c)', async ({ page }) => {
+  await postMessageToWebview(page, { type: 'dataSourceChanged', mode: 'cross-branch' });
+  await postMessageToWebview(page, { type: 'tasksUpdated', tasks: [] });
+  await postMessageToWebview(page, {
+    type: 'treeLayoutUpdated',
+    laneOrder: [],
+    bandOrder: [],
+    warnings: [],
   });
+  await page.waitForTimeout(80);
+  await expect(page.locator('[data-testid="tree-empty-state"]')).toContainText(
+    "isn't available in cross-branch mode"
+  );
+});
 
-  test('Promote-all counts only non-filtered drafts (11b)', async ({ page }) => {
-    // Two drafts; a search filter that matches only one → the button shows (1) and
-    // promotes only the visible draft.
-    await postMessageToWebview(page, {
-      type: 'tasksUpdated',
-      tasks: [
-        {
-          id: 'TASK-D1', title: 'Alpha draft', status: 'Draft', labels: [], assignee: [],
-          dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
-          filePath: '/b/tasks/task-d1.md', category: 'Features', milestone: 'v1',
-          layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 0 },
-        } as Task,
-        {
-          id: 'TASK-D2', title: 'Beta draft', status: 'Draft', labels: [], assignee: [],
-          dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
-          filePath: '/b/tasks/task-d2.md', category: 'Features', milestone: 'v1',
-          layout: { lane: 'Features', band: 'v1', depth: 1, subRow: 0 },
-        } as Task,
-      ],
-    });
-    await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder: ['Features'], bandOrder: ['v1'], warnings: [] });
-    await postMessageToWebview(page, { type: 'navigatorFilterChanged', search: 'Alpha', priority: '' });
-    await page.waitForTimeout(80);
-    await expect(page.locator('[data-testid="tree-promote-all"]')).toContainText('(1)');
+test('Promote-all counts only non-filtered drafts (11b)', async ({ page }) => {
+  // Two drafts; a search filter that matches only one → the button shows (1) and
+  // promotes only the visible draft.
+  await postMessageToWebview(page, {
+    type: 'tasksUpdated',
+    tasks: [
+      {
+        id: 'TASK-D1',
+        title: 'Alpha draft',
+        status: 'Draft',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/b/tasks/task-d1.md',
+        category: 'Features',
+        milestone: 'v1',
+        layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 0 },
+      } as Task,
+      {
+        id: 'TASK-D2',
+        title: 'Beta draft',
+        status: 'Draft',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/b/tasks/task-d2.md',
+        category: 'Features',
+        milestone: 'v1',
+        layout: { lane: 'Features', band: 'v1', depth: 1, subRow: 0 },
+      } as Task,
+    ],
   });
+  await postMessageToWebview(page, {
+    type: 'treeLayoutUpdated',
+    laneOrder: ['Features'],
+    bandOrder: ['v1'],
+    warnings: [],
+  });
+  await postMessageToWebview(page, {
+    type: 'navigatorFilterChanged',
+    search: 'Alpha',
+    priority: '',
+  });
+  await page.waitForTimeout(80);
+  await expect(page.locator('[data-testid="tree-promote-all"]')).toContainText('(1)');
+});
 ```
 
 > The `tree-navigator.spec.ts` `getPostedMessages` import and `setup` scaffold already exist (P2b); extend the fixture import with `clearPostedMessages` if it isn't already there. If the navigator fixture doesn't render the minimap without `navigatorData` bands, post a `navigatorData` with a couple of bands (incl. `v1`, for the `nav-minimap-v1` column) in the test's `beforeEach` (mirror the existing `jump button posts navigatorJump` test's setup — use whatever band names that suite already seeds).
@@ -2153,15 +2276,45 @@ const bandOrder = ['v1', 'v2'];
 function tasks(): Task[] {
   const base = (over: Partial<Task> & { id: string }): Task =>
     ({
-      title: over.id, status: 'To Do', labels: [], assignee: [], dependencies: [],
-      acceptanceCriteria: [], definitionOfDone: [], filePath: `/b/tasks/${over.id}.md`, ...over,
+      title: over.id,
+      status: 'To Do',
+      labels: [],
+      assignee: [],
+      dependencies: [],
+      acceptanceCriteria: [],
+      definitionOfDone: [],
+      filePath: `/b/tasks/${over.id}.md`,
+      ...over,
     }) as Task;
   return [
-    base({ id: 'TASK-1', title: 'Root', category: 'Features', milestone: 'v1', layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 0 } }),
-    base({ id: 'TASK-2', title: 'Backend thing', category: 'Backend', milestone: 'v1', layout: { lane: 'Backend', band: 'v1', depth: 0, subRow: 0 } }),
-    base({ id: 'TASK-3', title: 'Later', category: 'Features', milestone: 'v2', layout: { lane: 'Features', band: 'v2', depth: 0, subRow: 0 } }),
+    base({
+      id: 'TASK-1',
+      title: 'Root',
+      category: 'Features',
+      milestone: 'v1',
+      layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 0 },
+    }),
+    base({
+      id: 'TASK-2',
+      title: 'Backend thing',
+      category: 'Backend',
+      milestone: 'v1',
+      layout: { lane: 'Backend', band: 'v1', depth: 0, subRow: 0 },
+    }),
+    base({
+      id: 'TASK-3',
+      title: 'Later',
+      category: 'Features',
+      milestone: 'v2',
+      layout: { lane: 'Features', band: 'v2', depth: 0, subRow: 0 },
+    }),
     // Bug node (M2 coverage): bugs anchor at band '' on the Bugs lane and are reorder-only.
-    base({ id: 'TASK-4', title: 'A bug', type: 'bug', layout: { lane: 'Bugs', band: '', depth: 0, subRow: 0 } }),
+    base({
+      id: 'TASK-4',
+      title: 'A bug',
+      type: 'bug',
+      layout: { lane: 'Bugs', band: '', depth: 0, subRow: 0 },
+    }),
   ];
 }
 
@@ -2170,11 +2323,28 @@ async function setup(page: Parameters<typeof installVsCodeMock>[0]) {
   await installVsCodeMock(page);
   await page.goto('/tasks.html');
   await page.waitForTimeout(100);
-  await postMessageToWebview(page, { type: 'statusesUpdated', statuses: ['To Do', 'In Progress', 'Done'] });
-  await postMessageToWebview(page, { type: 'prioritiesUpdated', priorities: ['high', 'medium', 'low'] });
-  await postMessageToWebview(page, { type: 'milestonesUpdated', milestones: [{ id: 'v1', name: 'v1' }, { id: 'v2', name: 'v2' }] });
+  await postMessageToWebview(page, {
+    type: 'statusesUpdated',
+    statuses: ['To Do', 'In Progress', 'Done'],
+  });
+  await postMessageToWebview(page, {
+    type: 'prioritiesUpdated',
+    priorities: ['high', 'medium', 'low'],
+  });
+  await postMessageToWebview(page, {
+    type: 'milestonesUpdated',
+    milestones: [
+      { id: 'v1', name: 'v1' },
+      { id: 'v2', name: 'v2' },
+    ],
+  });
   await postMessageToWebview(page, { type: 'tasksUpdated', tasks: tasks() });
-  await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder, bandOrder, warnings: [] });
+  await postMessageToWebview(page, {
+    type: 'treeLayoutUpdated',
+    laneOrder,
+    bandOrder,
+    warnings: [],
+  });
   await postMessageToWebview(page, { type: 'activeTabChanged', tab: 'tree' });
   await page.waitForTimeout(150);
   await expect(page.locator('[data-testid="tree-canvas"]')).toBeVisible();
@@ -2187,7 +2357,11 @@ async function nodeCenter(page: Parameters<typeof installVsCodeMock>[0], id: str
 }
 
 /** Drag from a→b with intermediate steps so movement crosses DRAG_THRESHOLD. */
-async function drag(page: Parameters<typeof installVsCodeMock>[0], from: { x: number; y: number }, to: { x: number; y: number }) {
+async function drag(
+  page: Parameters<typeof installVsCodeMock>[0],
+  from: { x: number; y: number },
+  to: { x: number; y: number }
+) {
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 5 });
@@ -2198,13 +2372,19 @@ async function drag(page: Parameters<typeof installVsCodeMock>[0], from: { x: nu
 test.describe('Tree drag — connect / reslot / edge removal', () => {
   test.beforeEach(async ({ page }) => setup(page));
 
-  test('drag right handle onto a node posts addDependency (target depends on origin)', async ({ page }) => {
+  test('drag right handle onto a node posts addDependency (target depends on origin)', async ({
+    page,
+  }) => {
     await page.locator('[data-testid="tree-node-TASK-1"]').hover();
     const handle = await page.locator('[data-testid="tree-connect-unlocks-TASK-1"]').boundingBox();
     await clearPostedMessages(page);
     await drag(page, { x: handle!.x + 7, y: handle!.y + 7 }, await nodeCenter(page, 'TASK-2'));
     // right/unlocks: TASK-2 depends on TASK-1.
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'addDependency', taskId: 'TASK-2', dependsOn: 'TASK-1' });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'addDependency',
+      taskId: 'TASK-2',
+      dependsOn: 'TASK-1',
+    });
   });
 
   test('a cycle-forming connect is refused (no addDependency)', async ({ page }) => {
@@ -2222,16 +2402,28 @@ test.describe('Tree drag — connect / reslot / edge removal', () => {
     expect(msgs.some((m) => m.type === 'addDependency')).toBe(false);
   });
 
-  test('dragging a node to another lane posts reslotTask with the new category', async ({ page }) => {
+  test('dragging a node to another lane posts reslotTask with the new category', async ({
+    page,
+  }) => {
     await clearPostedMessages(page);
     await drag(page, await nodeCenter(page, 'TASK-1'), await nodeCenter(page, 'TASK-2')); // Features → Backend lane
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'reslotTask', taskId: 'TASK-1', category: 'Backend' });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'reslotTask',
+      taskId: 'TASK-1',
+      category: 'Backend',
+    });
   });
 
-  test('dragging a node to another band posts reslotTask with the new milestone', async ({ page }) => {
+  test('dragging a node to another band posts reslotTask with the new milestone', async ({
+    page,
+  }) => {
     await clearPostedMessages(page);
     await drag(page, await nodeCenter(page, 'TASK-1'), await nodeCenter(page, 'TASK-3')); // v1 → v2 band
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'reslotTask', taskId: 'TASK-1', milestone: 'v2' });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'reslotTask',
+      taskId: 'TASK-1',
+      milestone: 'v2',
+    });
   });
 
   test('a bug dragged horizontally posts NO reslotTask (reorder-only, M2)', async ({ page }) => {
@@ -2254,7 +2446,11 @@ test.describe('Tree drag — connect / reslot / edge removal', () => {
     await page.locator('[data-testid="tree-edge-hit-TASK-1-TASK-2"]').hover();
     await clearPostedMessages(page);
     await page.locator('[data-testid="tree-edge-remove-TASK-1-TASK-2"]').click();
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'removeDependency', taskId: 'TASK-2', dependsOn: 'TASK-1' });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'removeDependency',
+      taskId: 'TASK-2',
+      dependsOn: 'TASK-1',
+    });
   });
 
   test('popover prereq ✕ posts removeDependency', async ({ page }) => {
@@ -2267,21 +2463,31 @@ test.describe('Tree drag — connect / reslot / edge removal', () => {
     await expect(page.locator('[data-testid="tree-popover"]')).toBeVisible();
     await clearPostedMessages(page);
     await page.locator('[data-testid="tp-prereq-remove-TASK-1"]').click();
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'removeDependency', taskId: 'TASK-2', dependsOn: 'TASK-1' });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'removeDependency',
+      taskId: 'TASK-2',
+      dependsOn: 'TASK-1',
+    });
   });
 
   test('dropping a connect on empty canvas opens the create form pre-linked', async ({ page }) => {
     await page.locator('[data-testid="tree-node-TASK-1"]').hover();
     const handle = await page.locator('[data-testid="tree-connect-unlocks-TASK-1"]').boundingBox();
     const vp = (await page.locator('[data-testid="tree-viewport"]').boundingBox())!;
-    await drag(page, { x: handle!.x + 7, y: handle!.y + 7 }, { x: vp.x + vp.width - 20, y: vp.y + vp.height - 20 });
+    await drag(
+      page,
+      { x: handle!.x + 7, y: handle!.y + 7 },
+      { x: vp.x + vp.width - 20, y: vp.y + vp.height - 20 }
+    );
     await expect(page.locator('[data-testid="create-form"]')).toBeVisible();
     // Submitting posts createTask with linkTo (origin TASK-1, direction unlocks).
     await page.locator('[data-testid="cf-title"]').fill('Linked node');
     await clearPostedMessages(page);
     await page.locator('[data-testid="cf-submit"]').click();
     expect(await getLastPostedMessage(page)).toMatchObject({
-      type: 'createTask', title: 'Linked node', linkTo: { taskId: 'TASK-1', direction: 'unlocks' },
+      type: 'createTask',
+      title: 'Linked node',
+      linkTo: { taskId: 'TASK-1', direction: 'unlocks' },
     });
   });
 });
@@ -2324,9 +2530,17 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import { launchVsCode, closeVsCode, type VsCodeInstance } from './lib/vscode-launcher';
-import { createTestWorkspace, resetTestWorkspace, cleanupTestWorkspace } from './lib/test-workspace';
+import {
+  createTestWorkspace,
+  resetTestWorkspace,
+  cleanupTestWorkspace,
+} from './lib/test-workspace';
 import { waitForExtensionReady, waitForWebviewContent } from './lib/wait-helpers';
-import { clickInWebview, elementExistsInWebview, clearWebviewSessionCache } from './lib/webview-helpers';
+import {
+  clickInWebview,
+  elementExistsInWebview,
+  clearWebviewSessionCache,
+} from './lib/webview-helpers';
 import { dismissNotifications, resetEditorState, executeCommand, sleep } from './lib/cdp-helpers';
 
 const CDP_PORT = 9343;
@@ -2348,7 +2562,8 @@ async function waitForTaskFile(
     for (const f of fs.existsSync(dir) ? fs.readdirSync(dir) : []) {
       if (!f.endsWith('.md')) continue;
       const content = fs.readFileSync(path.join(dir, f), 'utf-8');
-      if (new RegExp(`^id:\\s*${taskId}\\b`, 'm').test(content) && predicate(content)) return content;
+      if (new RegExp(`^id:\\s*${taskId}\\b`, 'm').test(content) && predicate(content))
+        return content;
     }
     await sleep(250);
   }
@@ -2385,7 +2600,11 @@ describe('Tree reslot cross-view (CDP)', () => {
     // Switch to the tree tab.
     await clickInWebview(instance.cdp, 'tasks', '[data-testid="tab-tree"]');
     await sleep(400);
-    const nodeShown = await elementExistsInWebview(instance.cdp, 'tasks', '[data-testid="tree-node-TASK-1"]');
+    const nodeShown = await elementExistsInWebview(
+      instance.cdp,
+      'tasks',
+      '[data-testid="tree-node-TASK-1"]'
+    );
     expect(nodeShown).toBe(true);
 
     // Drive a pointer drag from TASK-1's center to a different lane's vertical band, in the
@@ -2399,7 +2618,9 @@ describe('Tree reslot cross-view (CDP)', () => {
     // The category frontmatter reflects the target lane (whatever TASK-2's lane is on the
     // seeded board). Assert a `category:` line appears/changes (reslot wrote through
     // TreeFieldService → the file on disk).
-    const content = await waitForTaskFile(workspacePath, 'TASK-1', (c) => /^category:\s*\S+/m.test(c));
+    const content = await waitForTaskFile(workspacePath, 'TASK-1', (c) =>
+      /^category:\s*\S+/m.test(c)
+    );
     expect(content).toMatch(/^category:\s*\S+/m);
   }, 60_000);
 });

@@ -10,6 +10,13 @@
   let { x, y, lane, band, onClose, onCreateHere }: Props = $props();
 
   let menuEl: HTMLDivElement | undefined = $state();
+  let firstItemEl: HTMLButtonElement | undefined = $state();
+
+  // Move focus into the menu when it opens so keyboard users can act on it and
+  // Escape works immediately (the menu is mounted fresh per open).
+  $effect(() => {
+    firstItemEl?.focus();
+  });
 
   function handleCreateHere() {
     onCreateHere({ category: lane, milestone: band });
@@ -33,7 +40,12 @@
 
 <svelte:window onkeydown={handleKeydown} onmousedown={handleWindowMouseDown} />
 
-<div class="context-menu-backdrop" data-testid="context-menu-backdrop" aria-hidden="true">
+<!--
+  The backdrop is a full-screen positioning layer (pointer-events: none). It must
+  NOT be aria-hidden: doing so removes its descendant menu from the accessibility
+  tree entirely, hiding the menu from assistive tech.
+-->
+<div class="context-menu-backdrop" data-testid="context-menu-backdrop">
   <div
     class="context-menu"
     data-testid="context-menu"
@@ -46,6 +58,7 @@
       class="context-menu-item"
       data-testid="ctx-create-here"
       role="menuitem"
+      bind:this={firstItemEl}
       onclick={handleCreateHere}
     >
       <svg

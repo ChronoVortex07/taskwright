@@ -144,7 +144,11 @@ export async function createTaskWithTreeFields(
  * Wire the drop-on-empty dependency edge, defended against cycles (belt-and-
  * suspenders; P3b also re-validates extension-side before it ever passes linkTo).
  */
-async function applyLinkTo(deps: CreateTaskCoreDeps, newId: string, link: CreateTaskLink): Promise<void> {
+async function applyLinkTo(
+  deps: CreateTaskCoreDeps,
+  newId: string,
+  link: CreateTaskLink
+): Promise<void> {
   const [tasks, drafts, completed, archived] = await Promise.all([
     deps.parser.getTasks(),
     deps.parser.getDrafts(),

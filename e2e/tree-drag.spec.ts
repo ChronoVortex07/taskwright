@@ -29,11 +29,34 @@ const mk = (over: Partial<Task> & { id: string }): Task =>
 
 function tasks(): Task[] {
   return [
-    mk({ id: 'TASK-1', title: 'Root', category: 'Features', milestone: 'v1', layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 0 } }),
-    mk({ id: 'TASK-2', title: 'Backend thing', category: 'Backend', milestone: 'v1', layout: { lane: 'Backend', band: 'v1', depth: 0, subRow: 0 } }),
-    mk({ id: 'TASK-3', title: 'Later', category: 'Features', milestone: 'v2', layout: { lane: 'Features', band: 'v2', depth: 0, subRow: 0 } }),
+    mk({
+      id: 'TASK-1',
+      title: 'Root',
+      category: 'Features',
+      milestone: 'v1',
+      layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 0 },
+    }),
+    mk({
+      id: 'TASK-2',
+      title: 'Backend thing',
+      category: 'Backend',
+      milestone: 'v1',
+      layout: { lane: 'Backend', band: 'v1', depth: 0, subRow: 0 },
+    }),
+    mk({
+      id: 'TASK-3',
+      title: 'Later',
+      category: 'Features',
+      milestone: 'v2',
+      layout: { lane: 'Features', band: 'v2', depth: 0, subRow: 0 },
+    }),
     // Bug node (M2 coverage): bugs anchor at band '' on the Bugs lane and are reorder-only.
-    mk({ id: 'TASK-4', title: 'A bug', type: 'bug', layout: { lane: 'Bugs', band: '', depth: 0, subRow: 0 } }),
+    mk({
+      id: 'TASK-4',
+      title: 'A bug',
+      type: 'bug',
+      layout: { lane: 'Bugs', band: '', depth: 0, subRow: 0 },
+    }),
   ];
 }
 
@@ -44,11 +67,28 @@ async function setup(page: Pg) {
   await installVsCodeMock(page);
   await page.goto('/tasks.html');
   await page.waitForTimeout(100);
-  await postMessageToWebview(page, { type: 'statusesUpdated', statuses: ['To Do', 'In Progress', 'Done'] });
-  await postMessageToWebview(page, { type: 'prioritiesUpdated', priorities: ['high', 'medium', 'low'] });
-  await postMessageToWebview(page, { type: 'milestonesUpdated', milestones: [{ id: 'v1', name: 'v1' }, { id: 'v2', name: 'v2' }] });
+  await postMessageToWebview(page, {
+    type: 'statusesUpdated',
+    statuses: ['To Do', 'In Progress', 'Done'],
+  });
+  await postMessageToWebview(page, {
+    type: 'prioritiesUpdated',
+    priorities: ['high', 'medium', 'low'],
+  });
+  await postMessageToWebview(page, {
+    type: 'milestonesUpdated',
+    milestones: [
+      { id: 'v1', name: 'v1' },
+      { id: 'v2', name: 'v2' },
+    ],
+  });
   await postMessageToWebview(page, { type: 'tasksUpdated', tasks: tasks() });
-  await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder, bandOrder, warnings: [] });
+  await postMessageToWebview(page, {
+    type: 'treeLayoutUpdated',
+    laneOrder,
+    bandOrder,
+    warnings: [],
+  });
   await postMessageToWebview(page, { type: 'activeTabChanged', tab: 'tree' });
   await page.waitForTimeout(150);
   await expect(page.locator('[data-testid="tree-canvas"]')).toBeVisible();
@@ -133,7 +173,9 @@ test.describe('Tree drag — connect / reslot / edge removal', () => {
 
   // --- connect (green valid, red cycle, both directions) --------------------
 
-  test('right (unlocks) handle onto a valid node shows a green ring and posts addDependency (target depends on origin)', async ({ page }) => {
+  test('right (unlocks) handle onto a valid node shows a green ring and posts addDependency (target depends on origin)', async ({
+    page,
+  }) => {
     const target = await nodeCenter(page, 'TASK-2');
     const from = await handleCenter(page, 'TASK-1', 'unlocks');
     await clearPostedMessages(page);
@@ -150,7 +192,9 @@ test.describe('Tree drag — connect / reslot / edge removal', () => {
     });
   });
 
-  test('left (needs) handle onto a valid node posts addDependency (origin depends on target)', async ({ page }) => {
+  test('left (needs) handle onto a valid node posts addDependency (origin depends on target)', async ({
+    page,
+  }) => {
     const target = await nodeCenter(page, 'TASK-2');
     const from = await handleCenter(page, 'TASK-1', 'needs');
     await clearPostedMessages(page);
@@ -163,7 +207,9 @@ test.describe('Tree drag — connect / reslot / edge removal', () => {
     });
   });
 
-  test('a cycle/dupe-forming connect shows a red ring and posts no addDependency', async ({ page }) => {
+  test('a cycle/dupe-forming connect shows a red ring and posts no addDependency', async ({
+    page,
+  }) => {
     // Pre-wire TASK-1 depends on TASK-2, then try to wire TASK-1↔TASK-2 again (dupe/cycle).
     await postMessageToWebview(page, {
       type: 'tasksUpdated',
@@ -183,7 +229,9 @@ test.describe('Tree drag — connect / reslot / edge removal', () => {
 
   // --- reslot (lane → category, band → milestone, in-cell → reorder) ---------
 
-  test('dragging a node to another lane posts reslotTask with the new category', async ({ page }) => {
+  test('dragging a node to another lane posts reslotTask with the new category', async ({
+    page,
+  }) => {
     const from = await nodeCenter(page, 'TASK-1');
     const to = await nodeCenter(page, 'TASK-2'); // Features → Backend lane
     await clearPostedMessages(page);
@@ -195,7 +243,9 @@ test.describe('Tree drag — connect / reslot / edge removal', () => {
     });
   });
 
-  test('dragging a node to another band posts reslotTask with the new milestone', async ({ page }) => {
+  test('dragging a node to another band posts reslotTask with the new milestone', async ({
+    page,
+  }) => {
     const from = await nodeCenter(page, 'TASK-1');
     const to = await nodeCenter(page, 'TASK-3'); // v1 → v2 band
     await clearPostedMessages(page);
@@ -207,7 +257,9 @@ test.describe('Tree drag — connect / reslot / edge removal', () => {
     });
   });
 
-  test('a cross-band reslot drag emphasizes the target band strip (band-expand)', async ({ page }) => {
+  test('a cross-band reslot drag emphasizes the target band strip (band-expand)', async ({
+    page,
+  }) => {
     const from = await nodeCenter(page, 'TASK-1');
     const to = await nodeCenter(page, 'TASK-3'); // hover into the v2 band
     await dragHold(page, from, to);
@@ -223,11 +275,30 @@ test.describe('Tree drag — connect / reslot / edge removal', () => {
     await postMessageToWebview(page, {
       type: 'tasksUpdated',
       tasks: [
-        mk({ id: 'TASK-1', title: 'Top', category: 'Features', milestone: 'v1', ordinal: 1000, layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 0 } }),
-        mk({ id: 'TASK-2', title: 'Bottom', category: 'Features', milestone: 'v1', ordinal: 2000, layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 1 } }),
+        mk({
+          id: 'TASK-1',
+          title: 'Top',
+          category: 'Features',
+          milestone: 'v1',
+          ordinal: 1000,
+          layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 0 },
+        }),
+        mk({
+          id: 'TASK-2',
+          title: 'Bottom',
+          category: 'Features',
+          milestone: 'v1',
+          ordinal: 2000,
+          layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 1 },
+        }),
       ],
     });
-    await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder: ['Features'], bandOrder: ['v1'], warnings: [] });
+    await postMessageToWebview(page, {
+      type: 'treeLayoutUpdated',
+      laneOrder: ['Features'],
+      bandOrder: ['v1'],
+      warnings: [],
+    });
     await page.waitForTimeout(80);
     await settle(page);
     const from = await nodeCenter(page, 'TASK-2'); // bottom sibling
@@ -237,7 +308,7 @@ test.describe('Tree drag — connect / reslot / edge removal', () => {
     const reorder = await lastOfType(page, 'reorderTasks');
     expect(reorder).toMatchObject({ type: 'reorderTasks' });
     expect(Array.isArray((reorder as Record<string, unknown>).updates)).toBe(true);
-    expect(((reorder as { updates: unknown[] }).updates).length).toBeGreaterThan(0);
+    expect((reorder as { updates: unknown[] }).updates.length).toBeGreaterThan(0);
     // Never a reslotTask for an in-cell move.
     expect(await hasType(page, 'reslotTask')).toBe(false);
   });
@@ -266,7 +337,9 @@ test.describe('Tree drag — connect / reslot / edge removal', () => {
     expect(await hasType(page, 'reorderTasks')).toBe(false);
   });
 
-  test('a non-bug dragged onto the Bugs lane posts NO reslotTask (Bugs-lane guard)', async ({ page }) => {
+  test('a non-bug dragged onto the Bugs lane posts NO reslotTask (Bugs-lane guard)', async ({
+    page,
+  }) => {
     // Symmetric to the bug reorder-only rule: a NON-bug must not enter the Bugs lane
     // (it would write a literal category:'Bugs'). Drag TASK-1 straight down into the
     // Bugs lane (own x, bug row's y) and drop — refused, no write.

@@ -57,11 +57,11 @@ tools + `superpowers:brainstorming` + `superpowers:writing-plans`). Its loop:
 - `list_categories` → `[{ category, count }]`, incl. reserved Bugs/Misc.
 - `list_milestones` → `[{ id, name, order, taskCount, doneCount }]`, incl. Backburner.
 - `get_board` → compact task summaries `{ id, title, category, milestone, status, priority,
-  dependencies, blockedBy, locked, type, caused_by }`, with optional filters (category / milestone /
+dependencies, blockedBy, locked, type, caused_by }`, with optional filters (category / milestone /
   status) so output stays bounded on large boards.
 - `search_tasks` → keyword search over title / description / labels / category, ranked, returning the
-  same compact summaries. *Baseline is keyword; semantic/embedding search is a flagged later
-  enhancement — no embeddings dependency is taken on now.*
+  same compact summaries. _Baseline is keyword; semantic/embedding search is a flagged later
+  enhancement — no embeddings dependency is taken on now._
 
 **Writes** (all reuse P1 surgical writers; cycle-guarded):
 
@@ -119,6 +119,6 @@ flow (with the P2 draft-node amendment).
 **Depends on:** P1 (model, `wouldCreateCycle`, config `categories`/`priorities`), P2 (canvas + draft
 rendering + promote), P3 (gestures reused for reviewing drafts).
 
-**Deferred:** `/execute-task` — worktree-enforced dispatch that *works* these tasks (**P5**); codebase
+**Deferred:** `/execute-task` — worktree-enforced dispatch that _works_ these tasks (**P5**); codebase
 indexing that bootstraps an initial tree on an existing project (**P6**), which will reuse P4's
 create/traversal tools.

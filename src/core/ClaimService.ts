@@ -56,13 +56,17 @@ export class ClaimService {
       worktree: options.worktree,
       claimedAt: claimTimestamp(options.now ?? new Date()),
     };
-    this.rewrite(filePath, (content) => {
-      let updated = applyClaim(content, claim);
-      if (needsTransition) {
-        updated = setStatusField(updated, inProgressStatus);
-      }
-      return updated;
-    }, parser);
+    this.rewrite(
+      filePath,
+      (content) => {
+        let updated = applyClaim(content, claim);
+        if (needsTransition) {
+          updated = setStatusField(updated, inProgressStatus);
+        }
+        return updated;
+      },
+      parser
+    );
     return claim;
   }
 

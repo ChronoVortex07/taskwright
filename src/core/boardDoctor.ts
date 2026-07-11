@@ -380,7 +380,11 @@ export async function gatherBoardHomeFacts(
 ): Promise<
   Pick<
     BoardDoctorInput,
-    'syncMode' | 'boardWorktreeOk' | 'boardWorktreePresent' | 'primaryStateDirs' | 'primaryTasksPresent'
+    | 'syncMode'
+    | 'boardWorktreeOk'
+    | 'boardWorktreePresent'
+    | 'primaryStateDirs'
+    | 'primaryTasksPresent'
   >
 > {
   try {

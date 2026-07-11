@@ -149,7 +149,9 @@ test.describe('Tech tree canvas', () => {
     await expect(page.locator('[data-testid="tree-edge-TASK-2-TASK-3"]')).toHaveClass(/incident/);
   });
 
-  test('plain wheel (no modifier) zooms centered on cursor instead of panning', async ({ page }) => {
+  test('plain wheel (no modifier) zooms centered on cursor instead of panning', async ({
+    page,
+  }) => {
     // Dispatch a plain wheel event (no ctrl/meta) — should ZOOM, not pan.
     const beforeZoom = await page.locator('[data-testid="tree-zoom-label"]').textContent();
     await page.locator('[data-testid="tree-viewport"]').evaluate((el) => {
@@ -311,7 +313,9 @@ test.describe('Tech tree canvas', () => {
     expect(selection).toBe('');
   });
 
-  test('repeated drag-to-pan works multiple times without text-selection interference', async ({ page }) => {
+  test('repeated drag-to-pan works multiple times without text-selection interference', async ({
+    page,
+  }) => {
     const viewport = page.locator('[data-testid="tree-viewport"]');
     const box = await viewport.boundingBox();
     expect(box).not.toBeNull();

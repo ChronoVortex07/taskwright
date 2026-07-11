@@ -124,14 +124,17 @@ function makeDeps(overrides?: {
   getTask?: (id: string) => Promise<{ id: string; dependencies: string[] } | undefined>;
   universe?: Array<{ id: string; dependencies: string[] }>;
 }) {
-  const createTask = vi.fn().mockResolvedValue({ id: overrides?.createTaskId ?? 'TASK-9', filePath: '/b/tasks/task-9.md' });
-  const createDraft = vi.fn().mockResolvedValue({ id: 'DRAFT-1', filePath: '/b/drafts/draft-1.md' });
+  const createTask = vi
+    .fn()
+    .mockResolvedValue({ id: overrides?.createTaskId ?? 'TASK-9', filePath: '/b/tasks/task-9.md' });
+  const createDraft = vi
+    .fn()
+    .mockResolvedValue({ id: 'DRAFT-1', filePath: '/b/drafts/draft-1.md' });
   const updateTask = vi.fn().mockResolvedValue(undefined);
   const setCategory = vi.fn().mockResolvedValue('');
   const setCausedBy = vi.fn().mockResolvedValue('');
   const getTask =
-    overrides?.getTask ??
-    vi.fn(async (id: string) => ({ id, dependencies: [] as string[] }));
+    overrides?.getTask ?? vi.fn(async (id: string) => ({ id, dependencies: [] as string[] }));
   const universe = overrides?.universe ?? [
     { id: 'TASK-1', dependencies: [] as string[] },
     { id: 'TASK-9', dependencies: [] as string[] },
@@ -154,7 +157,19 @@ describe('createTaskWithTreeFields — writer sequence', () => {
     const m = makeDeps();
     const res = await createTaskWithTreeFields(m.deps, { title: '  Ship it  ' });
     expect(res).toEqual({ id: 'TASK-9' });
-    expect(m.createTask).toHaveBeenCalledWith('/b', { title: 'Ship it', description: undefined, status: undefined, priority: undefined, labels: undefined, assignee: undefined, milestone: undefined }, m.deps.parser);
+    expect(m.createTask).toHaveBeenCalledWith(
+      '/b',
+      {
+        title: 'Ship it',
+        description: undefined,
+        status: undefined,
+        priority: undefined,
+        labels: undefined,
+        assignee: undefined,
+        milestone: undefined,
+      },
+      m.deps.parser
+    );
     expect(m.updateTask).not.toHaveBeenCalled();
     expect(m.setCategory).not.toHaveBeenCalled();
     expect(m.setCausedBy).not.toHaveBeenCalled();
@@ -163,9 +178,24 @@ describe('createTaskWithTreeFields — writer sequence', () => {
   it('full create: passes priority/milestone/description to createTask and sets category surgically', async () => {
     const m = makeDeps();
     await createTaskWithTreeFields(m.deps, {
-      title: 'Add login', description: 'desc', status: 'To Do', priority: 'high', milestone: 'v1', category: 'Features',
+      title: 'Add login',
+      description: 'desc',
+      status: 'To Do',
+      priority: 'high',
+      milestone: 'v1',
+      category: 'Features',
     });
-    expect(m.createTask).toHaveBeenCalledWith('/b', expect.objectContaining({ title: 'Add login', priority: 'high', milestone: 'v1', description: 'desc', status: 'To Do' }), m.deps.parser);
+    expect(m.createTask).toHaveBeenCalledWith(
+      '/b',
+      expect.objectContaining({
+        title: 'Add login',
+        priority: 'high',
+        milestone: 'v1',
+        description: 'desc',
+        status: 'To Do',
+      }),
+      m.deps.parser
+    );
     expect(m.setCategory).toHaveBeenCalledWith('TASK-9', 'Features', m.deps.parser);
   });
 
@@ -185,36 +215,74 @@ describe('createTaskWithTreeFields — writer sequence', () => {
   it('dependencies go through updateTask', async () => {
     const m = makeDeps();
     await createTaskWithTreeFields(m.deps, { title: 'x', dependencies: ['TASK-1', 'TASK-2'] });
-    expect(m.updateTask).toHaveBeenCalledWith('TASK-9', { dependencies: ['TASK-1', 'TASK-2'] }, m.deps.parser);
+    expect(m.updateTask).toHaveBeenCalledWith(
+      'TASK-9',
+      { dependencies: ['TASK-1', 'TASK-2'] },
+      m.deps.parser
+    );
   });
 
   it('draft create routes to createDraft with title/description', async () => {
     const m = makeDeps();
-    const res = await createTaskWithTreeFields(m.deps, { title: 'Spike', description: 'd', draft: true });
+    const res = await createTaskWithTreeFields(m.deps, {
+      title: 'Spike',
+      description: 'd',
+      draft: true,
+    });
     expect(res).toEqual({ id: 'DRAFT-1' });
-    expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, { title: 'Spike', description: 'd' });
+    expect(m.createDraft).toHaveBeenCalledWith('/b', m.deps.parser, {
+      title: 'Spike',
+      description: 'd',
+    });
     expect(m.createTask).not.toHaveBeenCalled();
   });
 
   it('validates: empty title throws; caused_by without bug throws; invalid type throws', async () => {
     const m = makeDeps();
-    await expect(createTaskWithTreeFields(m.deps, { title: '   ' })).rejects.toThrow('A task title is required.');
-    await expect(createTaskWithTreeFields(m.deps, { title: 'x', causedBy: 'TASK-1' })).rejects.toThrow('caused_by can only be set on a bug');
-    await expect(createTaskWithTreeFields(m.deps, { title: 'x', type: 'nope' })).rejects.toThrow('Invalid type');
+    await expect(createTaskWithTreeFields(m.deps, { title: '   ' })).rejects.toThrow(
+      'A task title is required.'
+    );
+    await expect(
+      createTaskWithTreeFields(m.deps, { title: 'x', causedBy: 'TASK-1' })
+    ).rejects.toThrow('caused_by can only be set on a bug');
+    await expect(createTaskWithTreeFields(m.deps, { title: 'x', type: 'nope' })).rejects.toThrow(
+      'Invalid type'
+    );
   });
 });
 
 describe('createTaskWithTreeFields — linkTo post-create wiring', () => {
   it("direction 'unlocks': new task depends on the origin (new.dependencies += origin)", async () => {
-    const m = makeDeps({ getTask: vi.fn(async (id: string) => ({ id, dependencies: [] as string[] })) });
-    await createTaskWithTreeFields(m.deps, { title: 'B', linkTo: { taskId: 'TASK-1', direction: 'unlocks' } });
-    expect(m.updateTask).toHaveBeenCalledWith('TASK-9', { dependencies: ['TASK-1'] }, m.deps.parser);
+    const m = makeDeps({
+      getTask: vi.fn(async (id: string) => ({ id, dependencies: [] as string[] })),
+    });
+    await createTaskWithTreeFields(m.deps, {
+      title: 'B',
+      linkTo: { taskId: 'TASK-1', direction: 'unlocks' },
+    });
+    expect(m.updateTask).toHaveBeenCalledWith(
+      'TASK-9',
+      { dependencies: ['TASK-1'] },
+      m.deps.parser
+    );
   });
 
   it("direction 'needs': origin depends on the new task (origin.dependencies += new)", async () => {
-    const m = makeDeps({ getTask: vi.fn(async (id: string) => ({ id, dependencies: id === 'TASK-1' ? ['TASK-0'] : [] })) });
-    await createTaskWithTreeFields(m.deps, { title: 'A', linkTo: { taskId: 'TASK-1', direction: 'needs' } });
-    expect(m.updateTask).toHaveBeenCalledWith('TASK-1', { dependencies: ['TASK-0', 'TASK-9'] }, m.deps.parser);
+    const m = makeDeps({
+      getTask: vi.fn(async (id: string) => ({
+        id,
+        dependencies: id === 'TASK-1' ? ['TASK-0'] : [],
+      })),
+    });
+    await createTaskWithTreeFields(m.deps, {
+      title: 'A',
+      linkTo: { taskId: 'TASK-1', direction: 'needs' },
+    });
+    expect(m.updateTask).toHaveBeenCalledWith(
+      'TASK-1',
+      { dependencies: ['TASK-0', 'TASK-9'] },
+      m.deps.parser
+    );
   });
 
   it('linkTo that would cycle is refused', async () => {
@@ -227,7 +295,11 @@ describe('createTaskWithTreeFields — linkTo post-create wiring', () => {
       ],
     });
     await expect(
-      createTaskWithTreeFields(m.deps, { title: 'A', dependencies: ['TASK-1'], linkTo: { taskId: 'TASK-1', direction: 'needs' } })
+      createTaskWithTreeFields(m.deps, {
+        title: 'A',
+        dependencies: ['TASK-1'],
+        linkTo: { taskId: 'TASK-1', direction: 'needs' },
+      })
     ).rejects.toThrow('cycle');
   });
 });
@@ -388,7 +460,11 @@ export async function createTaskWithTreeFields(
  * Wire the drop-on-empty dependency edge, defended against cycles (belt-and-
  * suspenders; P3b also re-validates extension-side before it ever passes linkTo).
  */
-async function applyLinkTo(deps: CreateTaskCoreDeps, newId: string, link: CreateTaskLink): Promise<void> {
+async function applyLinkTo(
+  deps: CreateTaskCoreDeps,
+  newId: string,
+  link: CreateTaskLink
+): Promise<void> {
   const [tasks, drafts, completed, archived] = await Promise.all([
     deps.parser.getTasks(),
     deps.parser.getDrafts(),
@@ -465,7 +541,7 @@ export async function createTaskHandler(
 
 (`McpHandlerDeps` structurally satisfies `CreateTaskCoreDeps` — it has `parser`, `writer`, `backlogPath`, `treeFieldService`; `CreateTaskArgs` is assignable to `CreateTaskCoreArgs` since the latter's extra fields are optional. `CreateTaskArgs` need **not** gain `linkTo` — the MCP tool does not expose it.)
 
-> **Behavior note:** the title/`normalizeType`/`caused_by`-requires-bug checks now live in the core (thrown with identical messages), so they fire *after* the handler's status/priority/dependency checks instead of before. All existing `mcpWriteHandlers.test.ts` create cases pass valid titles, so ordering is observationally identical; do not "fix" the tests.
+> **Behavior note:** the title/`normalizeType`/`caused_by`-requires-bug checks now live in the core (thrown with identical messages), so they fire _after_ the handler's status/priority/dependency checks instead of before. All existing `mcpWriteHandlers.test.ts` create cases pass valid titles, so ordering is observationally identical; do not "fix" the tests.
 
 - [ ] **Step 5: Run tests + typecheck**
 
@@ -1045,42 +1121,45 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 In `src/webview/components/tasks/Tasks.svelte`, add the import (after the `TechTreeCanvas` import at `Tasks.svelte:9`):
 
 ```ts
-  import CreateTaskForm, { type CreateTaskPayload } from '../tree/CreateTaskForm.svelte';
+import CreateTaskForm, { type CreateTaskPayload } from '../tree/CreateTaskForm.svelte';
 ```
 
 Add the form state (near the tree vocab state at `Tasks.svelte:37-52`):
 
 ```ts
-  // Unified create form (hosted at root so it works from any tab).
-  let createForm = $state<{
-    mode: 'full' | 'quick';
-    bugMode: boolean;
+// Unified create form (hosted at root so it works from any tab).
+let createForm = $state<{
+  mode: 'full' | 'quick';
+  bugMode: boolean;
+  prefill?: { category?: string; milestone?: string; causedBy?: string };
+} | null>(null);
+
+function openCreateForm(
+  mode: 'full' | 'quick',
+  opts?: {
+    bugMode?: boolean;
     prefill?: { category?: string; milestone?: string; causedBy?: string };
-  } | null>(null);
-
-  function openCreateForm(
-    mode: 'full' | 'quick',
-    opts?: { bugMode?: boolean; prefill?: { category?: string; milestone?: string; causedBy?: string } }
-  ) {
-    createForm = { mode, bugMode: opts?.bugMode ?? false, prefill: opts?.prefill };
   }
+) {
+  createForm = { mode, bugMode: opts?.bugMode ?? false, prefill: opts?.prefill };
+}
 
-  function handleCreateSubmit(payload: CreateTaskPayload) {
-    // Q1: map fields explicitly — never spread a payload into the message envelope
-    // (a spread carrying a `type` key would clobber the discriminant).
-    vscode.postMessage({
-      type: 'createTask',
-      title: payload.title,
-      description: payload.description,
-      priority: payload.priority,
-      category: payload.category,
-      milestone: payload.milestone,
-      taskType: payload.taskType,
-      causedBy: payload.causedBy,
-      openAfter: payload.openAfter,
-    });
-    createForm = null;
-  }
+function handleCreateSubmit(payload: CreateTaskPayload) {
+  // Q1: map fields explicitly — never spread a payload into the message envelope
+  // (a spread carrying a `type` key would clobber the discriminant).
+  vscode.postMessage({
+    type: 'createTask',
+    title: payload.title,
+    description: payload.description,
+    priority: payload.priority,
+    category: payload.category,
+    milestone: payload.milestone,
+    taskType: payload.taskType,
+    causedBy: payload.causedBy,
+    openAfter: payload.openAfter,
+  });
+  createForm = null;
+}
 ```
 
 - [ ] **Step 2: Handle `openCreateForm` inbound**
@@ -1101,13 +1180,13 @@ Add a case to the `onMessage` switch (after the `prioritiesUpdated` case at `Tas
 In `handleGlobalKeydown` (`Tasks.svelte:294-348`), add a modifier-combo block **before** the single-key `switch` (right after the `Enter` handling block that ends at `Tasks.svelte:320`):
 
 ```ts
-      // Create-form shortcuts (Ctrl/Cmd-N = full, Ctrl/Cmd-Shift-N = quick). Handled
-      // before the single-key switch so bare `n` below doesn't also fire.
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'n' || e.key === 'N')) {
-        e.preventDefault();
-        openCreateForm(e.shiftKey ? 'quick' : 'full');
-        return;
-      }
+// Create-form shortcuts (Ctrl/Cmd-N = full, Ctrl/Cmd-Shift-N = quick). Handled
+// before the single-key switch so bare `n` below doesn't also fire.
+if ((e.ctrlKey || e.metaKey) && (e.key === 'n' || e.key === 'N')) {
+  e.preventDefault();
+  openCreateForm(e.shiftKey ? 'quick' : 'full');
+  return;
+}
 ```
 
 Repoint bare `n` from the round-trip message to the immediate local open. Change the `case 'n'` line (`Tasks.svelte:339`):
@@ -1127,28 +1206,28 @@ to:
 The repoint above breaks a baseline spec: `e2e/keyboard-shortcuts.spec.ts` asserts `n` posts `requestCreateTask`, which is never sent anymore (the form opens locally, no round-trip). Update the test — replace (`keyboard-shortcuts.spec.ts:193-200`):
 
 ```ts
-    test('n key sends requestCreateTask message', async ({ page }) => {
-      await clearPostedMessages(page);
-      await page.keyboard.press('n');
-      await page.waitForTimeout(50);
+test('n key sends requestCreateTask message', async ({ page }) => {
+  await clearPostedMessages(page);
+  await page.keyboard.press('n');
+  await page.waitForTimeout(50);
 
-      const messages = await getPostedMessages(page);
-      expect(messages).toContainEqual({ type: 'requestCreateTask' });
-    });
+  const messages = await getPostedMessages(page);
+  expect(messages).toContainEqual({ type: 'requestCreateTask' });
+});
 ```
 
 with:
 
 ```ts
-    test('n key opens the create form locally (P3a)', async ({ page }) => {
-      await clearPostedMessages(page);
-      await page.keyboard.press('n');
+test('n key opens the create form locally (P3a)', async ({ page }) => {
+  await clearPostedMessages(page);
+  await page.keyboard.press('n');
 
-      await expect(page.locator('[data-testid="create-form"]')).toBeVisible();
-      // No round-trip message: the form opens in-webview and posts createTask only on submit.
-      const messages = await getPostedMessages(page);
-      expect(messages).not.toContainEqual({ type: 'requestCreateTask' });
-    });
+  await expect(page.locator('[data-testid="create-form"]')).toBeVisible();
+  // No round-trip message: the form opens in-webview and posts createTask only on submit.
+  const messages = await getPostedMessages(page);
+  expect(messages).not.toContainEqual({ type: 'requestCreateTask' });
+});
 ```
 
 (The sibling test "action shortcuts do not fire when popup is open" at `keyboard-shortcuts.spec.ts:287-301` still passes — the `showShortcuts` early-return at `Tasks.svelte:311` precedes the new modifier block and the `n` case.)
@@ -1234,41 +1313,41 @@ import { TaskCreatePanel } from './providers/TaskCreatePanel';
 Replace the create-task command registration (`extension.ts:1001-1014`):
 
 ```ts
-  context.subscriptions.push(
-    vscode.commands.registerCommand('taskwright.createTask', () => {
-      const activeBacklogPath = manager.getActiveRoot()?.backlogPath;
-      if (!activeBacklogPath || !parser) {
-        vscode.window.showErrorMessage('No backlog folder found in workspace');
-        return;
-      }
+context.subscriptions.push(
+  vscode.commands.registerCommand('taskwright.createTask', () => {
+    const activeBacklogPath = manager.getActiveRoot()?.backlogPath;
+    if (!activeBacklogPath || !parser) {
+      vscode.window.showErrorMessage('No backlog folder found in workspace');
+      return;
+    }
 
-      TaskCreatePanel.show(context.extensionUri, writer, parser, activeBacklogPath, {
-        tasksProvider,
-        taskDetailProvider,
-      });
-    })
-  );
+    TaskCreatePanel.show(context.extensionUri, writer, parser, activeBacklogPath, {
+      tasksProvider,
+      taskDetailProvider,
+    });
+  })
+);
 ```
 
 with the reveal + broadcast form open (the in-webview keydown/TabBar paths open the form immediately; this command is the command-palette / external-focus path):
 
 ```ts
-  // Create task: reveal the board and open the unified create form in it.
-  // (relayNavigator is the generic "post this ExtensionMessage to the board" relay.)
-  context.subscriptions.push(
-    vscode.commands.registerCommand('taskwright.createTask', () => {
-      tasksPanelProvider.reveal();
-      tasksHosts.forEach((host) => host.relayNavigator({ type: 'openCreateForm', mode: 'full' }));
-    })
-  );
+// Create task: reveal the board and open the unified create form in it.
+// (relayNavigator is the generic "post this ExtensionMessage to the board" relay.)
+context.subscriptions.push(
+  vscode.commands.registerCommand('taskwright.createTask', () => {
+    tasksPanelProvider.reveal();
+    tasksHosts.forEach((host) => host.relayNavigator({ type: 'openCreateForm', mode: 'full' }));
+  })
+);
 
-  // Quick capture: same form in quick (title-only) mode.
-  context.subscriptions.push(
-    vscode.commands.registerCommand('taskwright.quickCapture', () => {
-      tasksPanelProvider.reveal();
-      tasksHosts.forEach((host) => host.relayNavigator({ type: 'openCreateForm', mode: 'quick' }));
-    })
-  );
+// Quick capture: same form in quick (title-only) mode.
+context.subscriptions.push(
+  vscode.commands.registerCommand('taskwright.quickCapture', () => {
+    tasksPanelProvider.reveal();
+    tasksHosts.forEach((host) => host.relayNavigator({ type: 'openCreateForm', mode: 'quick' }));
+  })
+);
 ```
 
 > `tasksPanelProvider` (`extension.ts:365`), `tasksHosts` (`:370`), and `relayNavigator` (on `TasksBoardSurface`, used at `:457`) are all already in scope here. The keydown/keybinding double-path is intentional and **idempotent** (`openCreateForm` replaces `createForm` with a fresh full/quick form; opening an already-open form re-opens the same empty form). **N4 (reviewed, accepted):** the broadcast reaches **both** hosts (sidebar + editor board), so one `Ctrl+N` can open the form in two surfaces while the in-webview keydown also opens it locally — harmless (only the focused surface is visible/interacted with; each open resets to a fresh empty form), just slightly noisy; do not "fix" by narrowing the broadcast. `writer`/`parser`/`taskDetailProvider` remain used elsewhere in `extension.ts` — do not remove them.
@@ -1358,16 +1437,16 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 In `src/webview/components/tree/DetailPopover.svelte`, extend the exported union (`DetailPopover.svelte:10-18`):
 
 ```ts
-  export type PopoverActionKind =
-    | 'claim'
-    | 'dispatch'
-    | 'forceClaim'
-    | 'release'
-    | 'markDone'
-    | 'cancelDispatch'
-    | 'approve'
-    | 'sendBack'
-    | 'reportBug';
+export type PopoverActionKind =
+  | 'claim'
+  | 'dispatch'
+  | 'forceClaim'
+  | 'release'
+  | 'markDone'
+  | 'cancelDispatch'
+  | 'approve'
+  | 'sendBack'
+  | 'reportBug';
 ```
 
 Add a persistent "Report bug" row. Replace the state-aware actions block (`DetailPopover.svelte:189-197`):
@@ -1407,19 +1486,19 @@ with (the state-aware row stays, plus a persistent report-bug row):
 Add the quiet-button style inside the `<style>` block (after the `.tp-btn:hover` rule at `DetailPopover.svelte:345-347`):
 
 ```css
-  .tp-actions-secondary {
-    margin-top: 2px;
-  }
-  .tp-btn-quiet {
-    font-size: 11px;
-    opacity: 0.85;
-    background: transparent;
-    border-color: var(--vscode-panel-border, #444);
-  }
-  .tp-btn-quiet:hover {
-    opacity: 1;
-    background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
-  }
+.tp-actions-secondary {
+  margin-top: 2px;
+}
+.tp-btn-quiet {
+  font-size: 11px;
+  opacity: 0.85;
+  background: transparent;
+  border-color: var(--vscode-panel-border, #444);
+}
+.tp-btn-quiet:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, var(--vscode-list-hoverBackground));
+}
 ```
 
 - [ ] **Step 2: Route `reportBug` through the canvas to `onCreateInPlace`**
@@ -1512,8 +1591,11 @@ function tasks(): Task[] {
     }) as Task;
   return [
     base({
-      id: 'TASK-1', title: 'Root feature', status: 'To Do',
-      category: 'Features', milestone: 'v1',
+      id: 'TASK-1',
+      title: 'Root feature',
+      status: 'To Do',
+      category: 'Features',
+      milestone: 'v1',
       layout: { lane: 'Features', band: 'v1', depth: 0, subRow: 0 },
     }),
   ];
@@ -1524,14 +1606,25 @@ async function setup(page: Parameters<typeof installVsCodeMock>[0]) {
   await installVsCodeMock(page);
   await page.goto('/tasks.html');
   await page.waitForTimeout(100);
-  await postMessageToWebview(page, { type: 'statusesUpdated', statuses: ['To Do', 'In Progress', 'Done'] });
-  await postMessageToWebview(page, { type: 'prioritiesUpdated', priorities: ['high', 'medium', 'low'] });
+  await postMessageToWebview(page, {
+    type: 'statusesUpdated',
+    statuses: ['To Do', 'In Progress', 'Done'],
+  });
+  await postMessageToWebview(page, {
+    type: 'prioritiesUpdated',
+    priorities: ['high', 'medium', 'low'],
+  });
   await postMessageToWebview(page, {
     type: 'milestonesUpdated',
     milestones: [{ id: 'v1', name: 'v1' }],
   });
   await postMessageToWebview(page, { type: 'tasksUpdated', tasks: tasks() });
-  await postMessageToWebview(page, { type: 'treeLayoutUpdated', laneOrder, bandOrder, warnings: [] });
+  await postMessageToWebview(page, {
+    type: 'treeLayoutUpdated',
+    laneOrder,
+    bandOrder,
+    warnings: [],
+  });
   await postMessageToWebview(page, { type: 'activeTabChanged', tab: 'tree' });
   await page.waitForTimeout(150);
   await expect(page.locator('[data-testid="tree-canvas"]')).toBeVisible();
@@ -1547,7 +1640,11 @@ test.describe('Tree authoring — create form', () => {
     const title = page.locator('[data-testid="cf-title"]');
     await title.fill('Write the docs');
     await title.press('Enter');
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'createTask', title: 'Write the docs', openAfter: false });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'createTask',
+      title: 'Write the docs',
+      openAfter: false,
+    });
     await expect(page.locator('[data-testid="create-form"]')).toHaveCount(0);
   });
 
@@ -1557,7 +1654,11 @@ test.describe('Tree authoring — create form', () => {
     const title = page.locator('[data-testid="cf-title"]');
     await title.fill('Open me after');
     await title.press('Shift+Enter');
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'createTask', title: 'Open me after', openAfter: true });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'createTask',
+      title: 'Open me after',
+      openAfter: true,
+    });
   });
 
   test('full form sends category (non-Misc) and milestone (non-Backburner)', async ({ page }) => {
@@ -1569,7 +1670,11 @@ test.describe('Tree authoring — create form', () => {
     await clearPostedMessages(page);
     await page.locator('[data-testid="cf-submit"]').click();
     expect(await getLastPostedMessage(page)).toMatchObject({
-      type: 'createTask', title: 'Feature X', category: 'Features', priority: 'high', milestone: 'v1',
+      type: 'createTask',
+      title: 'Feature X',
+      category: 'Features',
+      priority: 'high',
+      milestone: 'v1',
     });
   });
 
@@ -1600,8 +1705,15 @@ test.describe('Tree authoring — create form', () => {
     expect((msg as Record<string, unknown>).category).toBeUndefined();
   });
 
-  test('bug mode relabels priority to Severity and sends taskType:bug + causedBy', async ({ page }) => {
-    await postMessageToWebview(page, { type: 'openCreateForm', mode: 'full', bugMode: true, causedBy: 'TASK-1' });
+  test('bug mode relabels priority to Severity and sends taskType:bug + causedBy', async ({
+    page,
+  }) => {
+    await postMessageToWebview(page, {
+      type: 'openCreateForm',
+      mode: 'full',
+      bugMode: true,
+      causedBy: 'TASK-1',
+    });
     await page.waitForTimeout(60);
     await expect(page.locator('[data-testid="create-form"]')).toBeVisible();
     // caused_by pre-filled; category/milestone hidden; priority relabeled in bug mode.
@@ -1616,11 +1728,17 @@ test.describe('Tree authoring — create form', () => {
     await clearPostedMessages(page);
     await page.locator('[data-testid="cf-submit"]').click();
     expect(await getLastPostedMessage(page)).toMatchObject({
-      type: 'createTask', title: 'It crashes', taskType: 'bug', causedBy: 'TASK-1', priority: 'high',
+      type: 'createTask',
+      title: 'It crashes',
+      taskType: 'bug',
+      causedBy: 'TASK-1',
+      priority: 'high',
     });
   });
 
-  test('Report bug from a node opens the form in bug mode with caused_by prefilled', async ({ page }) => {
+  test('Report bug from a node opens the form in bug mode with caused_by prefilled', async ({
+    page,
+  }) => {
     await page.locator('[data-testid="tree-node-TASK-1"]').click();
     await expect(page.locator('[data-testid="tree-popover"]')).toBeVisible();
     await page.locator('[data-testid="tp-action-reportBug"]').click();
@@ -1630,7 +1748,10 @@ test.describe('Tree authoring — create form', () => {
     await clearPostedMessages(page);
     await page.locator('[data-testid="cf-submit"]').click();
     expect(await getLastPostedMessage(page)).toMatchObject({
-      type: 'createTask', title: 'Regression from TASK-1', taskType: 'bug', causedBy: 'TASK-1',
+      type: 'createTask',
+      title: 'Regression from TASK-1',
+      taskType: 'bug',
+      causedBy: 'TASK-1',
     });
   });
 
@@ -1724,7 +1845,11 @@ async function waitForTaskContaining(
   throw new Error(`No task file containing "${needle}" within ${timeoutMs}ms`);
 }
 
-async function waitForTreeNode(instance: VsCodeInstance, taskId: string, timeoutMs = 10_000): Promise<void> {
+async function waitForTreeNode(
+  instance: VsCodeInstance,
+  taskId: string,
+  timeoutMs = 10_000
+): Promise<void> {
   const selector = `[data-testid="tree-node-${taskId}"]`;
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -1764,7 +1889,11 @@ describe('Tree authoring cross-view (CDP)', () => {
     // Open the form via the TabBar + (always visible, any tab).
     const opened = await clickInWebview(instance.cdp, 'tasks', '[data-testid="action-create"]');
     expect(opened).toBe(true);
-    const formShown = await elementExistsInWebview(instance.cdp, 'tasks', '[data-testid="create-form"]');
+    const formShown = await elementExistsInWebview(
+      instance.cdp,
+      'tasks',
+      '[data-testid="create-form"]'
+    );
     expect(formShown).toBe(true);
 
     const typed = await typeInWebviewInput(

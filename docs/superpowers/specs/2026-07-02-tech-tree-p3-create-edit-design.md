@@ -49,7 +49,7 @@ unclaimed node written via the surgical writers (P1 fields + Backlog.md body).
 
 - **Bug mode** (form toggle): Category is fixed to the **Bug lane** (`type: bug`), Milestone hidden
   (bugs sort by severity on the Bug lane, not by age). Adds **Severity** (= `priority`), **Caused by**
-  (task search; may be left *untraced*), and steps/notes. `caused_by` is optional at capture but
+  (task search; may be left _untraced_), and steps/notes. `caused_by` is optional at capture but
   **required before the bug can be completed** (P1 §6).
 - **Report bug from a node** — a node/popover action opens the form in Bug mode with `caused_by`
   pre-filled to that task.

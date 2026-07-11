@@ -91,10 +91,7 @@ test.describe('Markdown link sanitization (link activation)', () => {
   });
 
   test('clicking a workspace-relative link opens it via openWorkspaceFile', async ({ page }) => {
-    await injectBody(
-      page,
-      '<p><a href="../docs/spec.md#L10" data-testid="rel-link">spec</a></p>'
-    );
+    await injectBody(page, '<p><a href="../docs/spec.md#L10" data-testid="rel-link">spec</a></p>');
     await clearPostedMessages(page);
 
     await page.locator('[data-testid="rel-link"]').click();
@@ -113,10 +110,7 @@ test.describe('Markdown link sanitization (link activation)', () => {
   test('clicking a safe external https link does not post an openWorkspaceFile message', async ({
     page,
   }) => {
-    await injectBody(
-      page,
-      '<p><a href="https://example.com/" data-testid="ext-link">ext</a></p>'
-    );
+    await injectBody(page, '<p><a href="https://example.com/" data-testid="ext-link">ext</a></p>');
     await clearPostedMessages(page);
 
     await page.locator('[data-testid="ext-link"]').click();

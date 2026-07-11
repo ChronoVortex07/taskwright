@@ -193,7 +193,8 @@ export function applyConfigEdits(
   const arrayKeys: Array<{ key: string; values: string[] }> = [];
   if (edits.statuses !== undefined) arrayKeys.push({ key: 'statuses', values: edits.statuses });
   if (edits.labels !== undefined) arrayKeys.push({ key: 'labels', values: edits.labels });
-  if (edits.priorities !== undefined) arrayKeys.push({ key: 'priorities', values: edits.priorities });
+  if (edits.priorities !== undefined)
+    arrayKeys.push({ key: 'priorities', values: edits.priorities });
   if (edits.definition_of_done !== undefined)
     arrayKeys.push({ key: 'definition_of_done', values: edits.definition_of_done });
 
@@ -284,7 +285,8 @@ export function validateConfigEdits(
 
       // Try to detect a rename: removed at position i, replaced by a new status at same position
       const oldIdx = oldStatuses.indexOf(removed);
-      const replacement = oldIdx >= 0 && oldIdx < newStatuses.length ? newStatuses[oldIdx] : undefined;
+      const replacement =
+        oldIdx >= 0 && oldIdx < newStatuses.length ? newStatuses[oldIdx] : undefined;
       const isRename = replacement !== undefined && addedStatuses.includes(replacement);
 
       if (!isRename) {

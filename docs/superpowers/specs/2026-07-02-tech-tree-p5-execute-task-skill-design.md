@@ -6,7 +6,7 @@
 **Builds on:** P1 (claim/gating), P2 (Dispatch + Cancel UI triggers; §7 wording clarified here), and the
 existing dispatch/merge infrastructure.
 
-P5 formalizes *executing* a task as a self-sufficient skill: enter the task's worktree, do the work
+P5 formalizes _executing_ a task as a self-sufficient skill: enter the task's worktree, do the work
 with the right superpowers execution skill, and close through the merge queue — while staying
 subscription-safe and honoring worktree isolation. It also owns the **Cancel-dispatch** plumbing that
 P2's popover triggers.
@@ -14,7 +14,7 @@ P2's popover triggers.
 ## 1. Problem & goal
 
 Dispatch today hands a fresh session a paste-ready prompt (worktree + active-task + handoff, never
-`claude -p`) and `request_merge` does the merge-back, but the *execution workflow* itself is only
+`claude -p`) and `request_merge` does the merge-back, but the _execution workflow_ itself is only
 prose in the dispatch template. P5 turns it into a reusable `/execute-task` skill that picks the
 right execution strategy, records progress, and integrates — identically whether it was dispatched or
 run directly.
@@ -72,7 +72,7 @@ in the worktree at session start (no per-worktree build).
 The existing `dispatchActions`/`dispatchPrompt` flow is kept and refined:
 
 - Prepares the worktree, seeds the worktree's active-task (initial context), writes the handoff, and
-  copies a paste-ready prompt whose instruction is now *"run `/execute-task`"*.
+  copies a paste-ready prompt whose instruction is now _"run `/execute-task`"_.
 - Subscription-safe: clipboard by default; optional terminal launch (still refuses `claude -p`).
 - `/execute-task` is also **runnable directly** in the user's own session to work a task in isolation
   (it self-creates the worktree), giving humans the same one-command execution path.

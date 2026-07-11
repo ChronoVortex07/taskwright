@@ -234,11 +234,7 @@ describe('publishMergeConfig', () => {
     const { fs } = memFs(
       JSON.stringify({ mode: 'auto-merge', verifyCommands: ['pytest'], staleMinutes: 5 })
     );
-    const result = publishMergeConfig(
-      '/c.json',
-      { mode: 'auto-pr', staleMinutes: 45 },
-      fs
-    );
+    const result = publishMergeConfig('/c.json', { mode: 'auto-pr', staleMinutes: 45 }, fs);
     // explicit wins…
     expect(result.mode).toBe('auto-pr');
     expect(result.staleMinutes).toBe(45);

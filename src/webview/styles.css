@@ -76,6 +76,28 @@ body.tasks-page .view-content {
   border-color: var(--vscode-focusBorder, #007fd4);
 }
 
+/*
+ * Baseline keyboard focus indicator (a11y).
+ * Many interactive controls reset their chrome with `all: unset` (tree/popover
+ * buttons, menu items) which also removes the focus outline, leaving keyboard
+ * users with no visible focus. This restores a consistent, theme-aware ring for
+ * buttons and role-based widgets — but ONLY on keyboard focus (:focus-visible),
+ * so pointer interaction is visually unchanged. Component-scoped :focus-visible
+ * rules (e.g. .tree-node, .tab) have higher specificity and still win where they
+ * define their own indicator. Form fields (input/select/textarea) manage their
+ * own :focus styling and are intentionally excluded here.
+ */
+button:focus-visible,
+[role='button']:focus-visible,
+[role='menuitem']:focus-visible,
+[role='menuitemcheckbox']:focus-visible,
+[role='tab']:focus-visible,
+[role='application']:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder, #007fd4);
+  outline-offset: 2px;
+}
+
 /* Scrollbar styling to match VS Code */
 ::-webkit-scrollbar {
   width: 10px;

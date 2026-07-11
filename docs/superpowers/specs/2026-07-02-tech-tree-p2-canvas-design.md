@@ -86,19 +86,19 @@ Derived by extending P1's pure `treeLayout` module — no stored coordinates:
   memory thereafter — active is only a convenience for injecting "what I'm looking at."
 - **State-aware actions** (minimal — see the state→action table):
 
-  | State | Actions |
-  |-------|---------|
-  | To Do · unlocked | Claim · Dispatch |
-  | To Do · locked | Force claim *(human-only override)* |
-  | In Progress · yours | **Request merge / Mark done** *(one smart button)* · Release Claim |
-  | In Progress · agent | **Cancel dispatch** |
-  | Pending Review | Approve · Send back |
+  | State               | Actions                                                            |
+  | ------------------- | ------------------------------------------------------------------ |
+  | To Do · unlocked    | Claim · Dispatch                                                   |
+  | To Do · locked      | Force claim _(human-only override)_                                |
+  | In Progress · yours | **Request merge / Mark done** _(one smart button)_ · Release Claim |
+  | In Progress · agent | **Cancel dispatch**                                                |
+  | Pending Review      | Approve · Send back                                                |
 
 - **Claim ⟂ Dispatch:** a claimed task offers no Dispatch; a dispatched task offers no Claim/Request
   merge (the agent owns `request_merge`). **⤢** opens the full details page.
 - **Cancel dispatch:** remove the worktree · release the claim · return to To Do · terminate the
   agent's terminal if we launched it, and write a **task/worktree-scoped cancellation marker** the
-  agent detects at its next checkpoint (a worktree-local signal — *not* `get_active_task`, which is
+  agent detects at its next checkpoint (a worktree-local signal — _not_ `get_active_task`, which is
   init-only and drifts). The cancellation-signal plumbing is a **P5 dependency** (see the P5 spec §6).
 
 ## 8. Reworked details page (the ⤢ full panel)

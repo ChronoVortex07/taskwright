@@ -4,7 +4,7 @@
 
 **Goal:** Rewire the `/execute-task` skill so it no longer requires a board Dispatch — from a primary-rooted session it bootstraps the task's worktree via `start_task`, then closes via `request_merge` with the `worktree` target, while leaving the existing dispatched (already-worktree-rooted) path untouched.
 
-**Architecture.** The whole feature rides two MCP tools that DRAFT-3 and DRAFT-4 land: `start_task { taskId }` (creates/enters `.worktrees/<branch>` and returns its paths) and `request_merge { … worktree? }` (rebase/verify/ff-merge against a *linked* worktree even when the caller's MCP is rooted in the primary tree). This task is therefore almost entirely a **skill-document rewrite** (`.claude/skills/execute-task/SKILL.md`): step 1 accepts a user-named task ID (not only the active-task pointer), and step 2's "STOP if not worktree-rooted" branch becomes a **bootstrap** branch that calls `start_task` and then either relaunches into the worktree or continues single-session and closes with `request_merge { worktree }`. One small, unit-tested glue change repoints the `getActiveTask` no-active-task message so the MCP's own guidance reflects the from-any-session capability. Subscription-safety, the mandatory cancellation checkpoint, and the dispatched path are all preserved verbatim.
+**Architecture.** The whole feature rides two MCP tools that DRAFT-3 and DRAFT-4 land: `start_task { taskId }` (creates/enters `.worktrees/<branch>` and returns its paths) and `request_merge { … worktree? }` (rebase/verify/ff-merge against a _linked_ worktree even when the caller's MCP is rooted in the primary tree). This task is therefore almost entirely a **skill-document rewrite** (`.claude/skills/execute-task/SKILL.md`): step 1 accepts a user-named task ID (not only the active-task pointer), and step 2's "STOP if not worktree-rooted" branch becomes a **bootstrap** branch that calls `start_task` and then either relaunches into the worktree or continues single-session and closes with `request_merge { worktree }`. One small, unit-tested glue change repoints the `getActiveTask` no-active-task message so the MCP's own guidance reflects the from-any-session capability. Subscription-safety, the mandatory cancellation checkpoint, and the dispatched path are all preserved verbatim.
 
 **Tech Stack:** Markdown (the skill + CLAUDE.md doc-sync), TypeScript (`src/mcp/handlers.ts` one-line message repoint), Vitest (unit test mirroring `src/test/unit/mcpHandlers.test.ts`). No webview/Svelte, no new MCP tool, no new frontmatter. Build/test via **Bun**.
 
@@ -17,7 +17,7 @@ This draft depends on two other drafts and **must be carved after they land**:
 - **DRAFT-3 (`start_task` MCP tool)** — provides `mcp__taskwright__start_task` and its pure core `src/core/startTask.ts` (`bootstrapTaskWorktree`). The skill's new step 2 bootstrap branch calls this tool; it does not exist until DRAFT-3 is merged.
 - **DRAFT-4 (`request_merge` gains optional `worktree?`)** — lets `request_merge { taskId, worktree }` rebase/verify/ff-merge against a linked worktree from a primary-rooted session (the `isPrimaryTree` abort applies **only** when `worktree` is absent). The single-session close path relies on this; it does not exist until DRAFT-4 is merged.
 
-**Carve this worktree AFTER DRAFT-3 and DRAFT-4 land so their code is present.** Because the `taskwright` MCP server in a worktree runs the **primary** checkout's `dist/mcp/server.js` (via `scripts/taskwright-mcp.cjs`), the `start_task` tool and the `request_merge { worktree }` behavior are only **live** once DRAFT-3/4 are merged into the primary **and the primary is rebuilt** (`bun run build` on main). The skill this task writes documents calling those tools; it cannot be *exercised live* from within this worktree even after this task's own edits — validate the skill by the scenario walkthrough (Task 1, Step 4) and validate the glue by its unit test (Task 2), never by calling the MCP tool from the worktree.
+**Carve this worktree AFTER DRAFT-3 and DRAFT-4 land so their code is present.** Because the `taskwright` MCP server in a worktree runs the **primary** checkout's `dist/mcp/server.js` (via `scripts/taskwright-mcp.cjs`), the `start_task` tool and the `request_merge { worktree }` behavior are only **live** once DRAFT-3/4 are merged into the primary **and the primary is rebuilt** (`bun run build` on main). The skill this task writes documents calling those tools; it cannot be _exercised live_ from within this worktree even after this task's own edits — validate the skill by the scenario walkthrough (Task 1, Step 4) and validate the glue by its unit test (Task 2), never by calling the MCP tool from the worktree.
 
 ---
 
@@ -189,7 +189,7 @@ with:
      agents and a managed pre-commit hook blocks it. All git/file/test commands run in the worktree.
 ```
 
-with (note: this new block CONTAINS a triple-backtick `bash` fence — in the plan it is wrapped in a 4-backtick fence so the inner fence survives; write the inner `` ```bash `` … `` ``` `` verbatim into SKILL.md):
+with (note: this new block CONTAINS a triple-backtick `bash` fence — in the plan it is wrapped in a 4-backtick fence so the inner fence survives; write the inner ` ```bash ` … ` ``` ` verbatim into SKILL.md):
 
 ````
 2. **Get into the task's worktree (verify, or bootstrap).** The task runs inside its own
@@ -298,7 +298,7 @@ with:
 
 - [ ] **Step 2: Doc-sync `CLAUDE.md` — correct the stale P5 clause**
 
-The P5 CLAUDE.md bullet still says `/execute-task` *verifies* rather than self-creating a worktree. DRAFT-7 reverses that. In `CLAUDE.md`, replace (these two lines carry the `  > ` blockquote prefix — match it exactly):
+The P5 CLAUDE.md bullet still says `/execute-task` _verifies_ rather than self-creating a worktree. DRAFT-7 reverses that. In `CLAUDE.md`, replace (these two lines carry the ` >` blockquote prefix — match it exactly):
 
 ```
   > repoint. The MCP root is fixed at launch (`server.ts`), so `/execute-task` **verifies** it is
@@ -323,7 +323,7 @@ Confirm the YAML frontmatter fence is intact (`---` … `---`), `name: execute-t
 
 Read the edited skill top-to-bottom and confirm each scenario reaches the right terminus. Record the trace in this task's implementation notes (via `edit_task`). All five must hold:
 
-1. **Dispatched (worktree-rooted).** step 1 loads the active task the dispatch seeded → step 2 root probe prints `linked` → confirm under `.worktrees/`, `bun install` if needed → claim → execute → cancellation checkpoint → step 7 **bare `request_merge`** → Done. *(Unchanged from before this task — the dispatched path is preserved.)*
+1. **Dispatched (worktree-rooted).** step 1 loads the active task the dispatch seeded → step 2 root probe prints `linked` → confirm under `.worktrees/`, `bun install` if needed → claim → execute → cancellation checkpoint → step 7 **bare `request_merge`** → Done. _(Unchanged from before this task — the dispatched path is preserved.)_
 2. **Primary-rooted, relaunch path.** step 1 (active task set by opening the board popover, OR a named `/execute-task TASK-7`) → step 2 prints `primary` → `start_task { taskId }` creates `.worktrees/<branch>` and returns `relaunchHint`/`worktreeAbs` → surface `relaunchHint`, **STOP this session** → user relaunches rooted in the worktree → that session is `linked` → runs the whole loop → **bare `request_merge`** → Done.
 3. **Primary-rooted, single-session path.** step 1 → step 2 prints `primary` → `start_task { taskId }` (keep `worktree`, `worktreeAbs`) → `cd worktreeAbs`, `bun install` if needed → claim → execute → cancellation checkpoint → step 7 **`request_merge { taskId, worktree }`** (DRAFT-4 resolves the linked worktree — no primary-tree abort) → Done. **This proves the from-any-session path reaches Done via `request_merge`.**
 4. **Graceful STOP — no task.** step 1: `get_active_task` returns no active task AND the user named none → **STOP and ask** (no `start_task`, no guessing from the file tree). Degrades cleanly.
@@ -381,13 +381,13 @@ Co-Authored-By: <your model> <noreply@anthropic.com>"
 In `src/test/unit/mcpHandlers.test.ts`, inside the existing `describe('getActiveTask', …)` block, add this case immediately after the existing `it('reports no active task when none is set', …)` test:
 
 ```ts
-    it('no-active-task message names the from-any-session bootstrap path (DRAFT-7)', async () => {
-      routeReads(null);
-      const result = await getActiveTask(makeDeps());
-      expect(result.active).toBe(false);
-      expect(result.message).toContain('/execute-task');
-      expect(result.message?.toLowerCase()).toContain('bootstrap');
-    });
+it('no-active-task message names the from-any-session bootstrap path (DRAFT-7)', async () => {
+  routeReads(null);
+  const result = await getActiveTask(makeDeps());
+  expect(result.active).toBe(false);
+  expect(result.message).toContain('/execute-task');
+  expect(result.message?.toLowerCase()).toContain('bootstrap');
+});
 ```
 
 > This reuses the file's existing `routeReads(null)` helper (routes `active-task.json` reads to an ENOENT throw, so `readActiveTask` returns undefined and `getActiveTask` takes the no-active branch) and `makeDeps()` (a fully-wired `McpHandlerDeps` over `/repo`). The two assertions falsify against the current message, which contains neither `/execute-task` nor `bootstrap`.
@@ -402,26 +402,26 @@ Expected: FAIL on the new case — the current message is `No active task is set
 In `getActiveTask`, replace the no-active-task return:
 
 ```ts
-  if (!active) {
-    return {
-      active: false,
-      message:
-        'No active task is set. Pick a task on the Taskwright board (or dispatch one) before starting.',
-    };
-  }
+if (!active) {
+  return {
+    active: false,
+    message:
+      'No active task is set. Pick a task on the Taskwright board (or dispatch one) before starting.',
+  };
+}
 ```
 
 with:
 
 ```ts
-  if (!active) {
-    return {
-      active: false,
-      message:
-        'No active task is set. Pick a task on the Taskwright board (or dispatch one), or run ' +
-        '/execute-task naming a task (e.g. /execute-task TASK-7) to bootstrap its worktree from here.',
-    };
-  }
+if (!active) {
+  return {
+    active: false,
+    message:
+      'No active task is set. Pick a task on the Taskwright board (or dispatch one), or run ' +
+      '/execute-task naming a task (e.g. /execute-task TASK-7) to bootstrap its worktree from here.',
+  };
+}
 ```
 
 - [ ] **Step 4: Run the test to verify it passes**
@@ -469,7 +469,7 @@ Then call `request_merge` (the `/execute-task` flow's close). If this very sessi
 
 **2. Invariant honored.** The plan never assumes the MCP can re-root (`src/mcp/server.ts` fixes `root` at launch). Instead: `start_task` creates the worktree, Bash/file/test work runs inside it (not bound to the MCP root), and `request_merge { worktree }` closes against the linked worktree from the primary tree — exactly the DRAFT-4 contract.
 
-**3. Preserved verbatim.** Subscription-safety (in-session; sub-skills use Task-tool subagents; never `claude -p`) — the "Subscription safety" section is untouched. The mandatory cancellation checkpoint (step 6) and its presence-only/vanished contract are untouched except the "Worktree vanished" bullet, which is *broadened* to cover the `{ worktree }` abort (not weakened). The dispatched path is byte-identical (the `linked` branch of Edit 5 = the old verify + `bun install` behavior).
+**3. Preserved verbatim.** Subscription-safety (in-session; sub-skills use Task-tool subagents; never `claude -p`) — the "Subscription safety" section is untouched. The mandatory cancellation checkpoint (step 6) and its presence-only/vanished contract are untouched except the "Worktree vanished" bullet, which is _broadened_ to cover the `{ worktree }` abort (not weakened). The dispatched path is byte-identical (the `linked` branch of Edit 5 = the old verify + `bun install` behavior).
 
 **4. No placeholders.** Every SKILL.md edit shows full before/after replacement text; the glue shows the complete test and the complete implementation string; commit commands stage only the named files with `--no-verify`. The one author-substituted token is the `Co-Authored-By: <your model>` trailer (per Global Constraints, the dispatched agent fills its own model line).
 

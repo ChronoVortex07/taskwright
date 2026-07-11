@@ -58,8 +58,7 @@ export function formatBoardSyncStatusBar(state: BoardSyncStatusBarState): Status
     };
   }
 
-  const verb =
-    lastSync.type === 'push' ? 'pushed' : lastSync.type === 'pull' ? 'pulled' : 'synced';
+  const verb = lastSync.type === 'push' ? 'pushed' : lastSync.type === 'pull' ? 'pulled' : 'synced';
   const time = formatTimeUtc(lastSync.atIso);
 
   if (!lastSync.ok) {

@@ -70,9 +70,9 @@ describe('selectReadyTasks', () => {
     });
     const tasks = [live, stale];
     // Live claim hides TASK-1; a stale claim is abandoned/reclaimable ⇒ TASK-2 stays.
-    expect(selectReadyTasks(tasks, boardOf(tasks), opts({ now: now.getTime() })).map((t) => t.id)).toEqual(
-      ['TASK-2']
-    );
+    expect(
+      selectReadyTasks(tasks, boardOf(tasks), opts({ now: now.getTime() })).map((t) => t.id)
+    ).toEqual(['TASK-2']);
   });
 
   it('treats every claim as live when staleness is disabled (stalenessMs <= 0)', () => {
@@ -83,9 +83,9 @@ describe('selectReadyTasks', () => {
       claimedAt: claimTimestamp(new Date(now.getTime() - 100 * 3600_000)), // ancient, but…
     });
     // …staleness disabled ⇒ the claim is still LIVE ⇒ excluded (matches resolveClaimAction).
-    expect(selectReadyTasks([old], boardOf([old]), opts({ stalenessMs: 0, now: now.getTime() }))).toEqual(
-      []
-    );
+    expect(
+      selectReadyTasks([old], boardOf([old]), opts({ stalenessMs: 0, now: now.getTime() }))
+    ).toEqual([]);
   });
 
   it('excludes a task that is currently in the merge queue', () => {
@@ -118,10 +118,9 @@ describe('selectReadyTasks', () => {
       T({ id: 'TASK-3', category: 'Features', priority: 'medium' }), // no milestone ⇒ Backburner
     ];
     const board = boardOf(tasks);
-    expect(selectReadyTasks(tasks, board, opts({ category: 'Features' })).map((t) => t.id)).toEqual([
-      'TASK-1',
-      'TASK-3',
-    ]);
+    expect(selectReadyTasks(tasks, board, opts({ category: 'Features' })).map((t) => t.id)).toEqual(
+      ['TASK-1', 'TASK-3']
+    );
     expect(selectReadyTasks(tasks, board, opts({ milestone: 'v1' })).map((t) => t.id)).toEqual([
       'TASK-1',
       'TASK-2',

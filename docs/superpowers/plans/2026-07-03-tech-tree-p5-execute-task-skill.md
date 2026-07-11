@@ -9,6 +9,7 @@
 **Scope boundary (P5).** This plan implements the P5 architecture directives (`.superpowers/tech-tree-run/p5-architecture-directives.md`) in full: GAP-1..GAP-9 and the deliverable breakdown. It does **not** implement codebase-indexing tree bootstrap (**P6**), nor a re-rootable MCP server (`set_root` / per-call root — explicitly accepted debt / future enhancement). No new frontmatter (`dispatched_at` is deliberately **not** added — GAP-8). The direct-run-from-anywhere ergonomic is descoped to launch-in-worktree (spec §5 deviation, recorded in the directives' DEVIATIONS and in a one-line spec addendum here).
 
 **Architecture.** The changes span four seams, all reusing existing cores (parity — every step the skill takes has a human equivalent on the P2 board):
+
 - **New pure core** `src/core/cancellationMarker.ts` mirroring `src/core/activeTask.ts` exactly (STATE_DIR `.taskwright`, never-throws reads): `writeCancellationMarker` / `isCancelled` (**presence-only** — never parses the JSON) / `clearCancellationMarker`.
 - **Cancel-dispatch orchestrator** `src/core/cancelDispatch.ts` gains a `writeCancellationMarker` dep and a **marker-first** order (`marker → releaseClaim → setStatus → removeWorktree → disposeTerminal`); the extension threads the **absolute** `worktreePathFor(repoRoot, branch)` into that dep.
 - **Dispatch seam** — `dispatchActions.ts` clears any stale marker on seed; `dispatchPrompt.ts` repoints `DEFAULT_DISPATCH_TEMPLATE` at `/execute-task` (guardrails kept, workflow prose migrated into the skill).
@@ -520,34 +521,31 @@ import { worktreePathFor, type GitExecFn } from './core/WorktreeService';
 In the `taskwright.cancelDispatch` command, add the `writeCancellationMarker` closure as the **first** dep. Replace the `cancelDispatch(...)` call (`extension.ts:1157-1166`):
 
 ```ts
-      await cancelDispatch(
-        {
-          releaseClaim: (id) => releaseTaskClaim(id, activeParser),
-          setStatus: (id, status) => writer.updateTask(id, { status }, activeParser),
-          removeWorktree: (rel) => removeWorktree(exec, repoRoot, rel),
-          disposeTerminal: (name) =>
-            vscode.window.terminals.find((t) => t.name === name)?.dispose(),
-        },
-        { taskId, branch, toDoStatus: toDo, terminalName: `Taskwright ${taskId}` }
-      );
+await cancelDispatch(
+  {
+    releaseClaim: (id) => releaseTaskClaim(id, activeParser),
+    setStatus: (id, status) => writer.updateTask(id, { status }, activeParser),
+    removeWorktree: (rel) => removeWorktree(exec, repoRoot, rel),
+    disposeTerminal: (name) => vscode.window.terminals.find((t) => t.name === name)?.dispose(),
+  },
+  { taskId, branch, toDoStatus: toDo, terminalName: `Taskwright ${taskId}` }
+);
 ```
 
 with:
 
 ```ts
-      await cancelDispatch(
-        {
-          // Absolute worktree root so the marker lands in .worktrees/<branch>/.taskwright/.
-          writeCancellationMarker: (id) =>
-            writeCancellationMarker(worktreePathFor(repoRoot, branch), id),
-          releaseClaim: (id) => releaseTaskClaim(id, activeParser),
-          setStatus: (id, status) => writer.updateTask(id, { status }, activeParser),
-          removeWorktree: (rel) => removeWorktree(exec, repoRoot, rel),
-          disposeTerminal: (name) =>
-            vscode.window.terminals.find((t) => t.name === name)?.dispose(),
-        },
-        { taskId, branch, toDoStatus: toDo, terminalName: `Taskwright ${taskId}` }
-      );
+await cancelDispatch(
+  {
+    // Absolute worktree root so the marker lands in .worktrees/<branch>/.taskwright/.
+    writeCancellationMarker: (id) => writeCancellationMarker(worktreePathFor(repoRoot, branch), id),
+    releaseClaim: (id) => releaseTaskClaim(id, activeParser),
+    setStatus: (id, status) => writer.updateTask(id, { status }, activeParser),
+    removeWorktree: (rel) => removeWorktree(exec, repoRoot, rel),
+    disposeTerminal: (name) => vscode.window.terminals.find((t) => t.name === name)?.dispose(),
+  },
+  { taskId, branch, toDoStatus: toDo, terminalName: `Taskwright ${taskId}` }
+);
 ```
 
 > `repoRoot` (`extension.ts:1150`) and `branch` (`:1147`) are already in scope. The object KEY `writeCancellationMarker` does not shadow the imported binding — the RHS `writeCancellationMarker(...)` resolves to the import.
@@ -692,20 +690,20 @@ import { clearCancellationMarker } from '../core/cancellationMarker';
 Then, in `dispatchTask`, replace the seed line (`dispatchActions.ts:112-114`):
 
 ```ts
-  // Mark the task active for the session root so the MCP get_active_task resolves
-  // it, then render + persist the paste-ready prompt.
-  writeActiveTask(sessionRoot, taskId);
+// Mark the task active for the session root so the MCP get_active_task resolves
+// it, then render + persist the paste-ready prompt.
+writeActiveTask(sessionRoot, taskId);
 ```
 
 with:
 
 ```ts
-  // Mark the task active for the session root so the MCP get_active_task resolves
-  // it, then render + persist the paste-ready prompt. Clear any stale cancellation
-  // marker left by a prior (leaked) cancel of the SAME task (deterministic branch =>
-  // reused worktree dir) so this fresh /execute-task does not insta-abort (GAP-3).
-  writeActiveTask(sessionRoot, taskId);
-  clearCancellationMarker(sessionRoot);
+// Mark the task active for the session root so the MCP get_active_task resolves
+// it, then render + persist the paste-ready prompt. Clear any stale cancellation
+// marker left by a prior (leaked) cancel of the SAME task (deterministic branch =>
+// reused worktree dir) so this fresh /execute-task does not insta-abort (GAP-3).
+writeActiveTask(sessionRoot, taskId);
+clearCancellationMarker(sessionRoot);
 ```
 
 - [ ] **Step 4: Run tests + typecheck**
@@ -753,49 +751,49 @@ In `src/test/unit/dispatchPrompt.test.ts`, make these edits.
 (a) In the `renderDispatchPrompt` "substitutes every known placeholder" test, change the `claim_task` assertion (`dispatchPrompt.test.ts:112`) — the new template names `get_active_task` and `/execute-task` (which claims for you), not `claim_task` literally:
 
 ```ts
-    expect(out).toContain('get_active_task');
-    expect(out).toContain('claim_task');
+expect(out).toContain('get_active_task');
+expect(out).toContain('claim_task');
 ```
 
 →
 
 ```ts
-    expect(out).toContain('get_active_task');
-    expect(out).toContain('/execute-task');
+expect(out).toContain('get_active_task');
+expect(out).toContain('/execute-task');
 ```
 
 (b) Replace the `DEFAULT_DISPATCH_TEMPLATE worktree isolation` first test (`dispatchPrompt.test.ts:151-155`) — the template now says LAUNCH inside, not "cd into it":
 
 ```ts
-  it('tells the session to cd into and stay in its worktree', () => {
-    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('.worktrees/{{worktree}}');
-    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('cd into it');
-    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('repository root');
-  });
+it('tells the session to cd into and stay in its worktree', () => {
+  expect(DEFAULT_DISPATCH_TEMPLATE).toContain('.worktrees/{{worktree}}');
+  expect(DEFAULT_DISPATCH_TEMPLATE).toContain('cd into it');
+  expect(DEFAULT_DISPATCH_TEMPLATE).toContain('repository root');
+});
 ```
 
 →
 
 ```ts
-  it('tells the session to LAUNCH inside its worktree (not cd from the root)', () => {
-    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('.worktrees/{{worktree}}');
-    expect(DEFAULT_DISPATCH_TEMPLATE).toMatch(/launch this session inside/i);
-    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('repository root');
-  });
+it('tells the session to LAUNCH inside its worktree (not cd from the root)', () => {
+  expect(DEFAULT_DISPATCH_TEMPLATE).toContain('.worktrees/{{worktree}}');
+  expect(DEFAULT_DISPATCH_TEMPLATE).toMatch(/launch this session inside/i);
+  expect(DEFAULT_DISPATCH_TEMPLATE).toContain('repository root');
+});
 ```
 
 (c) In the `DEFAULT_DISPATCH_TEMPLATE closing step` test (`dispatchPrompt.test.ts:196-201`), the "wait for it to return" detail now lives in the skill; assert the closing guardrail instead:
 
 ```ts
-    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('request_merge');
-    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('wait for it to return');
+expect(DEFAULT_DISPATCH_TEMPLATE).toContain('request_merge');
+expect(DEFAULT_DISPATCH_TEMPLATE).toContain('wait for it to return');
 ```
 
 →
 
 ```ts
-    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('request_merge');
-    expect(DEFAULT_DISPATCH_TEMPLATE).toContain('from inside your worktree');
+expect(DEFAULT_DISPATCH_TEMPLATE).toContain('request_merge');
+expect(DEFAULT_DISPATCH_TEMPLATE).toContain('from inside your worktree');
 ```
 
 (d) Append a new GAP-9 describe (at the end of the file):
@@ -1036,12 +1034,30 @@ describe('TasksController — dispatchedWorktree enrichment (GAP-7)', () => {
         String(p).includes('task-9-dispatched') ? true : realExists(p as string)
       );
     (mockParser.getTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: 'TASK-9', title: 'Dispatched', status: 'In Progress', folder: 'tasks',
-        labels: [], assignee: [], dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
-        filePath: '/fake/backlog/tasks/task-9.md' },
-      { id: 'TASK-8', title: 'Other', status: 'In Progress', folder: 'tasks',
-        labels: [], assignee: [], dependencies: [], acceptanceCriteria: [], definitionOfDone: [],
-        filePath: '/fake/backlog/tasks/task-8.md' },
+      {
+        id: 'TASK-9',
+        title: 'Dispatched',
+        status: 'In Progress',
+        folder: 'tasks',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/fake/backlog/tasks/task-9.md',
+      },
+      {
+        id: 'TASK-8',
+        title: 'Other',
+        status: 'In Progress',
+        folder: 'tasks',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        filePath: '/fake/backlog/tasks/task-8.md',
+      },
     ]);
     const controller = new TasksController(host, mockParser, mockContext);
     controller.setViewMode('tree');
@@ -1062,44 +1078,65 @@ describe('TasksController — dispatchedWorktree enrichment (GAP-7)', () => {
 **6b — `e2e/tree-popover.spec.ts` (the affordance).** Append two tests to the `Tree detail popover` describe. Post a custom in-progress task with `dispatchedWorktree:true` but no claim, and assert Cancel-dispatch shows and posts `cancelDispatch`; then a negative (no worktree dir, no claim → the affordance is absent):
 
 ```ts
-  test('a dispatched-but-unclaimed in-progress task offers Cancel dispatch (GAP-7)', async ({ page }) => {
-    await postMessageToWebview(page, {
-      type: 'tasksUpdated',
-      tasks: [
-        {
-          id: 'TASK-9', title: 'Dispatched unclaimed', status: 'In Progress',
-          category: 'Misc', milestone: 'v1', labels: [], assignee: [], dependencies: [],
-          acceptanceCriteria: [], definitionOfDone: [],
-          dispatchedWorktree: true, // worktree dir exists; no claim `worktree` field
-          layout: { lane: 'Misc', band: 'v1', depth: 0, subRow: 0 },
-          filePath: '/b/tasks/task-9.md',
-        },
-      ],
-    });
-    await page.waitForTimeout(150);
-    await page.locator('[data-testid="tree-node-TASK-9"]').click();
-    await expect(page.locator('[data-testid="tp-action-cancelDispatch"]')).toBeVisible();
-    await page.locator('[data-testid="tp-action-cancelDispatch"]').click();
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'cancelDispatch', taskId: 'TASK-9' });
+test('a dispatched-but-unclaimed in-progress task offers Cancel dispatch (GAP-7)', async ({
+  page,
+}) => {
+  await postMessageToWebview(page, {
+    type: 'tasksUpdated',
+    tasks: [
+      {
+        id: 'TASK-9',
+        title: 'Dispatched unclaimed',
+        status: 'In Progress',
+        category: 'Misc',
+        milestone: 'v1',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        dispatchedWorktree: true, // worktree dir exists; no claim `worktree` field
+        layout: { lane: 'Misc', band: 'v1', depth: 0, subRow: 0 },
+        filePath: '/b/tasks/task-9.md',
+      },
+    ],
   });
+  await page.waitForTimeout(150);
+  await page.locator('[data-testid="tree-node-TASK-9"]').click();
+  await expect(page.locator('[data-testid="tp-action-cancelDispatch"]')).toBeVisible();
+  await page.locator('[data-testid="tp-action-cancelDispatch"]').click();
+  expect(await getLastPostedMessage(page)).toMatchObject({
+    type: 'cancelDispatch',
+    taskId: 'TASK-9',
+  });
+});
 
-  test('an in-progress task with no worktree dir and no claim does NOT offer Cancel dispatch (GAP-7 negative)', async ({ page }) => {
-    await postMessageToWebview(page, {
-      type: 'tasksUpdated',
-      tasks: [
-        {
-          id: 'TASK-9', title: 'In progress no wt', status: 'In Progress',
-          category: 'Misc', milestone: 'v1', labels: [], assignee: [], dependencies: [],
-          acceptanceCriteria: [], definitionOfDone: [],
-          layout: { lane: 'Misc', band: 'v1', depth: 0, subRow: 0 },
-          filePath: '/b/tasks/task-9.md',
-        },
-      ],
-    });
-    await page.waitForTimeout(150);
-    await page.locator('[data-testid="tree-node-TASK-9"]').click();
-    await expect(page.locator('[data-testid="tp-action-cancelDispatch"]')).toHaveCount(0);
+test('an in-progress task with no worktree dir and no claim does NOT offer Cancel dispatch (GAP-7 negative)', async ({
+  page,
+}) => {
+  await postMessageToWebview(page, {
+    type: 'tasksUpdated',
+    tasks: [
+      {
+        id: 'TASK-9',
+        title: 'In progress no wt',
+        status: 'In Progress',
+        category: 'Misc',
+        milestone: 'v1',
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+        layout: { lane: 'Misc', band: 'v1', depth: 0, subRow: 0 },
+        filePath: '/b/tasks/task-9.md',
+      },
+    ],
   });
+  await page.waitForTimeout(150);
+  await page.locator('[data-testid="tree-node-TASK-9"]').click();
+  await expect(page.locator('[data-testid="tp-action-cancelDispatch"]')).toHaveCount(0);
+});
 ```
 
 > `laneOrder` in this spec already includes `Misc` and `bandOrder` includes `v1`, so the node renders. Action buttons use `data-testid="tp-action-<kind>"` (established by the sibling tests). The negative task (In Progress, unclaimed, no worktree, no `dispatchedWorktree`) falls through the popover gate to the final Claim+Dispatch branch — so no Cancel-dispatch button — the falsification path.
@@ -1142,18 +1179,18 @@ import { worktreePathFor } from '../core/WorktreeService';
 Add a small helper after `repoRoot` is resolved (`TasksController.ts:318-323`) and **before** the `tasksWithBlocks` map (`:335`):
 
 ```ts
-      // Cancel-dispatch affordance (GAP-7): a dispatched task's worktree dir may exist on
-      // disk before the agent writes a claim (dispatch seeds active-task + handoff, not a
-      // claim). Flag it so the popover offers Cancel-dispatch. Tree tab only (the sole
-      // consumer); best-effort (a stat failure must not break loading the board).
-      const dispatchedWorktreeFor = (task: Task): boolean => {
-        if (this.viewMode !== 'tree' || !repoRoot) return false;
-        try {
-          return fs.existsSync(worktreePathFor(repoRoot, dispatchBranchName(task)));
-        } catch {
-          return false;
-        }
-      };
+// Cancel-dispatch affordance (GAP-7): a dispatched task's worktree dir may exist on
+// disk before the agent writes a claim (dispatch seeds active-task + handoff, not a
+// claim). Flag it so the popover offers Cancel-dispatch. Tree tab only (the sole
+// consumer); best-effort (a stat failure must not break loading the board).
+const dispatchedWorktreeFor = (task: Task): boolean => {
+  if (this.viewMode !== 'tree' || !repoRoot) return false;
+  try {
+    return fs.existsSync(worktreePathFor(repoRoot, dispatchBranchName(task)));
+  } catch {
+    return false;
+  }
+};
 ```
 
 Then, in the `tasksWithBlocks` map's object literal, add the field after `mergeState: …,` (`TasksController.ts:351`):
@@ -1176,28 +1213,28 @@ Then, in the `tasksWithBlocks` map's object literal, add the field after `mergeS
 In `src/webview/components/tree/DetailPopover.svelte`, add a derived after `hasWorktree` (`DetailPopover.svelte:50`):
 
 ```ts
-  const hasWorktree = $derived(!!task.worktree);
+const hasWorktree = $derived(!!task.worktree);
 ```
 
 →
 
 ```ts
-  const hasWorktree = $derived(!!task.worktree);
-  const hasDispatchedWorktree = $derived(task.dispatchedWorktree === true);
+const hasWorktree = $derived(!!task.worktree);
+const hasDispatchedWorktree = $derived(task.dispatchedWorktree === true);
 ```
 
 Then change the Cancel-dispatch gate (`DetailPopover.svelte:77`):
 
 ```ts
-    if (inProgress && hasWorktree)
-      return [{ key: 'cancel', label: 'Cancel dispatch', kind: 'cancelDispatch' }];
+if (inProgress && hasWorktree)
+  return [{ key: 'cancel', label: 'Cancel dispatch', kind: 'cancelDispatch' }];
 ```
 
 →
 
 ```ts
-    if (inProgress && (hasDispatchedWorktree || hasWorktree))
-      return [{ key: 'cancel', label: 'Cancel dispatch', kind: 'cancelDispatch' }];
+if (inProgress && (hasDispatchedWorktree || hasWorktree))
+  return [{ key: 'cancel', label: 'Cancel dispatch', kind: 'cancelDispatch' }];
 ```
 
 > Run the `svelte` MCP `svelte-autofixer` on `DetailPopover.svelte` until clean before committing (a one-line derived + a boolean gate; no new `$state`). No other action branch changes.
@@ -1277,7 +1314,7 @@ sequence, not bypassing it.
 
 - The user invokes `/execute-task`, or asks you to execute / work on / do / run a specific task.
 - A dispatch handed this session a task (the dispatch prompt tells you to run `/execute-task`).
-- Not for authoring or decomposing new work — that is `/create-task`. This skill *executes* an
+- Not for authoring or decomposing new work — that is `/create-task`. This skill _executes_ an
   existing task.
 
 ## Subscription safety
@@ -1325,7 +1362,7 @@ agent. The sub-skills it invokes (`superpowers:executing-plans`, `superpowers:su
       in its `dependencies` / `blockedBy` (if they chain, they are not independent — fall through).
    3. **Otherwise** ⇒ invoke `superpowers:test-driven-development` (write the failing test first,
       then implement).
-   Precedence is **plan > independent-subtasks > TDD**.
+      Precedence is **plan > independent-subtasks > TDD**.
 
 5. **Record progress.** As you go, use `edit_task` to append implementation notes (decisions,
    surprises) and, when done, a final summary. Do **not** call `complete_task` — `request_merge`
@@ -1470,28 +1507,28 @@ In `CLAUDE.md`, add the P5 bullet immediately after the P4 bullet closes (it is 
   adaptive strategy (attached plan → `superpowers:executing-plans`; independent subtasks →
   `subagent-driven-development`; else `test-driven-development`; precedence plan > independent-subtasks
   > TDD, independence judged via `get_board` rows) → record via `edit_task` → **mandatory cancellation
-  checkpoint** → `request_merge` (parity with the P2 board actions; subscription-safe — in-session,
-  never `claude -p`). The **cancellation protocol** P2's Cancel-dispatch popover triggers lands here: a
-  new pure core `src/core/cancellationMarker.ts` (mirrors `activeTask.ts`; **presence-only**
-  `isCancelled`, never parses the marker) is written **first** in `cancelDispatch`
-  (`marker → releaseClaim → setStatus → removeWorktree → disposeTerminal`) so a `git worktree remove
-  --force` that sweeps `.taskwright/` can't resurrect the dir and silently defeat isolation on the next
-  dispatch; dispatch clears any stale marker on seed (`clearCancellationMarker`, `dispatchActions.ts`).
-  Detection is **presence-only OR worktree-vanished** (co-equal — POSIX deletes the marker with the
-  worktree, Windows may keep it and leak the worktree until re-dispatch reuses it). `get_active_task`'s
-  summary now surfaces `subtasks`/`parentTaskId` (so the SDD branch can fire), and the **Cancel-dispatch
-  affordance** is gated on worktree-dir existence (`TasksController` `dispatchedWorktree` =
-  `fs.existsSync(worktreePathFor(repoRoot, dispatchBranchName(task)))`; popover shows it when
-  `dispatchedWorktree || hasWorktree`) so a dispatched-but-unclaimed task is teardownable — no new
-  frontmatter (`dispatched_at` deliberately **not** added). `DEFAULT_DISPATCH_TEMPLATE` now says **launch
-  inside `.worktrees/<branch>` and run `/execute-task`** (guardrails kept; the inline workflow prose moved
-  into the skill) — users with a custom `taskwright.dispatchTemplate` keep their own and won't pick up the
-  repoint. The MCP root is fixed at launch (`server.ts`), so `/execute-task` **verifies** it is
-  worktree-rooted rather than self-creating a worktree (spec §5 direct-run descoped to launch-in-worktree).
-  Coverage: `src/test/unit/{cancellationMarker,cancelDispatch,dispatchActions,dispatchPrompt,toSummary,TasksController}.test.ts`,
-  `e2e/tree-popover.spec.ts`. Design:
-  `docs/superpowers/specs/2026-07-02-tech-tree-p5-execute-task-skill-design.md`; plan:
-  `docs/superpowers/plans/2026-07-03-tech-tree-p5-execute-task-skill.md`.
+  > checkpoint** → `request_merge` (parity with the P2 board actions; subscription-safe — in-session,
+  > never `claude -p`). The **cancellation protocol** P2's Cancel-dispatch popover triggers lands here: a
+  > new pure core `src/core/cancellationMarker.ts` (mirrors `activeTask.ts`; **presence-only**
+  > `isCancelled`, never parses the marker) is written **first** in `cancelDispatch`
+  > (`marker → releaseClaim → setStatus → removeWorktree → disposeTerminal`) so a `git worktree remove
+--force` that sweeps `.taskwright/` can't resurrect the dir and silently defeat isolation on the next
+  > dispatch; dispatch clears any stale marker on seed (`clearCancellationMarker`, `dispatchActions.ts`).
+  > Detection is **presence-only OR worktree-vanished** (co-equal — POSIX deletes the marker with the
+  > worktree, Windows may keep it and leak the worktree until re-dispatch reuses it). `get_active_task`'s
+  > summary now surfaces `subtasks`/`parentTaskId` (so the SDD branch can fire), and the **Cancel-dispatch
+  > affordance** is gated on worktree-dir existence (`TasksController` `dispatchedWorktree` =
+  > `fs.existsSync(worktreePathFor(repoRoot, dispatchBranchName(task)))`; popover shows it when
+  > `dispatchedWorktree || hasWorktree`) so a dispatched-but-unclaimed task is teardownable — no new
+  > frontmatter (`dispatched_at` deliberately **not** added). `DEFAULT_DISPATCH_TEMPLATE` now says **launch
+  > inside `.worktrees/<branch>` and run `/execute-task`** (guardrails kept; the inline workflow prose moved
+  > into the skill) — users with a custom `taskwright.dispatchTemplate` keep their own and won't pick up the
+  > repoint. The MCP root is fixed at launch (`server.ts`), so `/execute-task` **verifies** it is
+  > worktree-rooted rather than self-creating a worktree (spec §5 direct-run descoped to launch-in-worktree).
+  > Coverage: `src/test/unit/{cancellationMarker,cancelDispatch,dispatchActions,dispatchPrompt,toSummary,TasksController}.test.ts`,
+  > `e2e/tree-popover.spec.ts`. Design:
+  > `docs/superpowers/specs/2026-07-02-tech-tree-p5-execute-task-skill-design.md`; plan:
+  > `docs/superpowers/plans/2026-07-03-tech-tree-p5-execute-task-skill.md`.
 ```
 
 - [ ] **Step 2: Spec — one-line §5 addendum**
@@ -1515,6 +1552,7 @@ bun run build && bun run test && bun run lint && bun run typecheck && bun run te
 ```
 
 Expected: PASS. Record the exact new totals against the branch-base baselines captured at the start:
+
 - **Unit:** baseline + new suites (`cancellationMarker`, `dispatchActions`, `toSummary`) + the reworked `cancelDispatch` + the added `dispatchPrompt`/`TasksController` cases.
 - **Playwright:** baseline + the two new `tree-popover` cases.
 - Lint zero-warning; typecheck clean. (Windows: the ~22 known upstream POSIX-path unit failures are pre-existing and unrelated — do not "fix".)

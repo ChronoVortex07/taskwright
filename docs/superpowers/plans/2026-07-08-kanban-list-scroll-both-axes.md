@@ -182,7 +182,6 @@ bun run test            # baseline — record the pass count (Windows: ~22 known
 Append to the **end** of `e2e/tasks.spec.ts` (after the final `});` of the existing top-level `test.describe('Tasks View', …)` block). This adds the shared `manyTasks` fixture (reused by Task 2) and the kanban both-axes test:
 
 ```ts
-
 // 40 same-status tasks: forces a To Do column taller than a 600px viewport (vertical
 // overflow) and, at a narrow width, columns wider than the viewport (horizontal overflow).
 const manyTasks: (Task & { blocksTaskIds?: string[] })[] = Array.from({ length: 40 }, (_, i) => ({
@@ -394,7 +393,6 @@ Co-Authored-By: <your model> <noreply@anthropic.com>"
 Append to the **end** of `e2e/tasks.spec.ts` (after Task 1's describe). Reuses the `manyTasks` fixture added in Task 1:
 
 ```ts
-
 test.describe('Tasks View — both-axes scrolling (list)', () => {
   test('list view scrolls vertically when the table exceeds the viewport', async ({ page }) => {
     await installVsCodeMock(page);

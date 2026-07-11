@@ -10,7 +10,7 @@
 
 ## Prerequisites
 
-None. This draft is independent of DRAFT-3 (`start_task`) and DRAFT-5 (`next_ready_tasks`) — it touches only `requestMergeHandler`, a new pure helper, and the `request_merge` tool schema. Carve this worktree from `main` via the board Dispatch / `/execute-task` flow. (DRAFT-8's `/orchestrate-board` skill is the eventual *consumer* of this field, but this task ships the mechanism only and does not depend on it.)
+None. This draft is independent of DRAFT-3 (`start_task`) and DRAFT-5 (`next_ready_tasks`) — it touches only `requestMergeHandler`, a new pure helper, and the `request_merge` tool schema. Carve this worktree from `main` via the board Dispatch / `/execute-task` flow. (DRAFT-8's `/orchestrate-board` skill is the eventual _consumer_ of this field, but this task ships the mechanism only and does not depend on it.)
 
 ---
 
@@ -112,9 +112,7 @@ describe('parseWorktreeEntries', () => {
     const entries = parseWorktreeEntries(
       'worktree /a\r\nHEAD abc\r\nbranch refs/heads/feature/x\r\n'
     );
-    expect(entries).toEqual([
-      { path: '/a', branch: 'feature/x', detached: false, bare: false },
-    ]);
+    expect(entries).toEqual([{ path: '/a', branch: 'feature/x', detached: false, bare: false }]);
   });
 
   it('returns [] for empty output and ignores leading noise before the first `worktree` line', () => {
@@ -191,11 +189,19 @@ export function parseWorktreeEntries(porcelain: string): WorktreeEntry[] {
   for (const line of porcelain.split(/\r?\n/)) {
     if (line.startsWith('worktree ')) {
       if (cur) entries.push(cur);
-      cur = { path: line.slice('worktree '.length).trim(), branch: null, detached: false, bare: false };
+      cur = {
+        path: line.slice('worktree '.length).trim(),
+        branch: null,
+        detached: false,
+        bare: false,
+      };
     } else if (!cur) {
       continue; // ignore noise before the first `worktree` line
     } else if (line.startsWith('branch ')) {
-      cur.branch = line.slice('branch '.length).trim().replace(/^refs\/heads\//, '');
+      cur.branch = line
+        .slice('branch '.length)
+        .trim()
+        .replace(/^refs\/heads\//, '');
     } else if (line.trim() === 'detached') {
       cur.detached = true;
     } else if (line.trim() === 'bare') {
@@ -251,7 +257,7 @@ Today `root === deps.root` (the session cwd), so the `isPrimaryTree(facts.gitDir
 
 **Exact validation that prevents merging the wrong tree** (all four must pass, else `{ status: 'aborted', reason }`):
 
-1. **Containment** — the resolved absolute path must be strictly under `<primaryRoot>/.worktrees/` (`path.relative` yields a non-empty, non-`..`, non-absolute path). Rejects the primary tree itself and any path outside the dispatch area, *before* any git call.
+1. **Containment** — the resolved absolute path must be strictly under `<primaryRoot>/.worktrees/` (`path.relative` yields a non-empty, non-`..`, non-absolute path). Rejects the primary tree itself and any path outside the dispatch area, _before_ any git call.
 2. **Real linked worktree** — the resolved path must appear in `git worktree list --porcelain` and not be `bare`. Rejects a stale/ghost `.worktrees/<x>` directory that git no longer tracks.
 3. **Non-detached** — the matched entry must have a `branch` (not `detached`). A detached HEAD has no branch to merge; refuse rather than guess.
 4. **Clean** — `isWorktreeClean(exec, abs)` must be true. Refuses to silently drop a target worktree's uncommitted WIP.
@@ -316,8 +322,10 @@ function targetGitExec(primaryRoot: string, worktreeAbs: string, opts: ExecOpts 
   return async (cwd, args) => {
     opts.onArgs?.(args);
     const joined = args.join(' ');
-    if (joined === 'rev-parse --git-dir') return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
-    if (joined === 'rev-parse --git-common-dir') return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
+    if (joined === 'rev-parse --git-dir')
+      return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
+    if (joined === 'rev-parse --git-common-dir')
+      return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
     if (args[0] === 'worktree' && args[1] === 'list') {
       const branchLine = opts.detachedTarget ? 'detached' : 'branch refs/heads/task-7-x';
       const targetStanza = opts.omitTargetFromList
@@ -340,7 +348,8 @@ function targetGitExec(primaryRoot: string, worktreeAbs: string, opts: ExecOpts 
     if (args[0] === 'merge') return { stdout: '', stderr: '' };
     if (args[0] === 'worktree') return { stdout: '', stderr: '' }; // remove / prune
     if (args[0] === 'branch') return { stdout: '', stderr: '' };
-    if (args[0] === 'rev-parse' && args.includes('refs/heads/main')) return { stdout: 'abc', stderr: '' };
+    if (args[0] === 'rev-parse' && args.includes('refs/heads/main'))
+      return { stdout: 'abc', stderr: '' };
     if (args[0] === 'rev-parse') throw new Error('no ref');
     return { stdout: '', stderr: '' };
   };
@@ -438,8 +447,10 @@ describe('requestMergeHandler — explicit worktree target (root-override, DRAFT
     fs.mkdirSync(primaryRoot, { recursive: true });
     // rev-parse --git-dir returns .git with NO /.git/worktrees/ segment => primary.
     const primaryExec: GitExecFn = async (_c, args) => {
-      if (args.join(' ') === 'rev-parse --git-dir') return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
-      if (args.join(' ') === 'rev-parse --git-common-dir') return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
+      if (args.join(' ') === 'rev-parse --git-dir')
+        return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
+      if (args.join(' ') === 'rev-parse --git-common-dir')
+        return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
       if (args[0] === 'symbolic-ref') return { stdout: 'main', stderr: '' };
       return { stdout: '', stderr: '' };
     };
@@ -505,13 +516,19 @@ describe('requestMergeHandler — explicit worktree target (root-override, DRAFT
     const listCalls: string[][] = [];
     const exec: GitExecFn = async (_c, args) => {
       if (args[0] === 'worktree' && args[1] === 'list') listCalls.push(args);
-      if (args.join(' ') === 'rev-parse --git-dir') return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
-      if (args.join(' ') === 'rev-parse --git-common-dir') return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
+      if (args.join(' ') === 'rev-parse --git-dir')
+        return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
+      if (args.join(' ') === 'rev-parse --git-common-dir')
+        return { stdout: path.join(primaryRoot, '.git'), stderr: '' };
       if (args[0] === 'symbolic-ref') return { stdout: 'main', stderr: '' };
       return { stdout: '', stderr: '' };
     };
     const r = await requestMergeHandler(
-      makeHandlerDeps(primaryRoot, { gitExec: exec, board: recordingBoard(), fsDeps: makeMemFsDeps() }),
+      makeHandlerDeps(primaryRoot, {
+        gitExec: exec,
+        board: recordingBoard(),
+        fsDeps: makeMemFsDeps(),
+      }),
       { taskId: 'TASK-7', worktree: '../evil' }
     );
     expect(r.status).toBe('aborted');
@@ -739,39 +756,39 @@ export async function requestMergeHandler(
 The existing `request_merge` registration reads:
 
 ```ts
-  server.registerTool(
-    'request_merge',
-    {
-      title: 'Request merge',
-      description:
-        'Submit your finished task for integration and wait. From inside your .worktrees/<branch>, this rebases onto the base branch, runs the verify commands, then enqueues you in the shared merge queue. It blocks until you reach the head and (in manual-review mode) a human approves, then fast-forward-merges to the base branch (or opens a PR), completes the task, and removes your worktree. Call this once when the task is committed and clean; do not merge or commit to the repo root yourself.',
-      inputSchema: { taskId: z.string().describe('Task ID to integrate, e.g. TASK-7.') },
-    },
-    async (args) => runTool(() => requestMergeHandler(deps, args))
-  );
+server.registerTool(
+  'request_merge',
+  {
+    title: 'Request merge',
+    description:
+      'Submit your finished task for integration and wait. From inside your .worktrees/<branch>, this rebases onto the base branch, runs the verify commands, then enqueues you in the shared merge queue. It blocks until you reach the head and (in manual-review mode) a human approves, then fast-forward-merges to the base branch (or opens a PR), completes the task, and removes your worktree. Call this once when the task is committed and clean; do not merge or commit to the repo root yourself.',
+    inputSchema: { taskId: z.string().describe('Task ID to integrate, e.g. TASK-7.') },
+  },
+  async (args) => runTool(() => requestMergeHandler(deps, args))
+);
 ```
 
 Replace it with (extended description + optional `worktree`):
 
 ```ts
-  server.registerTool(
-    'request_merge',
-    {
-      title: 'Request merge',
-      description:
-        'Submit a finished task for integration and wait. Normally called from INSIDE your .worktrees/<branch>: it rebases onto the base branch, runs the verify commands, then enqueues you in the shared merge queue. It blocks until you reach the head and (in manual-review mode) a human approves, then fast-forward-merges to the base branch (or opens a PR), completes the task, and removes your worktree. Optionally, a primary-rooted session may pass `worktree` (a branch name or a repo-root-relative .worktrees/<branch> path) to drive the close against THAT worktree instead of the caller\'s cwd; the target must be a clean, non-detached linked worktree of this repo under .worktrees/. Call this once when the task is committed and clean; do not merge or commit to the repo root yourself.',
-      inputSchema: {
-        taskId: z.string().describe('Task ID to integrate, e.g. TASK-7.'),
-        worktree: z
-          .string()
-          .optional()
-          .describe(
-            'Optional explicit target: a branch name or repo-root-relative .worktrees/<branch> path. When set, a primary-rooted session closes THIS worktree (must be a clean, non-detached linked worktree under .worktrees/). Omit to use the calling worktree.'
-          ),
-      },
+server.registerTool(
+  'request_merge',
+  {
+    title: 'Request merge',
+    description:
+      "Submit a finished task for integration and wait. Normally called from INSIDE your .worktrees/<branch>: it rebases onto the base branch, runs the verify commands, then enqueues you in the shared merge queue. It blocks until you reach the head and (in manual-review mode) a human approves, then fast-forward-merges to the base branch (or opens a PR), completes the task, and removes your worktree. Optionally, a primary-rooted session may pass `worktree` (a branch name or a repo-root-relative .worktrees/<branch> path) to drive the close against THAT worktree instead of the caller's cwd; the target must be a clean, non-detached linked worktree of this repo under .worktrees/. Call this once when the task is committed and clean; do not merge or commit to the repo root yourself.",
+    inputSchema: {
+      taskId: z.string().describe('Task ID to integrate, e.g. TASK-7.'),
+      worktree: z
+        .string()
+        .optional()
+        .describe(
+          'Optional explicit target: a branch name or repo-root-relative .worktrees/<branch> path. When set, a primary-rooted session closes THIS worktree (must be a clean, non-detached linked worktree under .worktrees/). Omit to use the calling worktree.'
+        ),
     },
-    async (args) => runTool(() => requestMergeHandler(deps, args))
-  );
+  },
+  async (args) => runTool(() => requestMergeHandler(deps, args))
+);
 ```
 
 > **MCP primary-build live-caveat:** this schema + handler change is NOT live in your worktree until the branch merges and the primary rebuilds. Do not call `request_merge` with a `worktree` arg live — exercise it only via the unit tests above.

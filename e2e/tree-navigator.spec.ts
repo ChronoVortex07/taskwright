@@ -21,9 +21,30 @@ async function setup(page: Parameters<typeof installVsCodeMock>[0]) {
     bands: ['v1', 'Backburner'],
     priorities: ['high', 'medium', 'low'],
     tasks: [
-      { id: 'TASK-1', title: 'Add login page', status: 'In Progress', priority: 'high', lane: 'Features', band: 'v1' },
-      { id: 'TASK-2', title: 'Fix sidebar crash', status: 'To Do', priority: 'medium', lane: 'Bugs', band: 'Backburner' },
-      { id: 'TASK-3', title: 'Update docs', status: 'Done', priority: 'low', lane: 'Features', band: 'v1' },
+      {
+        id: 'TASK-1',
+        title: 'Add login page',
+        status: 'In Progress',
+        priority: 'high',
+        lane: 'Features',
+        band: 'v1',
+      },
+      {
+        id: 'TASK-2',
+        title: 'Fix sidebar crash',
+        status: 'To Do',
+        priority: 'medium',
+        lane: 'Bugs',
+        band: 'Backburner',
+      },
+      {
+        id: 'TASK-3',
+        title: 'Update docs',
+        status: 'Done',
+        priority: 'low',
+        lane: 'Features',
+        band: 'v1',
+      },
     ],
   });
   await page.waitForTimeout(80);
@@ -48,7 +69,9 @@ test.describe('Tree navigator', () => {
     });
   });
 
-  test('clicking a priority chip posts navigatorFilterChanged with the priority', async ({ page }) => {
+  test('clicking a priority chip posts navigatorFilterChanged with the priority', async ({
+    page,
+  }) => {
     await page.locator('[data-testid="nav-priority-high"]').click();
     expect(await getLastPostedMessage(page)).toMatchObject({
       type: 'navigatorFilterChanged',
@@ -58,7 +81,10 @@ test.describe('Tree navigator', () => {
 
   test('toggling a lane posts navigatorLaneToggle', async ({ page }) => {
     await page.locator('[data-testid="nav-lane-Bugs"]').click();
-    expect(await getLastPostedMessage(page)).toMatchObject({ type: 'navigatorLaneToggle', lane: 'Bugs' });
+    expect(await getLastPostedMessage(page)).toMatchObject({
+      type: 'navigatorLaneToggle',
+      lane: 'Bugs',
+    });
   });
 
   test('jump button posts navigatorJump', async ({ page }) => {

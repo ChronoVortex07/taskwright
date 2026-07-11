@@ -17,7 +17,12 @@ describe('searchTasks', () => {
       labels: ['auth'],
       category: 'Features',
     }),
-    T({ id: 'TASK-2', title: 'Dashboard', description: 'charts and login widget', category: 'Features' }),
+    T({
+      id: 'TASK-2',
+      title: 'Dashboard',
+      description: 'charts and login widget',
+      category: 'Features',
+    }),
     T({ id: 'TASK-3', title: 'Docs', description: 'unrelated' }),
   ];
 

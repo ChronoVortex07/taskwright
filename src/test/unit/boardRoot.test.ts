@@ -182,7 +182,9 @@ describe('resolveBoardHome', () => {
     });
 
     expect(norm(home.primaryRoot)).toBe('/repo');
-    expect(norm(home.backlogPath)).toBe(norm(path.join('/repo', '.taskwright', 'board', 'backlog')));
+    expect(norm(home.backlogPath)).toBe(
+      norm(path.join('/repo', '.taskwright', 'board', 'backlog'))
+    );
     expect(norm(home.configRoot)).toBe(norm(path.join('/repo', 'backlog')));
   });
 

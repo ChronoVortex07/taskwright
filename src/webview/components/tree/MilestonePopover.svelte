@@ -21,7 +21,16 @@
 
   const pct = $derived(total > 0 ? Math.round((done / total) * 100) : 0);
   const lanePct = (l: LaneProgress) => (l.total > 0 ? Math.round((l.done / l.total) * 100) : 0);
+
+  function onKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      onClose();
+    }
+  }
 </script>
+
+<svelte:window onkeydown={onKeydown} />
 
 <div
   class="ms-popover"
@@ -33,7 +42,7 @@
 >
   <div class="ms-head">
     <span class="ms-title">{milestone}</span>
-    <button class="ms-close" data-testid="ms-close" title="Close" onclick={onClose}>
+    <button class="ms-close" data-testid="ms-close" title="Close" aria-label="Close" onclick={onClose}>
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
     </button>
   </div>

@@ -169,6 +169,7 @@
       <div
         class="overflow-menu"
         role="menu"
+        aria-label="More views"
         bind:this={overflowMenuEl}
         onkeydown={handleOverflowKeydown}
       >
@@ -217,6 +218,7 @@
   <button
     class="tab-action"
     title="Create Task"
+    aria-label="Create Task"
     data-testid="action-create"
     onclick={() => onCreateTask()}
   >
@@ -228,6 +230,7 @@
   <button
     class="tab-action"
     title="Refresh"
+    aria-label="Refresh"
     data-testid="action-refresh"
     onclick={() => onRefresh()}
   >

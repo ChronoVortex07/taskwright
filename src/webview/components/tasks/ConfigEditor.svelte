@@ -57,6 +57,13 @@
   let newMilestone = $state('');
   let newDodItem = $state('');
 
+  // Move keyboard focus into the dialog when it opens (it is {#if}-mounted fresh
+  // per open), so keyboard users land inside the modal rather than behind it.
+  let modalEl: HTMLDivElement | undefined = $state();
+  $effect(() => {
+    modalEl?.focus();
+  });
+
   // Computed: statuses that differ from original (for detecting renames)
   function arraysEqual(a: string[], b: string[]): boolean {
     return a.length === b.length && a.every((v, i) => v === b[i]);
@@ -200,9 +207,17 @@
 ></button>
 
 <!-- Modal -->
-<div class="config-modal" data-testid="config-editor-modal">
+<div
+  class="config-modal"
+  data-testid="config-editor-modal"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="config-modal-title"
+  tabindex="-1"
+  bind:this={modalEl}
+>
   <div class="config-header">
-    <h2>Edit Board Config</h2>
+    <h2 id="config-modal-title">Edit Board Config</h2>
     <button class="close-btn" onclick={onClose} aria-label="Close" data-testid="config-close">
       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
@@ -245,6 +260,7 @@
                 <input
                   type="text"
                   class="rename-input"
+                  aria-label="Rename status"
                   bind:value={editStatusValue}
                   onkeydown={(e) => {
                     if (e.key === 'Enter') commitRename();
@@ -285,6 +301,7 @@
           <input
             type="text"
             placeholder="New status name..."
+            aria-label="New status name"
             bind:value={newStatus}
             onkeydown={(e) => { if (e.key === 'Enter') addStatus(); }}
             data-testid="new-status-input"
@@ -312,6 +329,7 @@
           <input
             type="text"
             placeholder="New label..."
+            aria-label="New label"
             bind:value={newLabel}
             onkeydown={(e) => { if (e.key === 'Enter') addLabel(); }}
             data-testid="new-label-input"
@@ -339,6 +357,7 @@
           <input
             type="text"
             placeholder="New milestone..."
+            aria-label="New milestone"
             bind:value={newMilestone}
             onkeydown={(e) => { if (e.key === 'Enter') addMilestone(); }}
             data-testid="new-milestone-input"
@@ -360,8 +379,8 @@
           </select>
         </div>
 
-        <div class="field-group">
-          <label>Definition of Done</label>
+        <div class="field-group" role="group" aria-labelledby="dod-group-label">
+          <span class="field-label" id="dod-group-label">Definition of Done</span>
           <ul class="item-list" data-testid="dod-list">
             {#each workingDod as item, idx (idx)}
               <li class="item-row">
@@ -376,6 +395,7 @@
             <input
               type="text"
               placeholder="New DoD item..."
+              aria-label="New Definition of Done item"
               bind:value={newDodItem}
               onkeydown={(e) => { if (e.key === 'Enter') addDodItem(); }}
               data-testid="new-dod-input"
@@ -705,7 +725,8 @@
     margin-bottom: 16px;
   }
 
-  .field-group label {
+  .field-group label,
+  .field-group .field-label {
     display: block;
     font-size: 12px;
     font-weight: 600;
@@ -726,6 +747,15 @@
     outline: none;
     width: 100%;
     max-width: 300px;
+  }
+
+  /* Restore a visible keyboard focus indicator (the `outline: none` above left
+     these fields with none). Matches the border-focus pattern used elsewhere. */
+  .field-group select:focus-visible,
+  .field-group input[type='number']:focus-visible {
+    border-color: var(--vscode-focusBorder, #007fd4);
+    outline: 1px solid var(--vscode-focusBorder, #007fd4);
+    outline-offset: -1px;
   }
 
   .toggle-row {

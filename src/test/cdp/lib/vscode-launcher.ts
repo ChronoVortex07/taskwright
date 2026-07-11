@@ -200,12 +200,7 @@ export function findVsCodeBinary(): string {
     // Bash that realpathSync can't resolve), so probe the standard install
     // locations for the real Electron binary instead.
     const winCandidates = [
-      path.join(
-        process.env.LOCALAPPDATA ?? '',
-        'Programs',
-        'Microsoft VS Code',
-        'Code.exe'
-      ),
+      path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'Microsoft VS Code', 'Code.exe'),
       path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'Microsoft VS Code', 'Code.exe'),
     ];
     for (const candidate of winCandidates) {

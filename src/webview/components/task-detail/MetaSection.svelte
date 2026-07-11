@@ -308,6 +308,7 @@
               role="button"
               tabindex={isReadOnly ? -1 : 0}
               aria-disabled={isReadOnly}
+              aria-label={'Remove label ' + label}
             >
               ×
             </span>
@@ -319,6 +320,7 @@
             class="add-label-input"
             data-testid="add-label-input"
             placeholder="+ Add"
+            aria-label="Add label"
             bind:value={labelInput}
             disabled={isReadOnly}
             onkeydown={handleAddLabel}
@@ -363,6 +365,7 @@
               role="button"
               tabindex={isReadOnly ? -1 : 0}
               aria-disabled={isReadOnly}
+              aria-label={'Remove assignee ' + assignee}
             >
               ×
             </span>
@@ -374,6 +377,7 @@
             class="add-assignee-input"
             data-testid="add-assignee-input"
             placeholder="+ Add"
+            aria-label="Add assignee"
             bind:value={assigneeInput}
             disabled={isReadOnly}
             onkeydown={handleAddAssignee}
@@ -414,6 +418,7 @@
         <select
           class="dropdown-select milestone-select"
           data-testid="milestone-select"
+          aria-label="Milestone"
           value={milestone || ''}
           disabled={isReadOnly}
           onchange={handleMilestoneChange}
@@ -466,6 +471,7 @@
                     onkeydown={(e) => e.key === 'Enter' && onRemoveBlockedByLink(dep)}
                     role="button"
                     tabindex={0}
+                    aria-label={'Remove blocked-by ' + dep}
                   >
                     ×
                   </span>
@@ -483,6 +489,7 @@
               class="dependency-add-input"
               data-testid="add-blocked-by-input"
               placeholder="+ Link task ID"
+              aria-label="Add blocked-by dependency by task ID"
               bind:value={blockedByInput}
               disabled={isReadOnly}
               onfocus={() => {
@@ -548,6 +555,7 @@
                     onkeydown={(e) => e.key === 'Enter' && onRemoveBlocksLink(taskId)}
                     role="button"
                     tabindex={0}
+                    aria-label={'Remove blocks ' + taskId}
                   >
                     ×
                   </span>
@@ -565,6 +573,7 @@
               class="dependency-add-input"
               data-testid="add-blocks-input"
               placeholder="+ Link task ID"
+              aria-label="Add blocks dependency by task ID"
               bind:value={blocksInput}
               disabled={isReadOnly}
               onfocus={() => {

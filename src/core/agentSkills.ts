@@ -86,8 +86,7 @@ export function discoverAgentSkills(targetRoot: string): string[] {
   return fs
     .readdirSync(skillsRoot, { withFileTypes: true })
     .filter(
-      (entry) =>
-        entry.isDirectory() && fs.existsSync(path.join(skillsRoot, entry.name, 'SKILL.md'))
+      (entry) => entry.isDirectory() && fs.existsSync(path.join(skillsRoot, entry.name, 'SKILL.md'))
     )
     .map((entry) => entry.name)
     .sort();

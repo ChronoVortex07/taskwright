@@ -1,11 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
-import {
-  launchVsCode,
-  closeVsCode,
-  type VsCodeInstance,
-} from './lib/vscode-launcher';
+import { launchVsCode, closeVsCode, type VsCodeInstance } from './lib/vscode-launcher';
 import {
   createTestWorkspace,
   resetTestWorkspace,
@@ -113,7 +109,9 @@ describe('Tree popover cross-view (CDP)', () => {
   it('closing the popover clears active-task.json', async () => {
     await openTree(instance);
     await pointerClickInWebview(instance.cdp, 'tasks', '[data-testid="tree-node-TASK-1"]');
-    await waitForFileContent(activeTaskPath(workspacePath), '"taskId": "TASK-1"', { timeoutMs: 12_000 });
+    await waitForFileContent(activeTaskPath(workspacePath), '"taskId": "TASK-1"', {
+      timeoutMs: 12_000,
+    });
     await clickInWebview(instance.cdp, 'tasks', '[data-testid="tp-close"]');
     await waitForFileGone(activeTaskPath(workspacePath));
     expect(fs.existsSync(activeTaskPath(workspacePath))).toBe(false);
@@ -130,7 +128,9 @@ describe('Tree popover cross-view (CDP)', () => {
     );
     expect(changed).toBe(true);
     const taskFile = taskFilePath(workspacePath, 'task-1 - Test-task-for-e2e.md');
-    const content = await waitForFileContent(taskFile, 'status: In Progress', { timeoutMs: 15_000 });
+    const content = await waitForFileContent(taskFile, 'status: In Progress', {
+      timeoutMs: 15_000,
+    });
     expect(content).toContain('status: In Progress');
   }, 45_000);
 });
