@@ -2,15 +2,18 @@
 id: TASK-104
 title: Keep start_task worktrees out of the git-auto board checkout
 type: bug
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-11 07:18'
-updated_date: '2026-07-11 07:18'
+updated_date: '2026-07-11 07:21'
 labels: []
 dependencies: []
 priority: high
 category: Orchestration
 caused_by: TASK-91
+claimed_by: '@agent/task-104-fix-git-auto-start-task-root'
+worktree: task-104-fix-git-auto-start-task-root
+claimed_at: '2026-07-11 15:21'
 ---
 
 ## Description
