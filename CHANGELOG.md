@@ -4,6 +4,57 @@ All notable changes to Taskwright are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] — 2026-07-11
+
+The **Hidden-Worktree Board Home** release: an opt-in third sync mode, `git-auto`, that moves the
+board out of the code tree into a hidden worktree of the `taskwright-board` branch and makes
+versioning + sharing automatic — event-driven, never a poll loop, with a migration hardened for
+every prior board state.
+
+### Added
+
+- **`sync.mode: git-auto` — the board in a hidden worktree.** The board's one physical home becomes
+  a linked worktree of the `taskwright-board` branch at `.taskwright/board/`; `config.yml`, `docs/`,
+  and `decisions/` stay in the repo `backlog/` (they version with the code). Structural wins: task
+  files can never be wrongly tracked on a code branch, board edits can never dirty a code tree or
+  collide with a merge, and the board gets real git history. `off` and `git` keep their exact
+  previous behavior.
+- **Event-driven auto-sync engine.** Board writes are debounce-committed (staging pathspec-limited
+  to the five board state dirs, so a board commit can never carry a stray path older clients would
+  refuse); on events — activation, write bursts, `request_merge` boundaries (also from headless MCP
+  sessions), and the manual commands — a single-flight pass runs commit → fetch (explicit refspec) →
+  union-merge fold of a diverged remote as a real two-parent commit → `reset --keep` → best-effort
+  push, under a cross-process lock. Offline or push-rejected states accumulate locally and surface in
+  the status bar; a sync failure never blocks a board write or a git operation, and same-task
+  conflicts always resolve by newer `updated_date` and are always surfaced.
+- **Guarded migration via the Enable Board Sync mode picker.** `taskwright.enableSync` now offers
+  `off | git | git-auto` and performs the migration itself (hand-flipping the setting is documented
+  as unsupported). The migration classifies and handles every prior state: fresh repos, git-ignored
+  boards, boards **tracked on code branches** (untracks them and upgrades stale gitignore blocks that
+  predate `backlog/milestones/`), existing `git`-mode refs with diverged remotes (the seed continues
+  the ref's history so the remote push stays fast-forward), v1 leftovers (`board.materialized`
+  markers), fresh clones, and repeated runs (idempotent). Ordering is the safety argument: a ref
+  snapshot is taken first, every file is byte-verified in the new home **before** its primary copy is
+  removed, and the mode only flips after the verified move. Switching back out of `git-auto` moves
+  the board into `backlog/` again (the branch is kept as the durable store).
+- **Fresh-clone bootstrap + split-brain healing.** Activation in `git-auto` recreates a missing
+  board worktree from the local or remote branch (a teammate cloning the repo gets the board
+  automatically) and folds any stray board files a stale writer left in the repo `backlog/` back
+  into the board. Three new board-doctor findings with one-click repairs cover the failure states:
+  `board-worktree-missing` (e.g. after `git clean -dfx` — committed history survives on the branch),
+  `board-strays-in-primary`, and `board-mode-mismatch` (the board "looks empty" because the mode was
+  flipped by hand — restore or return).
+- **UX + escape hatches.** The Board Sync status-bar item shows the Auto state, last sync, and
+  conflicts; its quick-pick gains **Sync Board Now** and **Switch Sync Mode…**. `push_board` /
+  `pull_board` (MCP tools and commands) remain available in `git-auto` — they run the same sync pass.
+
+### Changed
+
+- Language providers (completion, links, hover) now also cover `backlog/milestones/` files.
+- **Known divergence (documented):** upstream Backlog.md CLI tools expect `backlog/tasks` at the
+  repo root and therefore do not see the board while `git-auto` is active; `off`/`git` keep full
+  upstream compatibility.
+
 ## [1.3.0] — 2026-07-11
 
 The **Pipeline Refinement & Multi-Agent Support** release: a tunable, observable, resumable merge

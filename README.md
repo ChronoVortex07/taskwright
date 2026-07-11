@@ -77,11 +77,25 @@ Claude Code, and rendered as Codex custom prompts by the Codex setup command:
 
 ### Board Sync (optional, git-native)
 
-Opt-in sharing via a dedicated `taskwright-board` ref — no server, no CAS loop, no per-worktree copies.
-A single shared board root avoids all desync. `push_board` / `pull_board` snapshot the board and
-union-merge divergence (same-task edits resolve by newer timestamp, always surfaced as a conflict).
-Opt-in `pre-push` / `post-merge` git hooks can automate this. See
-`docs/superpowers/specs/2026-07-04-board-sync-v2-single-shared-board-design.md`.
+Opt-in sharing via a dedicated `taskwright-board` branch — no server, no CAS loop, no per-worktree
+copies. A single shared board root avoids all desync. Three modes (`taskwright.sync.mode`, switched
+via the **Taskwright: Enable Board Sync** command — never by editing the setting directly):
+
+- **`off`** (default) — the board is local, git-ignored working files; no versioning.
+- **`git`** — explicit versioning: `push_board` / `pull_board` snapshot the board onto the
+  `taskwright-board` ref and union-merge divergence (same-task edits resolve by newer timestamp,
+  always surfaced as a conflict). Opt-in `pre-push` / `post-merge` git hooks can automate this.
+- **`git-auto`** — automatic versioning: the board lives in a hidden worktree of the
+  `taskwright-board` branch at `.taskwright/board/` and commits/syncs itself on events (activation,
+  write bursts, merge boundaries) — no polling, and sync failures never block a board write or a git
+  operation. Enabling it runs a guarded migration (safety snapshot first, every file verified before
+  anything is removed) that handles boards previously tracked on code branches, existing `git`-mode
+  refs, and older Taskwright layouts; switching back moves the board into `backlog/` again. A fresh
+  clone bootstraps the board automatically. Note: with the board out of the repo root, upstream
+  Backlog.md CLI tools no longer see it in this mode.
+
+Design docs: `docs/superpowers/specs/2026-07-04-board-sync-v2-single-shared-board-design.md` (modes
+`off`/`git`) and `docs/superpowers/specs/2026-07-10-hidden-worktree-board-home-design.md` (`git-auto`).
 
 ## Requirements
 
