@@ -427,10 +427,10 @@ Scenarios (each its own `it`, sequential, generous timeouts like the Board Sync 
 10. **Reverse**: materialize back to primary + worktree remove → board readable at primary `backlog/`.
 11. **Dirty board never blocks a merge**: in a git-auto repo, dirty board worktree + `hasCodeWip(porcelain of primary)` — primary porcelain contains no `backlog/` entries by construction; assert `git status --porcelain` in primary is empty after board writes.
 
-- [ ] **Step 1:** Write scenarios 1–6 (migration matrix) → run `ch run "bun run test -- gitAutoIntegration"` — iterate to PASS.
-- [ ] **Step 2:** Write scenarios 7–11 → PASS.
-- [ ] **Step 3: Full gates:** `ch run "bun run test"` && `bun run lint` && `bun run typecheck` — all PASS (0 failures baseline on Windows).
-- [ ] **Step 4: Commit** `test(sync): git-auto migration matrix + round-trip integration suite (TASK-91)`.
+- [x] **Step 1:** Write scenarios 1–6 (migration matrix) → run `ch run "bun run test -- gitAutoIntegration"` — iterate to PASS.
+- [x] **Step 2:** Write scenarios 7–11 → PASS.
+- [x] **Step 3: Full gates:** `ch run "bun run test"` && `bun run lint` && `bun run typecheck` — all PASS (0 failures baseline on Windows).
+- [x] **Step 4: Commit** `test(sync): git-auto migration matrix + round-trip integration suite (TASK-91)`.
 
 ---
 
