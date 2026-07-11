@@ -5,14 +5,11 @@ type: bug
 status: Done
 assignee: []
 created_date: '2026-07-11 07:38'
-updated_date: '2026-07-11 07:44'
+updated_date: '2026-07-11 07:45'
 labels: []
 dependencies: []
 priority: high
 category: Worktrees & Merge
-claimed_by: '@agent/task-105-recover-safely-from-orphaned-windows-worktree-directories'
-worktree: task-105-recover-safely-from-orphaned-windows-worktree-directories
-claimed_at: '2026-07-11 15:40'
 ---
 
 ## Description
