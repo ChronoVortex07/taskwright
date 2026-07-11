@@ -2,7 +2,7 @@
 id: TASK-97
 title: Stop leaking development state into the VSIX
 type: bug
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-11 02:33'
 updated_date: '2026-07-11 02:34'
@@ -10,6 +10,9 @@ labels: []
 dependencies: []
 priority: high
 category: Misc
+claimed_by: '@agent/task-97-stop-leaking-development-state-into-the-vsix'
+worktree: task-97-stop-leaking-development-state-into-the-vsix
+claimed_at: '2026-07-11 15:28'
 ---
 
 ## Description
