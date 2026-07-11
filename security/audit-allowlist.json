@@ -1,0 +1,367 @@
+{
+  "$schema": "./audit-allowlist.schema.json",
+  "comment": "Reviewed, time-bounded exceptions consumed by scripts/audit-gate.ts (TASK-100). threshold: the gate FAILS on any advisory at or above this severity that is NOT listed here. Each entry expires and must be re-reviewed. See security/dependency-audit.md for the full triage.",
+  "threshold": "high",
+  "entries": [
+    {
+      "ghsa": "GHSA-mp2f-45pm-3cg9",
+      "package": "decompress",
+      "severity": "critical",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-rpmf-866q-6p89",
+      "package": "basic-ftp",
+      "severity": "high",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-rp42-5vxx-qpwr",
+      "package": "basic-ftp",
+      "severity": "high",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-3xgq-45jj-v275",
+      "package": "cross-spawn",
+      "severity": "high",
+      "category": "unreachable-runtime",
+      "reason": "Present via @modelcontextprotocol/sdk, but the Taskwright MCP server uses the stdio transport with no HTTP server, rate-limiter, or subprocess-spawn path, so this transitive code is not bundled into dist/ nor reachable at runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-v39h-62p7-jpjc",
+      "package": "fast-uri",
+      "severity": "high",
+      "category": "unreachable-runtime",
+      "reason": "Present via @modelcontextprotocol/sdk, but the Taskwright MCP server uses the stdio transport with no HTTP server, rate-limiter, or subprocess-spawn path, so this transitive code is not bundled into dist/ nor reachable at runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-q3j6-qgpj-74h6",
+      "package": "fast-uri",
+      "severity": "high",
+      "category": "unreachable-runtime",
+      "reason": "Present via @modelcontextprotocol/sdk, but the Taskwright MCP server uses the stdio transport with no HTTP server, rate-limiter, or subprocess-spawn path, so this transitive code is not bundled into dist/ nor reachable at runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-hmw2-7cc7-3qxx",
+      "package": "form-data",
+      "severity": "high",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-rc47-6667-2j5j",
+      "package": "http-cache-semantics",
+      "severity": "high",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-22p9-wv53-3rq4",
+      "package": "linkify-it",
+      "severity": "high",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-44c6-4v22-4mhx",
+      "package": "semver-regex",
+      "severity": "high",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-5c6j-r48x-rmvq",
+      "package": "serialize-javascript",
+      "severity": "high",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-52v5-jr5w-gjxr",
+      "package": "sigstore",
+      "severity": "high",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-ph9p-34f9-6g65",
+      "package": "tmp",
+      "severity": "high",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-vmh5-mc38-953g",
+      "package": "undici",
+      "severity": "high",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-vxpw-j846-p89q",
+      "package": "undici",
+      "severity": "high",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-hm92-r4w5-c3mj",
+      "package": "undici",
+      "severity": "high",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-96hv-2xvq-fx4p",
+      "package": "ws",
+      "severity": "high",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-jfc7-64v2-mr8c",
+      "package": "@sigstore/core",
+      "severity": "moderate",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-xgjw-pm74-86q4",
+      "package": "@sigstore/verify",
+      "severity": "moderate",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-jxxr-4gwj-5jf2",
+      "package": "brace-expansion",
+      "severity": "moderate",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-76mc-f452-cxcm",
+      "package": "dompurify",
+      "severity": "moderate",
+      "category": "runtime-webview",
+      "reason": "Reachable in the webview via mermaid, which processes the user's own board/task content inside a CSP-restricted VS Code webview (no third-party/attacker input). Low practical impact; highest-priority to remediate when mermaid ships a patched transitive.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-hpcv-96wg-7vj8",
+      "package": "dompurify",
+      "severity": "moderate",
+      "category": "runtime-webview",
+      "reason": "Reachable in the webview via mermaid, which processes the user's own board/task content inside a CSP-restricted VS Code webview (no third-party/attacker input). Low practical impact; highest-priority to remediate when mermaid ships a patched transitive.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-r47g-fvhr-h676",
+      "package": "dompurify",
+      "severity": "moderate",
+      "category": "runtime-webview",
+      "reason": "Reachable in the webview via mermaid, which processes the user's own board/task content inside a CSP-restricted VS Code webview (no third-party/attacker input). Low practical impact; highest-priority to remediate when mermaid ships a patched transitive.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-rp9w-3fw7-7cwq",
+      "package": "dompurify",
+      "severity": "moderate",
+      "category": "runtime-webview",
+      "reason": "Reachable in the webview via mermaid, which processes the user's own board/task content inside a CSP-restricted VS Code webview (no third-party/attacker input). Low practical impact; highest-priority to remediate when mermaid ships a patched transitive.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-cmwh-pvxp-8882",
+      "package": "dompurify",
+      "severity": "moderate",
+      "category": "runtime-webview",
+      "reason": "Reachable in the webview via mermaid, which processes the user's own board/task content inside a CSP-restricted VS Code webview (no third-party/attacker input). Low practical impact; highest-priority to remediate when mermaid ships a patched transitive.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-pfrx-2q88-qq97",
+      "package": "got",
+      "severity": "moderate",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-v2v4-37r5-5v8g",
+      "package": "ip-address",
+      "severity": "moderate",
+      "category": "unreachable-runtime",
+      "reason": "Present via @modelcontextprotocol/sdk, but the Taskwright MCP server uses the stdio transport with no HTTP server, rate-limiter, or subprocess-spawn path, so this transitive code is not bundled into dist/ nor reachable at runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-h67p-54hq-rp68",
+      "package": "js-yaml",
+      "severity": "moderate",
+      "category": "runtime-frontmatter",
+      "reason": "The direct js-yaml@4.x is NOT affected (advisory range <3.15.0). The vulnerable js-yaml@3.x is transitive via gray-matter, which parses the user's own task-file frontmatter. DoS-only, own content, no attacker input.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-6v5v-wf23-fmfq",
+      "package": "markdown-it",
+      "severity": "moderate",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-qx2v-qp2m-jg93",
+      "package": "postcss",
+      "severity": "moderate",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-q8mj-m7cp-5q26",
+      "package": "qs",
+      "severity": "moderate",
+      "category": "unreachable-runtime",
+      "reason": "Present via @modelcontextprotocol/sdk, but the Taskwright MCP server uses the stdio transport with no HTTP server, rate-limiter, or subprocess-spawn path, so this transitive code is not bundled into dist/ nor reachable at runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-qj8w-gfj5-8c6v",
+      "package": "serialize-javascript",
+      "severity": "moderate",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-vmf3-w455-68vh",
+      "package": "tar",
+      "severity": "moderate",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-p88m-4jfj-68fv",
+      "package": "undici",
+      "severity": "moderate",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-pr7r-676h-xcf6",
+      "package": "undici",
+      "severity": "moderate",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-w5hq-g745-h8pq",
+      "package": "uuid",
+      "severity": "moderate",
+      "category": "runtime-webview",
+      "reason": "Reachable in the webview via mermaid, which processes the user's own board/task content inside a CSP-restricted VS Code webview (no third-party/attacker input). Low practical impact; highest-priority to remediate when mermaid ships a patched transitive.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-58qx-3vcg-4xpx",
+      "package": "ws",
+      "severity": "moderate",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-73rr-hh4g-fpgx",
+      "package": "diff",
+      "severity": "low",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-x4vx-rjvf-j5p4",
+      "package": "dompurify",
+      "severity": "low",
+      "category": "runtime-webview",
+      "reason": "Reachable in the webview via mermaid, which processes the user's own board/task content inside a CSP-restricted VS Code webview (no third-party/attacker input). Low practical impact; highest-priority to remediate when mermaid ships a patched transitive.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-vxr8-fq34-vvx9",
+      "package": "dompurify",
+      "severity": "low",
+      "category": "runtime-webview",
+      "reason": "Reachable in the webview via mermaid, which processes the user's own board/task content inside a CSP-restricted VS Code webview (no third-party/attacker input). Low practical impact; highest-priority to remediate when mermaid ships a patched transitive.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-gvmj-g25r-r7wr",
+      "package": "dompurify",
+      "severity": "low",
+      "category": "runtime-webview",
+      "reason": "Reachable in the webview via mermaid, which processes the user's own board/task content inside a CSP-restricted VS Code webview (no third-party/attacker input). Low practical impact; highest-priority to remediate when mermaid ships a patched transitive.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-g7r4-m6w7-qqqr",
+      "package": "esbuild",
+      "severity": "low",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-4x5v-gmq8-25ch",
+      "package": "semver-regex",
+      "severity": "low",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-35p6-xmwp-9g52",
+      "package": "undici",
+      "severity": "low",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    },
+    {
+      "ghsa": "GHSA-g8m3-5g58-fq7m",
+      "package": "undici",
+      "severity": "low",
+      "category": "dev-tool",
+      "reason": "Dev/build/test-only transitive dependency. The published VSIX bundles only dist/ (esbuild) and ships no node_modules, so this package is never installed for end users and is unreachable at extension/MCP runtime.",
+      "expires": "2026-10-11"
+    }
+  ]
+}

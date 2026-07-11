@@ -35,6 +35,7 @@ backlog/**
 
 # Documentation / AI agent configs (not needed in extension)
 docs/**
+security/**
 CLAUDE.md
 AGENTS.md
 CONTRIBUTING.md

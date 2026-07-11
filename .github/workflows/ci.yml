@@ -41,6 +41,14 @@ jobs:
       - name: Dependency check
         run: bun run depcheck
 
+      # Reviewed-baseline vulnerability gate (TASK-100). Fails only on advisories
+      # that are NOT in security/audit-allowlist.json at/above its threshold, or
+      # on expired allowlist exceptions — so new upstream advisories force a human
+      # review instead of silently rotting, and the build stays deterministic
+      # against unreviewed advisory churn. See security/dependency-audit.md.
+      - name: Dependency audit gate
+        run: bun run audit:gate
+
       - name: Unit tests
         run: bun run test
 
