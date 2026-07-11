@@ -250,9 +250,9 @@ export async function executeVerifiedMove(opts: { primaryRoot: string; boardWork
 export function readBoardDirFileMap(root: string): BoardFileMap; // walk five state dirs under <root>/backlog → posix-rel map (reuses walk pattern from boardRef.listLocalBoardFiles, exported here for reuse)
 ```
 
-- [ ] **Step 1: Failing tests** — pure parts: `planMigrationSteps` for each S0–S6 fact combination (fresh, ignored-only, tracked, ref, ref+tracked, migrated, marker); `verifyMove` (identical maps ok, differing file not in conflicts → missing, differing file in conflicts → ok).
-- [ ] **Step 2: Run** — FAIL. **Step 3: Implement. Step 4: Run** — PASS.
-- [ ] **Step 5: Commit** `feat(sync): migration state classifier + verified move core (TASK-91)`.
+- [x] **Step 1: Failing tests** — pure parts: `planMigrationSteps` for each S0–S6 fact combination (fresh, ignored-only, tracked, ref, ref+tracked, migrated, marker); `verifyMove` (identical maps ok, differing file not in conflicts → missing, differing file in conflicts → ok).
+- [x] **Step 2: Run** — FAIL. **Step 3: Implement. Step 4: Run** — PASS.
+- [x] **Step 5: Commit** `feat(sync): migration state classifier + verified move core (TASK-91)`.
 
 ---
 
