@@ -260,6 +260,7 @@ describe('BacklogWorkspaceManager', () => {
       const root = {
         backlogPath: '/home/user/newProject/backlog',
         backlogDir: 'backlog',
+        primaryRoot: '/home/user/newProject',
         workspaceFolder: folder,
         label: 'newProject',
       };
@@ -283,6 +284,7 @@ describe('BacklogWorkspaceManager', () => {
       manager.addRoot({
         backlogPath: '/home/user/projectA/backlog',
         backlogDir: 'backlog',
+        primaryRoot: '/home/user/projectA',
         workspaceFolder: folder,
         label: 'projectA',
       });

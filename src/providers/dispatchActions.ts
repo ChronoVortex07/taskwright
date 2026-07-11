@@ -1,4 +1,3 @@
-import * as path from 'path';
 import * as vscode from 'vscode';
 import { BacklogParser } from '../core/BacklogParser';
 import { GitBranchService } from '../core/GitBranchService';
@@ -37,7 +36,7 @@ export interface DispatchResult {
 
 /** The repo root that owns the backlog (parent of the `backlog/` directory). */
 function repoRootFor(parser: BacklogParser): string {
-  return path.dirname(parser.getBacklogPath());
+  return parser.getPrimaryRoot();
 }
 
 interface DispatchSettings {

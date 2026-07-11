@@ -62,6 +62,7 @@ function stubParser(task: Task): BacklogParser {
   return {
     getTask: async () => task,
     getBacklogPath: () => backlogPath,
+    getPrimaryRoot: () => path.dirname(backlogPath),
   } as unknown as BacklogParser;
 }
 const makeTask = (): Task =>

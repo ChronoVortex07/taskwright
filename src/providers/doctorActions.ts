@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { BacklogParser } from '../core/BacklogParser';
@@ -72,7 +71,7 @@ export function repairLabel(finding: DoctorFinding): string {
 /** Apply one selected repair. Returns false when the user declined a confirm. */
 async function applyRepair(deps: DoctorFlowDeps, finding: DoctorFinding): Promise<boolean> {
   const { parser, writer } = deps;
-  const repoRoot = path.dirname(parser.getBacklogPath());
+  const repoRoot = parser.getPrimaryRoot();
   switch (finding.repair) {
     case 'clear-active-task': {
       clearActiveTask(repoRoot);
@@ -151,7 +150,7 @@ export async function runBoardDoctorFlow(
   deps: DoctorFlowDeps,
   opts: { interactive: boolean }
 ): Promise<void> {
-  const repoRoot = path.dirname(deps.parser.getBacklogPath());
+  const repoRoot = deps.parser.getPrimaryRoot();
   const findings = await runBoardDoctor(deps.parser, repoRoot);
 
   if (findings.length === 0) {

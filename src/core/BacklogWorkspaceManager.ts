@@ -1,10 +1,16 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { resolveWorkspaceBacklogRoot } from './boardRoot';
 
 export interface BacklogRoot {
   backlogPath: string;
   backlogDir: string;
   configPath?: string;
+  /**
+   * The primary checkout's root. In git-auto mode `backlogPath` points into
+   * `.taskwright/board/`, so `path.dirname(backlogPath)` is NOT the repo root.
+   */
+  primaryRoot: string;
   workspaceFolder: vscode.WorkspaceFolder;
   label: string;
 }
@@ -49,6 +55,7 @@ export class BacklogWorkspaceManager implements vscode.Disposable {
           backlogPath: resolution.backlogPath,
           backlogDir: resolution.backlogDir!,
           configPath: resolution.configPath ?? undefined,
+          primaryRoot: resolution.primaryRoot ?? path.dirname(resolution.backlogPath),
           workspaceFolder: folder,
           label: folder.name,
         });

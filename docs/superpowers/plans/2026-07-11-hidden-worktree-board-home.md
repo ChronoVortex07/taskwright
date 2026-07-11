@@ -318,10 +318,10 @@ private contentRoot(): string {
 - Modify parser construction sites to pass `primaryRoot` + config path: `extension.ts` (parser creation), `src/mcp/server.ts:93`, `src/mcp/handlers.ts:292-296` (Task 9 finishes the MCP side).
 - Test: `src/test/unit/BacklogParser.test.ts` — add `getPrimaryRoot()` fallback + override cases; docs/decisions from `contentRoot` (fixture: config at a different root than backlogPath).
 
-- [ ] **Step 1: Failing parser tests** (accessor + contentRoot docs read).
-- [ ] **Step 2: Run** `bun run test -- BacklogParser` — FAIL. **Step 3: Implement parser changes.** **Step 4:** PASS.
-- [ ] **Step 5:** Mechanical threading across the provider files (grep `dirname(.*getBacklogPath` to find every site; also `dirname\((await |)parser`). `bun run test && bun run typecheck` — full suite PASS (behavior identical in off/git because the fallback is the old dirname).
-- [ ] **Step 6: Commit** `refactor: thread primary-root accessor through providers and parser (TASK-91)`.
+- [x] **Step 1: Failing parser tests** (accessor + contentRoot docs read).
+- [x] **Step 2: Run** `bun run test -- BacklogParser` — FAIL. **Step 3: Implement parser changes.** **Step 4:** PASS.
+- [x] **Step 5:** Mechanical threading across the provider files (grep `dirname(.*getBacklogPath` to find every site; also `dirname\((await |)parser`). `bun run test && bun run typecheck` — full suite PASS (behavior identical in off/git because the fallback is the old dirname).
+- [x] **Step 6: Commit** `refactor: thread primary-root accessor through providers and parser (TASK-91)`.
 
 ---
 

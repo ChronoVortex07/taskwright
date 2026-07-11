@@ -32,6 +32,7 @@ describe('TreeNavigatorProvider', () => {
       getCategories: vi.fn().mockResolvedValue(['Features', 'Bugs']),
       getTask: vi.fn(),
       getBacklogPath: vi.fn().mockReturnValue('/fake/backlog'),
+      getPrimaryRoot: vi.fn().mockReturnValue('/fake'),
     } as unknown as BacklogParser;
   }
 

@@ -315,7 +315,7 @@ export class TasksController {
       // auxiliary; a lookup failure must not break loading the board.
       let activeTaskId: string | undefined;
       try {
-        activeTaskId = readActiveTask(path.dirname(this.parser.getBacklogPath()))?.taskId;
+        activeTaskId = readActiveTask(this.parser.getPrimaryRoot())?.taskId;
       } catch {
         activeTaskId = undefined;
       }
@@ -326,7 +326,7 @@ export class TasksController {
       // loading the board (plan-progress enrichment is simply skipped).
       let repoRoot = '';
       try {
-        repoRoot = path.dirname(this.parser.getBacklogPath());
+        repoRoot = this.parser.getPrimaryRoot();
       } catch {
         repoRoot = '';
       }
@@ -1003,7 +1003,7 @@ export class TasksController {
       case 'popoverActiveChanged': {
         if (!this.parser) break;
         try {
-          const root = path.dirname(this.parser.getBacklogPath());
+          const root = this.parser.getPrimaryRoot();
           if (message.taskId) {
             writeActiveTask(root, message.taskId);
           } else {

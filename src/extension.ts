@@ -727,7 +727,8 @@ export async function activate(context: vscode.ExtensionContext) {
     ? new BacklogParser(
         activeRoot.backlogPath,
         activeRoot.configPath,
-        activeRoot.workspaceFolder.uri.fsPath
+        activeRoot.workspaceFolder.uri.fsPath,
+        activeRoot.primaryRoot
       )
     : undefined;
 
@@ -1166,7 +1167,12 @@ export async function activate(context: vscode.ExtensionContext) {
     }
 
     // Create new parser and file watcher
-    parser = new BacklogParser(root.backlogPath, root.configPath, root.workspaceFolder.uri.fsPath);
+    parser = new BacklogParser(
+      root.backlogPath,
+      root.configPath,
+      root.workspaceFolder.uri.fsPath,
+      root.primaryRoot
+    );
     fileWatcher = new FileWatcher(root.backlogPath);
     context.subscriptions.push(fileWatcher);
 
@@ -1636,6 +1642,7 @@ export async function activate(context: vscode.ExtensionContext) {
         manager.addRoot({
           backlogPath: newBacklogPath,
           backlogDir: 'backlog', // init always creates backlog/
+          primaryRoot: path.dirname(newBacklogPath),
           workspaceFolder: selectedFolder,
           label: selectedFolder.name,
         });
@@ -1847,7 +1854,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const branch = dispatchBranchName(task);
       const statuses = await activeParser.getStatuses();
       const toDo = statuses[0] ?? 'To Do';
-      const repoRoot = path.dirname(activeParser.getBacklogPath());
+      const repoRoot = activeParser.getPrimaryRoot();
       const exec: GitExecFn = (cwd, args) =>
         execFileAsync('git', args, { cwd, timeout: 15_000 }).then((r) => ({
           stdout: r.stdout,

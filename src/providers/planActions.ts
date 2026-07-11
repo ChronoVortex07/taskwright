@@ -13,7 +13,7 @@ const planService = new PlanService();
 
 /** The repo root that owns the backlog (parent of the `backlog/` directory). */
 function repoRootFor(parser: BacklogParser): string {
-  return path.dirname(parser.getBacklogPath());
+  return parser.getPrimaryRoot();
 }
 
 /**

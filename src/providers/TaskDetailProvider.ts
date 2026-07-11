@@ -502,7 +502,7 @@ export class TaskDetailProvider {
       let planProgress: TaskDetailData['planProgress'];
       let mergeState: MergeTaskState | undefined;
       try {
-        const repoRoot = path.dirname(this.parser.getBacklogPath());
+        const repoRoot = this.parser.getPrimaryRoot();
         isActiveTask = readActiveTask(repoRoot)?.taskId === contextTask.id;
         if (contextTask.plan) {
           const loaded = loadPlanProgress(repoRoot, contextTask.plan);
@@ -869,7 +869,7 @@ export class TaskDetailProvider {
       case 'setActiveTask': {
         if (!TaskDetailProvider.currentTaskId || !this.parser) break;
         try {
-          const root = path.dirname(this.parser.getBacklogPath());
+          const root = this.parser.getPrimaryRoot();
           writeActiveTask(root, TaskDetailProvider.currentTaskId);
           await this.openTask(
             TaskDetailProvider.currentTaskRef ?? { taskId: TaskDetailProvider.currentTaskId },
@@ -887,7 +887,7 @@ export class TaskDetailProvider {
       case 'clearActiveTask': {
         if (!this.parser) break;
         try {
-          clearActiveTask(path.dirname(this.parser.getBacklogPath()));
+          clearActiveTask(this.parser.getPrimaryRoot());
           if (TaskDetailProvider.currentTaskId) {
             await this.openTask(
               TaskDetailProvider.currentTaskRef ?? { taskId: TaskDetailProvider.currentTaskId },

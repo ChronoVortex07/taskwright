@@ -43,6 +43,7 @@ describe('TasksViewProvider', () => {
       getArchivedTasks: vi.fn().mockResolvedValue([]),
       getCategories: vi.fn().mockResolvedValue([]),
       getBacklogPath: vi.fn().mockReturnValue('/fake/backlog'),
+      getPrimaryRoot: vi.fn().mockReturnValue('/fake'),
       resolveMilestone: vi.fn(),
     } as unknown as BacklogParser;
   });

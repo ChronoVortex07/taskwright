@@ -1,4 +1,3 @@
-import * as path from 'path';
 import * as vscode from 'vscode';
 import { BacklogParser } from '../core/BacklogParser';
 import { writeHandoff } from '../core/handoff';
@@ -50,7 +49,7 @@ export async function categorizeWithClaude(
     intakeContext(dump, { labels, statuses, priorities })
   );
 
-  const root = path.dirname(parser.getBacklogPath());
+  const root = parser.getPrimaryRoot();
   const handoffFile = writeHandoff(root, 'intake', prompt);
   await vscode.env.clipboard.writeText(prompt);
 

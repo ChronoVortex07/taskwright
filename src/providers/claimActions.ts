@@ -1,5 +1,4 @@
 import * as os from 'os';
-import * as path from 'path';
 import * as vscode from 'vscode';
 import { BacklogParser } from '../core/BacklogParser';
 import { ClaimService } from '../core/ClaimService';
@@ -38,7 +37,7 @@ export function getClaimStalenessMs(): number {
  */
 async function currentBranch(parser: BacklogParser): Promise<string | undefined> {
   try {
-    const repoRoot = path.dirname(parser.getBacklogPath());
+    const repoRoot = parser.getPrimaryRoot();
     const git = new GitBranchService(repoRoot);
     if (!(await git.isGitRepository())) return undefined;
     const branch = await git.getCurrentBranch();

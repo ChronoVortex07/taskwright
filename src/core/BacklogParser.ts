@@ -150,13 +150,45 @@ export class BacklogParser {
   constructor(
     private backlogPath: string,
     private resolvedConfigPath?: string,
-    private workspaceRoot?: string
+    private workspaceRoot?: string,
+    private primaryRootOverride?: string
   ) {}
 
   /**
    * Get the backlog directory path.
    */
   getBacklogPath(): string {
+    return this.backlogPath;
+  }
+
+  /**
+   * The primary checkout's root. In git-auto mode the board lives under
+   * `.taskwright/board/`, so `path.dirname(getBacklogPath())` is NOT the repo
+   * root — every consumer needing the repo root (session state in
+   * `.taskwright/`, `.worktrees/`, git operations) must use this accessor.
+   * Falls back to the v2 shape (dirname of the backlog path) when no override
+   * was provided at construction.
+   */
+  getPrimaryRoot(): string {
+    return this.primaryRootOverride ?? path.dirname(this.backlogPath);
+  }
+
+  /**
+   * Root for repo-versioned board content — `config.yml`, `docs/`,
+   * `decisions/`. In git-auto these stay in the repo `backlog/` (the board
+   * branch only ever carries the five state dirs), so they resolve relative
+   * to the config file's directory rather than the (worktree) backlog path.
+   */
+  private contentRoot(): string {
+    if (this.resolvedConfigPath) {
+      // Only a folder config (backlog/config.yml) marks the content root; a
+      // root-level backlog.config.yml lives OUTSIDE the backlog dir and must
+      // not drag docs/decisions up to the project root.
+      const base = path.basename(this.resolvedConfigPath).toLowerCase();
+      if (base === 'config.yml' || base === 'config.yaml') {
+        return path.dirname(this.resolvedConfigPath);
+      }
+    }
     return this.backlogPath;
   }
 
@@ -1009,7 +1041,7 @@ export class BacklogParser {
    * Get all documents from backlog/docs/ (supports subdirectories)
    */
   async getDocuments(): Promise<BacklogDocument[]> {
-    const docsPath = path.join(this.backlogPath, 'docs');
+    const docsPath = path.join(this.contentRoot(), 'docs');
     if (!fs.existsSync(docsPath)) return [];
 
     const files = this.getMarkdownFilesRecursive(docsPath);
@@ -1039,7 +1071,7 @@ export class BacklogParser {
    * Get all decisions from backlog/decisions/
    */
   async getDecisions(): Promise<BacklogDecision[]> {
-    const decisionsPath = path.join(this.backlogPath, 'decisions');
+    const decisionsPath = path.join(this.contentRoot(), 'decisions');
     if (!fs.existsSync(decisionsPath)) return [];
 
     const files = fs.readdirSync(decisionsPath).filter((f) => f.endsWith('.md'));
