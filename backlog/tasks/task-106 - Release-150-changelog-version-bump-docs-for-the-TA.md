@@ -4,11 +4,11 @@ title: 'Release 1.5.0 — changelog, version bump & docs for the TASK-98–103 w
 status: To Do
 assignee: []
 created_date: '2026-07-11 10:58'
-updated_date: '2026-07-11 10:58'
+updated_date: '2026-07-11 10:59'
 labels: []
 dependencies: []
 priority: medium
-category: 'Docs & Branding'
+category: Docs & Branding
 ---
 
 ## Description
@@ -21,4 +21,8 @@ Note on current state: `package.json` is at 1.4.0; the CHANGELOG's newest sectio
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
+- [ ] #1 package.json version bumped 1.4.0 → 1.5.0; the build inlines 1.5.0 into dist/mcp/server.js (MCP server reports 1.5.0); no stale 1.4.0 version strings left where the current version is asserted.
+- [ ] #2 CHANGELOG.md gains a `## [1.5.0] — 2026-07-11` section (Keep a Changelog style, prose depth matching 1.3.0/1.4.0) documenting the whole wave: native cross-agent skills + .codex-plugin (TASK-98) under Added; the dependency-audit CI gate (TASK-100) and Markdown URL sanitization (TASK-99) under Security; cross-platform automation + Win/Linux CI matrix (TASK-101) under Changed/Added; formatting + webview a11y (TASK-103) under Fixed/Changed. TASK-102's drift-reconciliation entry is relocated from the 1.4.0 Fixed section into 1.5.0, leaving 1.4.0 accurate for the git-auto release only.
+- [ ] #3 README and any user-facing docs reflect the new user-visible capabilities (native cross-agent skills / Codex plugin, security audit gate) where features are enumerated, keeping the agent-agnostic framing TASK-102 established. Version references consistent with 1.5.0.
+- [ ] #4 The `releaseMetadata` unit test passes (CHANGELOG newest == package.json == MCP server version == reconciled keywords); full verify gate (bun run test + lint + typecheck) green; changes committed in the worktree and merged via request_merge.
 <!-- AC:END -->
