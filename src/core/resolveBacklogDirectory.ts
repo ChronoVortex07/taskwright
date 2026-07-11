@@ -26,6 +26,13 @@ export interface BacklogDirectoryResolution {
   configSource: BacklogConfigSource | null;
   rootConfigPath: string;
   rootConfigExists: boolean;
+  /**
+   * The primary checkout's root, when the resolution went through git
+   * (`resolveWorkspaceBacklogRoot`). In git-auto mode `backlogPath` points
+   * into `.taskwright/board/`, so `path.dirname(backlogPath)` is NOT the repo
+   * root — consumers needing the repo root must use this instead.
+   */
+  primaryRoot?: string;
 }
 
 interface BacklogConfigMetadata {

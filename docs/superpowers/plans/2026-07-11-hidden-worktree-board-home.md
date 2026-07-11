@@ -102,7 +102,7 @@ export async function resolveBoardHome(cwd: string, deps?: ResolveBoardRootDeps 
 - `resolveWorkspaceBacklogRoot` change: after resolving the primary root, resolve the board home; when mode is `git-auto` AND the board worktree's `backlog/` exists, return `{ backlogPath: home.backlogPath, backlogDir: 'backlog', configPath: <configRoot>/config.yml when present }`. When the worktree is missing (not yet bootstrapped) fall back to the v2 primary resolution — activation bootstrap (Task 10) will fix it and reload consumers.
 - Consumes: `SyncMode`, `readSyncConfig`, `syncConfigPath` from Task 1 / existing.
 
-- [ ] **Step 1: Failing tests** (pure part):
+- [x] **Step 1: Failing tests** (pure part):
 
 ```ts
 import { boardHomeFor, boardWorktreePathFor } from '../../core/boardRoot';
@@ -122,10 +122,10 @@ it('off and git keep the v2 primary backlog', () => {
 
 Plus a `resolveBoardHome` test with a fake exec returning porcelain + common-dir and an injected `readMode`.
 
-- [ ] **Step 2: Run** `bun run test -- boardRoot` — FAIL (not exported).
-- [ ] **Step 3: Implement** as specified above. `resolveBoardHome` uses `fs.existsSync` only in `resolveWorkspaceBacklogRoot`'s worktree-exists check (injectable not needed; integration-covered).
-- [ ] **Step 4: Run** `bun run test -- boardRoot` — PASS (including all pre-existing cases: off/git untouched).
-- [ ] **Step 5: Commit** `feat(sync): mode-aware board home resolution (TASK-91)`.
+- [x] **Step 2: Run** `bun run test -- boardRoot` — FAIL (not exported).
+- [x] **Step 3: Implement** as specified above. `resolveBoardHome` uses `fs.existsSync` only in `resolveWorkspaceBacklogRoot`'s worktree-exists check (injectable not needed; integration-covered).
+- [x] **Step 4: Run** `bun run test -- boardRoot` — PASS (including all pre-existing cases: off/git untouched).
+- [x] **Step 5: Commit** `feat(sync): mode-aware board home resolution (TASK-91)`.
 
 ---
 

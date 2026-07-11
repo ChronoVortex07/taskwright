@@ -9,6 +9,9 @@ import {
   resolveBoardRoot,
   resolvePrimaryWorktreeRoot,
   resolveWorkspaceBacklogRoot,
+  boardHomeFor,
+  boardWorktreePathFor,
+  resolveBoardHome,
 } from '../../core/boardRoot';
 
 const norm = (p: string): string => p.replace(/\\/g, '/');
@@ -144,6 +147,60 @@ describe('resolvePrimaryWorktreeRoot', () => {
   });
 });
 
+describe('boardHomeFor / boardWorktreePathFor', () => {
+  it('git-auto board home points into .taskwright/board', () => {
+    const h = boardHomeFor('/repo', 'git-auto');
+    expect(norm(h.backlogPath)).toBe(norm(path.join('/repo', '.taskwright', 'board', 'backlog')));
+    expect(norm(h.configRoot)).toBe(norm(path.join('/repo', 'backlog')));
+    expect(h.mode).toBe('git-auto');
+    expect(norm(h.primaryRoot)).toBe('/repo');
+  });
+
+  it('off and git keep the v2 primary backlog', () => {
+    for (const mode of ['off', 'git'] as const) {
+      const h = boardHomeFor('/repo', mode);
+      expect(norm(h.backlogPath)).toBe(norm(path.join('/repo', 'backlog')));
+      expect(norm(h.configRoot)).toBe(norm(path.join('/repo', 'backlog')));
+      expect(h.mode).toBe(mode);
+    }
+  });
+
+  it('worktree path is <primary>/.taskwright/board', () => {
+    expect(norm(boardWorktreePathFor('/repo'))).toBe(
+      norm(path.join('/repo', '.taskwright', 'board'))
+    );
+  });
+});
+
+describe('resolveBoardHome', () => {
+  it('resolves the primary from any worktree and applies the injected mode', async () => {
+    const exec = vi.fn(async () => ({ stdout: MULTI_WORKTREE_PORCELAIN, stderr: '' }));
+
+    const home = await resolveBoardHome('/repo/.worktrees/task-7-login', {
+      exec,
+      readMode: () => 'git-auto',
+    });
+
+    expect(norm(home.primaryRoot)).toBe('/repo');
+    expect(norm(home.backlogPath)).toBe(norm(path.join('/repo', '.taskwright', 'board', 'backlog')));
+    expect(norm(home.configRoot)).toBe(norm(path.join('/repo', 'backlog')));
+  });
+
+  it('falls back to off (primary-local shape) when the mode read throws', async () => {
+    const exec = vi.fn(async () => ({ stdout: SINGLE_REPO_PORCELAIN, stderr: '' }));
+
+    const home = await resolveBoardHome('/repo', {
+      exec,
+      readMode: () => {
+        throw new Error('boom');
+      },
+    });
+
+    expect(home.mode).toBe('off');
+    expect(norm(home.backlogPath)).toBe(norm(path.join('/repo', 'backlog')));
+  });
+});
+
 describe('resolveWorkspaceBacklogRoot', () => {
   const dirs: string[] = [];
 
@@ -219,5 +276,37 @@ describe('resolveWorkspaceBacklogRoot', () => {
     const result = await resolveWorkspaceBacklogRoot(worktreeRoot, { exec });
 
     expect(result.backlogPath).toBeNull();
+  });
+
+  it('git-auto: resolves the board-worktree backlog and the primary config root', async () => {
+    const primaryRoot = tmpDir('taskwright-primary-');
+    fs.mkdirSync(path.join(primaryRoot, 'backlog'), { recursive: true });
+    fs.writeFileSync(path.join(primaryRoot, 'backlog', 'config.yml'), 'project_name: X\n');
+    fs.mkdirSync(path.join(primaryRoot, '.taskwright', 'board', 'backlog', 'tasks'), {
+      recursive: true,
+    });
+
+    const exec = vi.fn(async () => ({ stdout: porcelainFor(primaryRoot), stderr: '' }));
+    const result = await resolveWorkspaceBacklogRoot(primaryRoot, {
+      exec,
+      readMode: () => 'git-auto',
+    });
+
+    expect(result.backlogPath).toBe(path.join(primaryRoot, '.taskwright', 'board', 'backlog'));
+    expect(result.configPath).toBe(path.join(primaryRoot, 'backlog', 'config.yml'));
+    expect(result.primaryRoot).toBe(primaryRoot);
+  });
+
+  it('git-auto: falls back to the primary backlog when the board worktree is missing (pre-bootstrap)', async () => {
+    const primaryRoot = tmpDir('taskwright-primary-');
+    fs.mkdirSync(path.join(primaryRoot, 'backlog', 'tasks'), { recursive: true });
+
+    const exec = vi.fn(async () => ({ stdout: porcelainFor(primaryRoot), stderr: '' }));
+    const result = await resolveWorkspaceBacklogRoot(primaryRoot, {
+      exec,
+      readMode: () => 'git-auto',
+    });
+
+    expect(result.backlogPath).toBe(path.join(primaryRoot, 'backlog'));
   });
 });
