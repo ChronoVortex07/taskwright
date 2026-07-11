@@ -80,6 +80,27 @@ describe('startTaskHandler', () => {
     expect(second.worktreeAbs).toBe(first.worktreeAbs);
   });
 
+  it('uses the primary code root when git-auto stores the board in a hidden worktree', async () => {
+    const boardBacklog = path.join(root, '.taskwright', 'board', 'backlog');
+    fs.mkdirSync(path.join(boardBacklog, 'tasks'), { recursive: true });
+    fs.copyFileSync(path.join(backlogPath, 'config.yml'), path.join(boardBacklog, 'config.yml'));
+    const gitAutoDeps: McpHandlerDeps = {
+      ...deps(),
+      primaryRoot: root,
+      backlogPath: boardBacklog,
+      parser: new BacklogParser(boardBacklog),
+    };
+
+    await createTaskHandler(gitAutoDeps, { title: 'Repair sync' });
+    const res = await startTaskHandler(gitAutoDeps, { taskId: 'TASK-1' });
+
+    expect(res.worktreeAbs).toBe(path.join(root, '.worktrees', 'task-1-repair-sync'));
+    expect(fs.existsSync(path.join(res.worktreeAbs, 'src'))).toBe(false);
+    expect(JSON.parse(fs.readFileSync(activeTaskPath(res.worktreeAbs), 'utf-8')).taskId).toBe(
+      'TASK-1'
+    );
+  });
+
   it('errors on an unknown task id', async () => {
     await expect(startTaskHandler(deps(), { taskId: 'TASK-404' })).rejects.toThrow('TASK-404');
   });

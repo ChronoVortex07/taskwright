@@ -99,6 +99,7 @@ async function main(): Promise<void> {
 
   const deps: McpHandlerDeps = {
     root,
+    primaryRoot: resolution.primaryRoot,
     backlogPath,
     parser: new BacklogParser(backlogPath, resolvedConfigPath, undefined, resolution.primaryRoot),
     writer: new BacklogWriter(),

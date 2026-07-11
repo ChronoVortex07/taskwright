@@ -76,6 +76,8 @@ import { runBoardDoctor, type DoctorFinding } from '../core/boardDoctor';
 export interface McpHandlerDeps {
   /** Directory holding `.taskwright/active-task.json` (session cwd / worktree). */
   root: string;
+  /** Primary code checkout root. Distinct from `backlogPath` in git-auto mode. */
+  primaryRoot?: string;
   /** Path to the `backlog/` directory (parent of `tasks/`); used by create tools. */
   backlogPath: string;
   parser: BacklogParser;
@@ -291,11 +293,7 @@ async function gitFacts(exec: GitExecFn, cwd: string): Promise<GitFacts> {
 }
 
 /** A BoardOps bound to the ONE physical board (what the human watches). */
-export function makePrimaryBoard(
-  primaryRoot: string,
-  exec: GitExecFn,
-  home?: BoardHome
-): BoardOps {
+export function makePrimaryBoard(primaryRoot: string, exec: GitExecFn, home?: BoardHome): BoardOps {
   const backlogPath = home?.backlogPath ?? path.join(primaryRoot, 'backlog');
   const configYml = home ? path.join(home.configRoot, 'config.yml') : undefined;
   const parser = new BacklogParser(backlogPath, configYml, undefined, primaryRoot);
@@ -304,8 +302,7 @@ export function makePrimaryBoard(
   // In git-auto the board worktree is a real checkout of the board branch, so
   // `git checkout --` runs there (in the primary tree board files are ignored/
   // untracked and the checkout would be a no-op).
-  const checkoutCwd =
-    home?.mode === 'git-auto' ? boardWorktreePathFor(primaryRoot) : primaryRoot;
+  const checkoutCwd = home?.mode === 'git-auto' ? boardWorktreePathFor(primaryRoot) : primaryRoot;
   return {
     async setStatus(taskId, status) {
       await writer.updateTask(taskId, { status } as Partial<Task>, parser);
@@ -576,10 +573,10 @@ export async function startTaskHandler(
 ): Promise<StartTaskResult> {
   return bootstrapTaskWorktree(
     {
-      // The primary checkout owns `.worktrees/`. Under Board Sync v2 `backlogPath` is the
-      // ONE physical board (the primary worktree's backlog), so its parent is the primary
-      // root even when this session runs from a worktree.
-      repoRoot: path.dirname(deps.backlogPath),
+      // The primary code checkout always owns `.worktrees/`. In git-auto mode
+      // `backlogPath` lives under the hidden taskwright-board worktree, so its
+      // parent must never be used as the code repository root.
+      repoRoot: deps.primaryRoot ?? path.dirname(deps.backlogPath),
       getTask: (id) => deps.parser.getTask(id),
     },
     args.taskId
