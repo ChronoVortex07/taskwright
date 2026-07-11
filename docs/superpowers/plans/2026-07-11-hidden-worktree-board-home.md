@@ -159,12 +159,12 @@ Behavior of `ensureBoardWorktree` (mirrors `WorktreeService.createWorktree`, fix
 
 **Consumes:** `fetchRef`, `qualifyRef`, `refTip`, `BoardGitExec`, `defaultBoardExec` from `boardRef.ts`; `boardWorktreePathFor` from Task 2.
 
-- [ ] **Step 1: Failing unit tests** with a scripted fake exec (pattern: `boardRoot.test.ts`'s fake): assert the exact git arg sequences for (a) already-ok short-circuit, (b) local-branch path, (c) remote path, (d) empty-root path; and that worktree-config args are issued.
-- [ ] **Step 2: Run** `bun run test -- boardWorktree` — FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** — PASS.
-- [ ] **Step 5: Integration test** (same file, `describe('integration')`, using `tempGitRepo` helper): real repo → `ensureBoardWorktree` → expect `.taskwright/board/.git` file exists, branch checked out, second call `created: false`. Delete the dir with `fs.rmSync(recursive)` → `boardWorktreeStatusOf` = `'unregistered'` → `ensureBoardWorktree` repairs. Run + PASS.
-- [ ] **Step 6: Commit** `feat(sync): board worktree lifecycle core (TASK-91)`.
+- [x] **Step 1: Failing unit tests** with a scripted fake exec (pattern: `boardRoot.test.ts`'s fake): assert the exact git arg sequences for (a) already-ok short-circuit, (b) local-branch path, (c) remote path, (d) empty-root path; and that worktree-config args are issued.
+- [x] **Step 2: Run** `bun run test -- boardWorktree` — FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run** — PASS.
+- [x] **Step 5: Integration test** (same file, `describe('integration')`, using `tempGitRepo` helper): real repo → `ensureBoardWorktree` → expect `.taskwright/board/.git` file exists, branch checked out, second call `created: false`. Delete the dir with `fs.rmSync(recursive)` → `boardWorktreeStatusOf` = `'unregistered'` → `ensureBoardWorktree` repairs. Run + PASS.
+- [x] **Step 6: Commit** `feat(sync): board worktree lifecycle core (TASK-91)`.
 
 ---
 

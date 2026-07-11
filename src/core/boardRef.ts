@@ -36,8 +36,11 @@ export function qualifyRef(ref: string): string {
  * Config flags that disable EOL conversion so board blobs and working-copy files
  * round-trip **byte-for-byte** — without this, git's `core.autocrlf` rewrites
  * task-file line endings on checkout (breaking Backlog.md's exact-bytes contract).
+ * Exported for the git-auto board-worktree plumbing (boardWorktree.ts /
+ * autoSync.ts), which passes them on every board-worktree git command instead
+ * of persisting per-worktree config.
  */
-const NO_EOL_CONVERT = ['-c', 'core.autocrlf=false', '-c', 'core.eol=lf'];
+export const NO_EOL_CONVERT = ['-c', 'core.autocrlf=false', '-c', 'core.eol=lf'];
 
 export type BoardGitExec = (
   cwd: string,
