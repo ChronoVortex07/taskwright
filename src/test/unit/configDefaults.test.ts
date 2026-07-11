@@ -30,10 +30,10 @@ describe('contributed dispatch config defaults', () => {
 });
 
 describe('taskwright.sync.* manifest defaults', () => {
-  it('sync.mode defaults to off with the two v2 modes', () => {
+  it('sync.mode defaults to off with the v2 modes plus git-auto', () => {
     const setting = props['taskwright.sync.mode'] as { default: unknown; enum?: unknown };
     expect(setting.default).toBe('off');
-    expect(setting.enum).toEqual(['off', 'git']);
+    expect(setting.enum).toEqual(['off', 'git', 'git-auto']);
   });
 
   it('sync.ref / sync.remote / sync.installHooks match DEFAULT_SYNC_CONFIG', () => {

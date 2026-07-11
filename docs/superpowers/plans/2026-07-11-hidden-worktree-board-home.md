@@ -287,10 +287,10 @@ async function migrateToGitAuto(primaryRoot: string): Promise<void> {
 
 Key detail: step (b)+(e) ordering means the worktree add IS the move-in; the only copy step is git's own checkout. The verified move (f–g) compares live dirs against the checkout before deleting anything, satisfying spec §5.2.
 
-- [ ] **Step 1:** Write `migrateToGitAuto` / `migrateFromGitAuto` in `extension.ts` (private, next to `runEnableSync`), rework `runEnableSync` to the picker; keep the `git` path byte-identical.
-- [ ] **Step 2:** `bun run typecheck && bun run lint` — PASS.
-- [ ] **Step 3:** Manual-order sanity: re-read the function against spec §5.2's numbered ordering (snapshot → watcher → worktree → verify → delete → flip → reload). Fix discrepancies.
-- [ ] **Step 4: Commit** `feat(sync): enableSync mode picker + git-auto verified migration (TASK-91)`.
+- [x] **Step 1:** Write `migrateToGitAuto` / `migrateFromGitAuto` in `extension.ts` (private, next to `runEnableSync`), rework `runEnableSync` to the picker; keep the `git` path byte-identical.
+- [x] **Step 2:** `bun run typecheck && bun run lint` — PASS.
+- [x] **Step 3:** Manual-order sanity: re-read the function against spec §5.2's numbered ordering (snapshot → watcher → worktree → verify → delete → flip → reload). Fix discrepancies.
+- [x] **Step 4: Commit** `feat(sync): enableSync mode picker + git-auto verified migration (TASK-91)`.
 
 ---
 

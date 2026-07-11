@@ -123,7 +123,7 @@ export async function resolveBoardHome(
 ): Promise<BoardHome> {
   const exec = deps.exec ?? defaultExec;
   const primaryRoot = await resolvePrimaryWorktreeRoot(cwd, { exec });
-  let mode: SyncMode = 'off';
+  let mode: SyncMode;
   try {
     if (deps.readMode) {
       mode = deps.readMode();

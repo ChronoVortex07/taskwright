@@ -77,9 +77,19 @@ import {
   type SyncMode,
 } from './core/syncConfig';
 import { applyBoardIgnore, boardTrackedPaths } from './core/boardMigration';
-import { resolvePrimaryWorktreeRoot } from './core/boardRoot';
-import { snapshotBoardToRef, refTip } from './core/boardRef';
+import { resolvePrimaryWorktreeRoot, boardWorktreePathFor } from './core/boardRoot';
+import { snapshotBoardToRef, refTip, materializeRefToWorktree } from './core/boardRef';
 import { pushBoard, pullBoard } from './core/boardPushPull';
+import { ensureBoardWorktree } from './core/boardWorktree';
+import {
+  gatherMigrationFacts,
+  planMigrationSteps,
+  verifyMove,
+  readBoardDirFileMap,
+  executeVerifiedMove,
+  cleanMaterializedMarker,
+} from './core/boardHomeMigration';
+import { autoCommitBoard, runBoardAutoSync } from './core/autoSync';
 import type { MergeConflict } from './core/boardMerge';
 import {
   formatBoardSyncStatusBar,
@@ -322,6 +332,77 @@ async function publishSyncConfig(repoRoot: string): Promise<void> {
  * Returns the chosen mode, or undefined when the user cancels.
  */
 async function runEnableSync(repoRoot: string): Promise<SyncMode | undefined> {
+  const commonDir = await resolveCommonDir(repoRoot);
+  const currentMode = commonDir
+    ? readSyncConfig(syncConfigPath(commonDir), nodeQueueFs).mode
+    : DEFAULT_SYNC_CONFIG.mode;
+
+  const modePick = await vscode.window.showQuickPick(
+    [
+      {
+        label: '$(sync) git-auto — hidden worktree + automatic sync (recommended)',
+        description: 'Board moves to .taskwright/board; commits & syncs itself on events',
+        mode: 'git-auto' as SyncMode,
+      },
+      {
+        label: '$(git-branch) git — versioned ref with explicit Push/Pull Board',
+        description: 'Board stays in backlog/ (git-ignored); you push/pull the ref by hand',
+        mode: 'git' as SyncMode,
+      },
+      {
+        label: '$(circle-slash) off — local board, no versioning',
+        description:
+          currentMode === 'git-auto'
+            ? 'Moves the board back into backlog/ first'
+            : 'Plain git-ignored working files',
+        mode: 'off' as SyncMode,
+      },
+    ],
+    {
+      placeHolder: `Board sync mode (currently: ${currentMode})`,
+      title: 'Taskwright: Board Sync',
+    }
+  );
+  if (!modePick) return undefined;
+
+  if (modePick.mode === 'git-auto') {
+    if (currentMode === 'git-auto') {
+      // Idempotent re-run: repair/ensure only.
+      return (await migrateToGitAuto(repoRoot)) ? 'git-auto' : undefined;
+    }
+    const confirm = await vscode.window.showWarningMessage(
+      'Switch the board to git-auto? Its files move from backlog/ into a hidden worktree at .taskwright/board (branch "taskwright-board") with automatic event-driven commit/sync. A safety snapshot is taken first, files are verified before anything is removed, and a window reload is needed at the end. End other agent sessions on this repo before migrating.',
+      { modal: true },
+      'Migrate to git-auto'
+    );
+    if (confirm !== 'Migrate to git-auto') return undefined;
+    return (await migrateToGitAuto(repoRoot)) ? 'git-auto' : undefined;
+  }
+
+  if (currentMode === 'git-auto') {
+    // Leaving git-auto: reverse migration (restore backlog/, remove the worktree).
+    const confirm = await vscode.window.showWarningMessage(
+      `Switch back to "${modePick.mode}"? The board moves from the hidden worktree back into backlog/ (pending edits are committed first; the "taskwright-board" branch is kept). A window reload is needed at the end.`,
+      { modal: true },
+      'Move board back'
+    );
+    if (confirm !== 'Move board back') return undefined;
+    return (await migrateFromGitAuto(repoRoot, modePick.mode)) ? modePick.mode : undefined;
+  }
+
+  if (modePick.mode === 'off') {
+    await vscode.workspace
+      .getConfiguration('taskwright')
+      .update('sync.mode', 'off', vscode.ConfigurationTarget.Workspace);
+    await publishSyncConfig(repoRoot);
+    return 'off';
+  }
+
+  return enableGitMode(repoRoot);
+}
+
+/** The v2 `git`-mode enable flow — kept byte-for-byte from Board Sync v2. */
+async function enableGitMode(repoRoot: string): Promise<SyncMode | undefined> {
   const pick = await vscode.window.showWarningMessage(
     'Enable Taskwright board sync? This makes ONE commit that moves board task files off your code branches (they will live on the "taskwright-board" ref instead). This removes the read-only cross-branch "ghost" cards, and lets you version + share the board via explicit Push/Pull Board actions.',
     { modal: true },
@@ -377,6 +458,166 @@ async function runEnableSync(repoRoot: string): Promise<SyncMode | undefined> {
     );
   }
   return mode;
+}
+
+/**
+ * Migrate to the git-auto board home (TASK-91, spec §5.2). Ordering is the
+ * safety argument: hygiene → safety snapshot → worktree → verify → per-file
+ * move → marker cleanup → remote fold → mode flip (the commit point) → reload.
+ * Any abort before the flip leaves the mode unchanged and the primary board
+ * intact and authoritative. Idempotent — re-running resumes/no-ops.
+ */
+async function migrateToGitAuto(repoRoot: string): Promise<boolean> {
+  const cfg = vscode.workspace.getConfiguration('taskwright');
+  const ref = cfg.get<string>('sync.ref')?.trim() || DEFAULT_SYNC_CONFIG.ref;
+  const remote = cfg.get<string>('sync.remote')?.trim() || DEFAULT_SYNC_CONFIG.remote;
+
+  try {
+    const primaryRoot = await resolvePrimaryWorktreeRoot(repoRoot);
+    const git = (args: string[]) =>
+      execFileAsync('git', args, { cwd: primaryRoot, timeout: 30_000 });
+    const facts = await gatherMigrationFacts(primaryRoot, ref);
+    const steps = planMigrationSteps(facts);
+
+    // Hygiene shared with v2: fenced gitignore block (upgrades stale 4-dir
+    // blocks to include milestones/) + untrack + one commit. Working-tree
+    // content is the source of truth — untracking never touches the files.
+    if (facts.hasStateDirs || steps.includes('untrack')) {
+      const gitignorePath = path.join(primaryRoot, '.gitignore');
+      const existing = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, 'utf-8') : '';
+      fs.writeFileSync(gitignorePath, applyBoardIgnore(existing), 'utf-8');
+      try {
+        await git(['rm', '-r', '--cached', '--ignore-unmatch', ...boardTrackedPaths()]);
+        await git(['add', '.gitignore']);
+        await git(['commit', '-m', 'chore(taskwright): move board off code branches (git-auto)']);
+      } catch (err) {
+        // "nothing to commit" is the already-clean case; anything else is logged.
+        console.warn('[Taskwright] git-auto untrack commit skipped/failed:', err);
+      }
+    }
+
+    // Pre-move safety snapshot: the live board onto the ref, parented on any
+    // existing tip (S3's history continues; the remote push stays ff-able).
+    if (steps.includes('seed-fresh') || steps.includes('seed-fold-ref')) {
+      const parent = await refTip(primaryRoot, ref);
+      await snapshotBoardToRef({
+        repoRoot: primaryRoot,
+        ref,
+        indexFile: path.join(primaryRoot, '.taskwright', 'board.index'),
+        message: 'chore(taskwright): pre-git-auto board snapshot',
+        parent: parent ?? undefined,
+        backlogDir: 'backlog',
+      });
+    }
+
+    // Quiesce the watcher for the move; the reload below re-wires everything.
+    fileWatcher?.dispose();
+    fileWatcher = undefined;
+
+    const ensured = await ensureBoardWorktree({ primaryRoot, ref, remote });
+
+    if (facts.hasStateDirs) {
+      // Verify before delete — every primary file byte-identical in the worktree.
+      const verification = verifyMove(
+        readBoardDirFileMap(primaryRoot),
+        readBoardDirFileMap(ensured.path),
+        new Set()
+      );
+      if (!verification.ok) {
+        void vscode.window.showErrorMessage(
+          `Taskwright git-auto migration aborted before anything was removed: ${verification.missing.length} board file(s) failed verification (e.g. ${verification.missing[0]}). The board is untouched in backlog/; re-run "Enable Board Sync" to retry.`
+        );
+        return false;
+      }
+      const move = await executeVerifiedMove({ primaryRoot, boardWorktree: ensured.path });
+      if (move.lockedLeftBehind.length > 0) {
+        void vscode.window.showWarningMessage(
+          `Taskwright: ${move.lockedLeftBehind.length} board file(s) were locked and left in backlog/ (e.g. ${move.lockedLeftBehind[0]}). They will be folded into the board automatically at the next activation.`
+        );
+      }
+    }
+
+    cleanMaterializedMarker(primaryRoot);
+
+    // Fold the remote board in immediately when reachable (S3's remote side);
+    // offline just accumulates — the first post-reload sync retries.
+    const sync = await runBoardAutoSync({ primaryRoot, ref, remote });
+    if (!('skipped' in sync) && sync.conflicts.length > 0) {
+      void vscode.window.showWarningMessage(formatConflictMessage('pulled', sync.conflicts));
+    }
+
+    // The commit point: only now does the mode flip.
+    await cfg.update('sync.mode', 'git-auto', vscode.ConfigurationTarget.Workspace);
+    await publishSyncConfig(repoRoot);
+
+    const reload = await vscode.window.showInformationMessage(
+      'Board migrated to its hidden worktree (.taskwright/board). Reload the window so the board services (and the MCP server root) pick up the new home.',
+      'Reload Window'
+    );
+    if (reload === 'Reload Window') {
+      void vscode.commands.executeCommand('workbench.action.reloadWindow');
+    }
+    return true;
+  } catch (err) {
+    console.error('[Taskwright] git-auto migration failed:', err);
+    void vscode.window.showErrorMessage(
+      `Taskwright git-auto migration failed before the mode flip — the board is still in backlog/ and nothing was lost. ${err instanceof Error ? err.message : String(err)}`
+    );
+    return false;
+  }
+}
+
+/**
+ * Reverse migration (spec §5.4): commit pending worktree edits, materialize
+ * the branch back into the primary backlog/, remove the worktree (the branch
+ * — the durable store — is kept), then flip the mode and prompt a reload.
+ */
+async function migrateFromGitAuto(repoRoot: string, targetMode: SyncMode): Promise<boolean> {
+  const cfg = vscode.workspace.getConfiguration('taskwright');
+  const ref = cfg.get<string>('sync.ref')?.trim() || DEFAULT_SYNC_CONFIG.ref;
+
+  try {
+    const primaryRoot = await resolvePrimaryWorktreeRoot(repoRoot);
+    const git = (args: string[]) =>
+      execFileAsync('git', args, { cwd: primaryRoot, timeout: 30_000 });
+    const worktree = boardWorktreePathFor(primaryRoot);
+
+    if (fs.existsSync(worktree)) {
+      await autoCommitBoard(worktree);
+    }
+    await materializeRefToWorktree({
+      repoRoot: primaryRoot,
+      ref,
+      indexFile: path.join(primaryRoot, '.taskwright', 'board.index'),
+      backlogDir: 'backlog',
+    });
+    if (fs.existsSync(worktree)) {
+      try {
+        await git(['worktree', 'remove', '--force', worktree]);
+      } catch (err) {
+        console.warn('[Taskwright] board worktree remove failed (will prune):', err);
+      }
+      await git(['worktree', 'prune']);
+    }
+
+    await cfg.update('sync.mode', targetMode, vscode.ConfigurationTarget.Workspace);
+    await publishSyncConfig(repoRoot);
+
+    const reload = await vscode.window.showInformationMessage(
+      `Board moved back into backlog/ (mode: ${targetMode}). Reload the window so the board services pick up the new home.`,
+      'Reload Window'
+    );
+    if (reload === 'Reload Window') {
+      void vscode.commands.executeCommand('workbench.action.reloadWindow');
+    }
+    return true;
+  } catch (err) {
+    console.error('[Taskwright] leaving git-auto failed:', err);
+    void vscode.window.showErrorMessage(
+      `Taskwright could not move the board back into backlog/: ${err instanceof Error ? err.message : String(err)}. The mode was left on git-auto; nothing was lost.`
+    );
+    return false;
+  }
 }
 
 /** Resolve the shared git common dir (identical from every worktree). */
@@ -576,9 +817,12 @@ export async function activate(context: vscode.ExtensionContext) {
       if (!mode) return;
       tasksHosts.forEach((host) => host.refresh());
       void refreshBoardSyncStatusBar();
-      void vscode.window.showInformationMessage(
-        'Taskwright board sync enabled. Cross-branch ghost cards are gone, and the board is versioned on the "taskwright-board" ref — push/pull it explicitly to share with others.'
-      );
+      if (mode === 'git') {
+        // git-auto / off surfaced their own migration summary + reload prompt.
+        void vscode.window.showInformationMessage(
+          'Taskwright board sync enabled. Cross-branch ghost cards are gone, and the board is versioned on the "taskwright-board" ref — push/pull it explicitly to share with others.'
+        );
+      }
     })
   );
 
