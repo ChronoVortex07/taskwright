@@ -469,7 +469,7 @@
     "compile:webview": "vite build --config vite.webview.config.ts",
     "watch": "bun scripts/build.ts --watch",
     "build:css": "tailwindcss -i ./src/webview/styles.css -o ./dist/webview/styles.css",
-    "build": "bun run build:css && bun run compile:webview && bun run compile",
+    "build": "bun run compile:webview && bun run build:css && bun run compile",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "bun run build && tsc -p tsconfig.e2e.json && bash scripts/run-e2e.sh",

@@ -29,7 +29,9 @@ export default defineConfig({
   ],
   build: {
     outDir: 'dist/webview',
-    emptyOutDir: false, // Don't delete styles.css from Tailwind
+    // Remove obsolete hashed chunks from previous builds. The production build
+    // regenerates Tailwind's styles.css after this clean Vite pass.
+    emptyOutDir: true,
     rollupOptions: {
       input: {
         tasks: resolve(__dirname, 'src/webview/entries/tasks.ts'),

@@ -7,6 +7,11 @@ node_modules/**
 .gitignore
 .prettierignore
 .prettierrc
+.depcheckrc.yml
+.generate-license-file.config.json
+.release-it.json
+bunfig.toml
+idea.md
 
 tsconfig.json
 tsconfig.e2e.json
@@ -17,17 +22,21 @@ eslint.config.mjs
 scripts/**
 !scripts/taskwright-mcp.cjs
 vitest.config.ts
+vitest.cdp.config.ts
 vite.webview.config.ts
 svelte.config.mjs
 *.vsix
 
 # Backlog (development task tracking)
 backlog/**
+.taskwright/**
+.worktrees/**
+.superpowers/**
 
 # Documentation / AI agent configs (not needed in extension)
 docs/**
 CLAUDE.md
-AGENTS.MD
+AGENTS.md
 CONTRIBUTING.md
 .claude/**
 .codex/**
@@ -65,4 +74,3 @@ bun.lock
 
 # Source maps (not needed in production)
 dist/**/*.map
-
