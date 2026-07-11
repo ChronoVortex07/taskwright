@@ -1,0 +1,24 @@
+---
+id: TASK-106
+title: 'Release 1.5.0 — changelog, version bump & docs for the TASK-98–103 wave'
+status: To Do
+assignee: []
+created_date: '2026-07-11 10:58'
+updated_date: '2026-07-11 10:58'
+labels: []
+dependencies: []
+priority: medium
+category: 'Docs & Branding'
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+The TASK-98–103 wave merged to main undocumented: native cross-agent skills + .codex-plugin bundle (TASK-98), dependency-audit triage + churn-resilient CI audit gate (TASK-100), centralized Markdown URL sanitization (TASK-99), cross-platform automation + Windows/Linux CI matrix (TASK-101), documentation/release-metadata drift reconciliation (TASK-102), and repository formatting + webview accessibility debt (TASK-103). Cut a 1.5.0 release documenting the wave, verified by the existing `releaseMetadata` gate (CHANGELOG newest == package.json == MCP server version == reconciled keywords).
+
+Note on current state: `package.json` is at 1.4.0; the CHANGELOG's newest section is [1.4.0] (the git-auto board-home release). TASK-102's "Documentation & release-metadata drift reconciled" entry currently sits inside that 1.4.0 `### Fixed` section even though it merged after 1.4.0 was cut — prefer relocating it into the new 1.5.0 section so the wave is documented together, leaving 1.4.0 accurate for the git-auto release only. Follow the same Keep a Changelog style and prose depth as the existing 1.3.0/1.4.0 entries. Version choice: minor bump (new user-facing feature = native cross-agent skills / Codex plugin, plus two security fixes), matching the per-wave precedent (TASK-94→1.3.0, TASK-95→1.4.0).
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+<!-- AC:END -->
