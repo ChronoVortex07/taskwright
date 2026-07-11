@@ -1,7 +1,7 @@
 {
   "name": "taskwright",
   "displayName": "Taskwright",
-  "description": "Agentic task board for VS Code — triage work and dispatch isolated Claude Code sessions per task, on a git-native Backlog.md backbone.",
+  "description": "Agentic task board for VS Code — triage work and dispatch isolated Claude Code or Codex sessions per task, on a git-native Backlog.md backbone.",
   "version": "1.4.0",
   "publisher": "ChronoVortex07",
   "license": "MIT",
@@ -23,6 +23,7 @@
     "markdown",
     "ai agents",
     "claude code",
+    "codex",
     "mcp",
     "worktrees"
   ],
@@ -112,7 +113,7 @@
           ],
           "enumDescriptions": [
             "Claude Code — dispatch prompts address a Claude Code session and point at the /execute-task skill.",
-            "Codex — dispatch prompts address a Codex session and point at the /execute-task custom prompt installed by Taskwright."
+            "Codex — dispatch prompts address a Codex session and point at the /execute-task skill Taskwright installs as a native .agents/skills package."
           ],
           "default": "claude",
           "markdownDescription": "Which coding agent a dispatched task targets. Selects the built-in dispatch profile: prompt template phrasing, the `/execute-task` entry-point wording, and the suggested interactive terminal command. A custom `#taskwright.dispatchTemplate#` always wins untouched. The headless-mode guardrail (`claude -p`/`--print`, `codex exec`, `--headless`/`--non-interactive`) applies regardless of the selected agent — subscription safety is a principle, not a per-agent feature."

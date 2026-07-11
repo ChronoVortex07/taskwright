@@ -50,6 +50,7 @@ import {
   type McpHandlerDeps,
 } from './handlers';
 import { TASKWRIGHT_MCP_INSTRUCTIONS } from './instructions';
+import { MCP_SERVER_NAME, MCP_SERVER_VERSION } from './serverMeta';
 
 function jsonContent(value: unknown): { content: Array<{ type: 'text'; text: string }> } {
   return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
@@ -109,7 +110,7 @@ async function main(): Promise<void> {
   };
 
   const server = new McpServer(
-    { name: 'taskwright', version: '0.0.1' },
+    { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
     { instructions: TASKWRIGHT_MCP_INSTRUCTIONS }
   );
 

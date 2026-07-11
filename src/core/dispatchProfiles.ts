@@ -67,9 +67,9 @@ Run the \`/execute-task\` skill. It loads your assignment (\`get_active_task\`),
 /**
  * Default dispatch prompt for a Codex session. Same workflow contract as the
  * Claude Code template — only the phrasing differs: `/execute-task` is the
- * Codex custom prompt Taskwright installs into \`$CODEX_HOME/prompts\`, and the
- * headless mode to avoid is \`codex exec\` (subscription safety is a principle,
- * not tied to any one agent).
+ * Codex skill Taskwright installs as a native \`.agents/skills\` SKILL.md
+ * package, and the headless mode to avoid is \`codex exec\` (subscription safety
+ * is a principle, not tied to any one agent).
  */
 export const CODEX_DISPATCH_TEMPLATE = `You are a fresh Codex session assigned exactly one task. Work only on this task — do not touch unrelated code or other tasks.
 
@@ -88,7 +88,7 @@ Status: {{status}} · Priority: {{priority}} · Labels: {{labels}}
 {{plan}}
 
 ---
-Run the \`/execute-task\` custom prompt (installed by Taskwright into your Codex prompts directory). It loads your assignment (\`get_active_task\` on the taskwright MCP server), verifies you are worktree-rooted and installs deps, claims the task, executes it test-first, records progress with \`edit_task\`, checks for cancellation, and closes with \`request_merge\` from inside your worktree. Stay interactive and subscription-safe: never relaunch yourself through \`codex exec\` or any other headless/non-interactive mode. If \`/execute-task\` is unavailable, do the same by hand — \`get_active_task\` → \`claim_task\` → test-driven implementation → \`edit_task\` notes → \`request_merge\` (taskwright MCP) from inside your worktree.`;
+Run the \`/execute-task\` skill (installed by Taskwright as a native \`.agents/skills\` package). It loads your assignment (\`get_active_task\` on the taskwright MCP server), verifies you are worktree-rooted and installs deps, claims the task, executes it test-first, records progress with \`edit_task\`, checks for cancellation, and closes with \`request_merge\` from inside your worktree. Stay interactive and subscription-safe: never relaunch yourself through \`codex exec\` or any other headless/non-interactive mode. If \`/execute-task\` is unavailable, do the same by hand — \`get_active_task\` → \`claim_task\` → test-driven implementation → \`edit_task\` notes → \`request_merge\` (taskwright MCP) from inside your worktree.`;
 
 /** The registered dispatch profiles, keyed by agent id. */
 export const DISPATCH_PROFILES: Readonly<Record<DispatchAgentId, DispatchProfile>> = {

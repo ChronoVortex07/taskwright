@@ -66,7 +66,7 @@ bands = milestones/ages. Pan, zoom, and level-of-detail scaling make large board
 ### Agent skills
 
 Four bundled skills (`.claude/skills/`) that agents use in dispatched worktrees — installed for
-Claude Code, and rendered as Codex custom prompts by the Codex setup command:
+Claude Code, and installed for Codex as native `.agents/skills/` SKILL.md packages by the Codex setup command:
 
 | Skill                | Purpose                                                                                                                                       |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |

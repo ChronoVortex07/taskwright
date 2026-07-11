@@ -2393,10 +2393,11 @@ export async function activate(context: vscode.ExtensionContext) {
     await runVerifyDoctorCheck(root, { quietWhenOk: false });
   };
   // Codex integration adapter: register the Taskwright MCP server in Codex's
-  // user-global config.toml and install the four user-facing skills as Codex
-  // custom prompts — the Codex counterpart of setUpClaudeIntegration. This
-  // targets $CODEX_HOME (~/.codex by default) with an ABSOLUTE path to the
-  // extension's packaged MCP bundle, so it works from consumer repositories.
+  // user-global config.toml and install the four user-facing skills as native
+  // `.agents/skills/` SKILL.md packages — the Codex counterpart of
+  // setUpClaudeIntegration. This targets $CODEX_HOME (~/.codex by default) with
+  // an ABSOLUTE path to the extension's packaged MCP bundle, so it works from
+  // consumer repositories.
   const codexHome = (): string => {
     const fromEnv = process.env.CODEX_HOME?.trim();
     return fromEnv ? fromEnv : path.join(homedir(), '.codex');
@@ -2555,7 +2556,7 @@ export async function activate(context: vscode.ExtensionContext) {
     if (!(await detectCodexInstalled())) return;
     if ((await detectCodexIntegration(root)).mcpConfigured) return;
     const choice = await vscode.window.showInformationMessage(
-      'Set up Taskwright for Codex? Registers the MCP server in ~/.codex/config.toml and installs the Taskwright skills as Codex custom prompts.',
+      'Set up Taskwright for Codex? Registers the MCP server in ~/.codex/config.toml and installs the Taskwright skills as native .agents/skills packages.',
       'Set up',
       'Not now',
       "Don't ask again"

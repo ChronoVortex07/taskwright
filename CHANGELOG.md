@@ -55,6 +55,17 @@ every prior board state.
   repo root and therefore do not see the board while `git-auto` is active; `off`/`git` keep full
   upstream compatibility.
 
+### Fixed
+
+- **Documentation & release-metadata drift reconciled.** Codex now installs the workflow skills as
+  native `.agents/skills/` SKILL.md packages, so the README, the `taskwright.dispatchAgent` setting
+  description, the Codex setup prompt/comments, and the Codex dispatch template no longer describe the
+  retired "custom prompt" mechanism. The Marketplace `description`/`keywords` now name Codex alongside
+  Claude Code. The MCP server advertises the real package version (was a stale `0.0.1` placeholder)
+  by deriving it from `package.json`. A new `releaseMetadata` unit test keeps the CHANGELOG's newest
+  version, the MCP server version, and the agent keywords reconciled with `package.json`
+  automatically.
+
 ## [1.3.0] — 2026-07-11
 
 The **Pipeline Refinement & Multi-Agent Support** release: a tunable, observable, resumable merge
