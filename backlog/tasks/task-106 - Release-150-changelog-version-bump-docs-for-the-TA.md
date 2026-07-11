@@ -1,7 +1,7 @@
 ---
 id: TASK-106
 title: 'Release 1.5.0 — changelog, version bump & docs for the TASK-98–103 wave'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-11 10:58'
 updated_date: '2026-07-11 10:59'
@@ -9,6 +9,9 @@ labels: []
 dependencies: []
 priority: medium
 category: Docs & Branding
+claimed_by: '@agent/main'
+worktree: main
+claimed_at: '2026-07-11 19:02'
 ---
 
 ## Description
