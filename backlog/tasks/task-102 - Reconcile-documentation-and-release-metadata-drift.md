@@ -1,7 +1,7 @@
 ---
 id: TASK-102
 title: Reconcile documentation and release metadata drift
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-11 02:35'
 updated_date: '2026-07-11 02:36'
@@ -9,6 +9,9 @@ labels: []
 dependencies: []
 priority: medium
 category: Docs & Branding
+claimed_by: '@agent/main'
+worktree: main
+claimed_at: '2026-07-11 17:49'
 ---
 
 ## Description
