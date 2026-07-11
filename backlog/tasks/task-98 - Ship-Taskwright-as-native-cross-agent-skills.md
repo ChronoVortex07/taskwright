@@ -1,7 +1,7 @@
 ---
 id: TASK-98
 title: Ship Taskwright as native cross-agent skills
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-11 02:35'
 updated_date: '2026-07-11 02:36'
@@ -10,6 +10,9 @@ dependencies:
   - TASK-96
 priority: high
 category: Orchestration
+claimed_by: '@agent/main'
+worktree: main
+claimed_at: '2026-07-11 16:20'
 ---
 
 ## Description
