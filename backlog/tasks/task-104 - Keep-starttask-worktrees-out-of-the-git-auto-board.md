@@ -2,10 +2,10 @@
 id: TASK-104
 title: Keep start_task worktrees out of the git-auto board checkout
 type: bug
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-11 07:18'
-updated_date: '2026-07-11 07:21'
+updated_date: '2026-07-11 07:23'
 labels: []
 dependencies: []
 priority: high
@@ -24,11 +24,11 @@ Fix the urgent orchestration regression exposed while starting TASK-97: in git-a
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 start_task creates .worktrees under the primary code checkout when the physical board is in .taskwright/board
-- [ ] #2 The new worktree branches from the primary code branch rather than taskwright-board
-- [ ] #3 off and git board modes retain their existing start_task behavior
-- [ ] #4 Regression tests model a git-auto backlog path distinct from the primary repository root
-- [ ] #5 The MCP server passes the resolved primary root to task bootstrap explicitly
+- [x] #1 start_task creates .worktrees under the primary code checkout when the physical board is in .taskwright/board
+- [x] #2 The new worktree branches from the primary code branch rather than taskwright-board
+- [x] #3 off and git board modes retain their existing start_task behavior
+- [x] #4 Regression tests model a git-auto backlog path distinct from the primary repository root
+- [x] #5 The MCP server passes the resolved primary root to task bootstrap explicitly
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -39,3 +39,15 @@ Fix the urgent orchestration regression exposed while starting TASK-97: in git-a
 3. Run the full verification gate and merge.
 4. Remove the clean misplaced TASK-97 worktree/branch and restart TASK-97 through the repaired MCP path.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Reproduced the production failure: start_task used dirname(backlogPath), which is .taskwright/board in git-auto mode. Added a regression with a hidden physical board and distinct primary code root. McpHandlerDeps now carries the primary root already resolved during server startup; startTaskHandler uses it for WorktreeService while retaining the legacy fallback for injected/off-mode callers.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Prevented start_task from creating code worktrees beneath the hidden git-auto board checkout. All 1,935 unit tests, lint, and typecheck pass.
+<!-- SECTION:FINAL_SUMMARY:END -->
