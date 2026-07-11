@@ -24,12 +24,10 @@ import {
 } from '../core/boardDoctor';
 import { releaseTaskClaim } from './claimActions';
 import { ensureBoardWorktree } from '../core/boardWorktree';
-import { boardWorktreePathFor } from '../core/boardRoot';
-import { readBoardDirFileMap, executeVerifiedMove } from '../core/boardHomeMigration';
-import { autoCommitBoard } from '../core/autoSync';
-import { mergeBoards } from '../core/boardMerge';
+import { foldPrimaryStrays } from '../core/boardHomeMigration';
 import { materializeRefToWorktree } from '../core/boardRef';
 import { formatConflictMessage } from '../core/boardSyncUx';
+import { resolveSyncConfigFromSettings } from '../core/syncConfig';
 
 /**
  * Board-doctor UX glue (TASK-90): run the pure `runBoardDoctor` core, surface
@@ -158,25 +156,9 @@ async function applyRepair(deps: DoctorFlowDeps, finding: DoctorFinding): Promis
       return true;
     }
     case 'fold-primary-strays': {
-      const boardWorktree = boardWorktreePathFor(repoRoot);
-      const primaryMap = readBoardDirFileMap(repoRoot);
-      const boardMap = readBoardDirFileMap(boardWorktree);
-      // ours = the board (current truth), theirs = the strays; a same-task
-      // edit on both sides resolves by newer updated_date and is surfaced.
-      const { merged, conflicts } = mergeBoards(undefined, boardMap, primaryMap);
-      for (const [rel, content] of Object.entries(merged)) {
-        const abs = path.join(boardWorktree, ...rel.split('/'));
-        fs.mkdirSync(path.dirname(abs), { recursive: true });
-        fs.writeFileSync(abs, content);
-      }
-      await autoCommitBoard(boardWorktree);
-      await executeVerifiedMove({
-        primaryRoot: repoRoot,
-        boardWorktree,
-        conflictPaths: new Set(conflicts.map((c) => c.path)),
-      });
-      if (conflicts.length > 0) {
-        void vscode.window.showWarningMessage(formatConflictMessage('pulled', conflicts));
+      const folded = await foldPrimaryStrays(repoRoot);
+      if (folded && folded.conflicts.length > 0) {
+        void vscode.window.showWarningMessage(formatConflictMessage('pulled', folded.conflicts));
       }
       parser.invalidateTaskCache();
       return true;
@@ -210,7 +192,17 @@ export async function runBoardDoctorFlow(
   opts: { interactive: boolean }
 ): Promise<void> {
   const repoRoot = deps.parser.getPrimaryRoot();
-  const findings = await runBoardDoctor(deps.parser, repoRoot);
+  // The board-home checks (worktree missing / strays / mode mismatch) need the
+  // sync mode; the settings mirror is the same source publishSyncConfig reads.
+  const taskwrightCfg = vscode.workspace.getConfiguration('taskwright');
+  const syncCfg = resolveSyncConfigFromSettings({
+    mode: taskwrightCfg.get('sync.mode'),
+    ref: taskwrightCfg.get('sync.ref'),
+  });
+  const findings = await runBoardDoctor(deps.parser, repoRoot, {
+    syncMode: syncCfg.mode,
+    ref: syncCfg.ref,
+  });
 
   if (findings.length === 0) {
     if (opts.interactive) {

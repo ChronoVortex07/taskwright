@@ -88,8 +88,9 @@ import {
   readBoardDirFileMap,
   executeVerifiedMove,
   cleanMaterializedMarker,
+  foldPrimaryStrays,
 } from './core/boardHomeMigration';
-import { autoCommitBoard, runBoardAutoSync } from './core/autoSync';
+import { autoCommitBoard, runBoardAutoSync, BoardSyncScheduler } from './core/autoSync';
 import type { MergeConflict } from './core/boardMerge';
 import {
   formatBoardSyncStatusBar,
@@ -859,6 +860,95 @@ export async function activate(context: vscode.ExtensionContext) {
   }
   void refreshBoardSyncStatusBar();
 
+  // ── git-auto engine (TASK-91) ─────────────────────────────────────────────
+  // Event-driven only: activation, write-debounce (FileWatcher), the manual
+  // commands, and MCP request_merge boundaries. Never an interval.
+  let boardSyncScheduler: BoardSyncScheduler | undefined;
+
+  async function runAutoSyncNow(): Promise<void> {
+    if (!workspaceRootPath) return;
+    try {
+      const commonDir = await resolveCommonDir(workspaceRootPath);
+      const syncCfg = commonDir
+        ? readSyncConfig(syncConfigPath(commonDir), nodeQueueFs)
+        : DEFAULT_SYNC_CONFIG;
+      if (syncCfg.mode !== 'git-auto') return;
+      const primaryRoot = await resolvePrimaryWorktreeRoot(workspaceRootPath);
+      const outcome = await runBoardAutoSync({
+        primaryRoot,
+        ref: syncCfg.ref,
+        remote: syncCfg.remote,
+      });
+      if ('skipped' in outcome) return; // another process is syncing — fine
+      boardSyncState = {
+        ...boardSyncState,
+        lastSync: {
+          type: 'sync',
+          atIso: new Date().toISOString(),
+          ok: outcome.error === undefined,
+          conflictIds: outcome.conflicts.map((c) => c.id),
+          failureReason: outcome.error,
+        },
+      };
+      void refreshBoardSyncStatusBar();
+      if (outcome.conflicts.length > 0) {
+        void showConflictNotification('pulled', outcome.conflicts);
+      }
+      if (outcome.merged) {
+        tasksHosts.forEach((host) => host.refresh());
+      }
+    } catch (err) {
+      console.warn('[Taskwright] board auto-sync failed:', err);
+    }
+  }
+
+  void (async () => {
+    if (!workspaceRootPath) return;
+    const commonDir = await resolveCommonDir(workspaceRootPath);
+    const syncCfg = commonDir
+      ? readSyncConfig(syncConfigPath(commonDir), nodeQueueFs)
+      : DEFAULT_SYNC_CONFIG;
+    if (syncCfg.mode !== 'git-auto') return;
+    try {
+      const primaryRoot = await resolvePrimaryWorktreeRoot(workspaceRootPath);
+      // S5 bootstrap: a fresh clone carries mode git-auto in committed settings
+      // but has no .taskwright/ (git-ignored ⇒ never cloned) and no worktree.
+      const ensured = await ensureBoardWorktree({
+        primaryRoot,
+        ref: syncCfg.ref,
+        remote: syncCfg.remote,
+      });
+      if (ensured.created) {
+        // The board home appeared after root resolution ran — reload to load from it.
+        const pick = await vscode.window.showInformationMessage(
+          'Taskwright bootstrapped the hidden board worktree (.taskwright/board). Reload the window so the board loads from it.',
+          'Reload Window'
+        );
+        if (pick === 'Reload Window') {
+          void vscode.commands.executeCommand('workbench.action.reloadWindow');
+        }
+        return;
+      }
+      // Split-brain heal (spec §5.3): fold strays a stale writer left in backlog/.
+      const folded = await foldPrimaryStrays(primaryRoot);
+      if (folded) {
+        void vscode.window.showInformationMessage(
+          `Taskwright folded ${folded.folded} stray board file(s) from backlog/ into the board.`
+        );
+        if (folded.conflicts.length > 0) {
+          void showConflictNotification('pulled', folded.conflicts);
+        }
+        tasksHosts.forEach((host) => host.refresh());
+      }
+      boardSyncScheduler = new BoardSyncScheduler({ run: runAutoSyncNow });
+      context.subscriptions.push({ dispose: () => boardSyncScheduler?.dispose() });
+      fileWatcher?.onDidChange(() => boardSyncScheduler?.noteWrite());
+      boardSyncScheduler.requestSync(); // the activation event
+    } catch (err) {
+      console.warn('[Taskwright] git-auto activation bootstrap failed:', err);
+    }
+  })();
+
   /** Never-silent conflict surfacing, shared by push and pull: lists ids, offers to open one. */
   async function showConflictNotification(
     verb: 'pushed' | 'pulled',
@@ -892,6 +982,8 @@ export async function activate(context: vscode.ExtensionContext) {
       if (!picked) return;
       if (picked.action === 'enableSync') {
         await vscode.commands.executeCommand('taskwright.enableSync');
+      } else if (picked.action === 'sync') {
+        await runAutoSyncNow();
       } else if (picked.action === 'push') {
         await vscode.commands.executeCommand('taskwright.pushBoard');
       } else {
@@ -916,6 +1008,11 @@ export async function activate(context: vscode.ExtensionContext) {
         void vscode.window.showWarningMessage(
           'Board sync is off. Run "Taskwright: Enable Board Sync" first.'
         );
+        return;
+      }
+      if (syncCfg.mode === 'git-auto') {
+        // Manual escape hatch: the same event-driven sync pass.
+        await runAutoSyncNow();
         return;
       }
       try {
@@ -981,6 +1078,11 @@ export async function activate(context: vscode.ExtensionContext) {
         void vscode.window.showWarningMessage(
           'Board sync is off. Run "Taskwright: Enable Board Sync" first.'
         );
+        return;
+      }
+      if (syncCfg.mode === 'git-auto') {
+        // Manual escape hatch: the same event-driven sync pass.
+        await runAutoSyncNow();
         return;
       }
       try {

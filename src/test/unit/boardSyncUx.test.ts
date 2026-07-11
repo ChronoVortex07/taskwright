@@ -73,7 +73,48 @@ describe('formatBoardSyncStatusBar', () => {
   });
 });
 
+describe('formatBoardSyncStatusBar (git-auto, TASK-91)', () => {
+  it('shows an Auto idle state before the first sync', () => {
+    const state: BoardSyncStatusBarState = { mode: 'git-auto' };
+    const { text, tooltip } = formatBoardSyncStatusBar(state);
+    expect(text).toContain('Auto');
+    expect(tooltip.toLowerCase()).toContain('automatic');
+  });
+
+  it('reflects a clean auto-sync with the "synced" verb', () => {
+    const state: BoardSyncStatusBarState = {
+      mode: 'git-auto',
+      lastSync: { type: 'sync', atIso: '2026-07-11T09:30:00.000Z', ok: true, conflictIds: [] },
+    };
+    const { text, tooltip } = formatBoardSyncStatusBar(state);
+    expect(text).toContain('$(check)');
+    expect(tooltip).toContain('synced');
+    expect(tooltip).toContain('09:30');
+  });
+
+  it('surfaces an auto-sync failure', () => {
+    const state: BoardSyncStatusBarState = {
+      mode: 'git-auto',
+      lastSync: {
+        type: 'sync',
+        atIso: '2026-07-11T09:30:00.000Z',
+        ok: false,
+        conflictIds: [],
+        failureReason: 'remote unreachable',
+      },
+    };
+    const { text, tooltip } = formatBoardSyncStatusBar(state);
+    expect(text).toContain('$(error)');
+    expect(tooltip).toContain('remote unreachable');
+  });
+});
+
 describe('buildBoardSyncQuickPickItems', () => {
+  it('offers sync-now, push, pull, and mode switch in git-auto', () => {
+    const items = buildBoardSyncQuickPickItems({ mode: 'git-auto' });
+    expect(items.map((i) => i.action)).toEqual(['sync', 'push', 'pull', 'enableSync']);
+  });
+
   it('offers only "enable" when sync is off', () => {
     const items = buildBoardSyncQuickPickItems({ mode: 'off' });
     expect(items).toHaveLength(1);

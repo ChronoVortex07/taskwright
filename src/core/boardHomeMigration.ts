@@ -2,8 +2,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { defaultBoardExec, refTip, BOARD_SUBDIRS, type BoardGitExec } from './boardRef';
 import { boardTrackedPaths } from './boardMigration';
+import { boardWorktreePathFor } from './boardRoot';
 import { boardWorktreeStatusOf } from './boardWorktree';
-import type { BoardFileMap } from './boardMerge';
+import { autoCommitBoard } from './autoSync';
+import { mergeBoards, type BoardFileMap, type MergeConflict } from './boardMerge';
 
 /**
  * Migration cores for the git-auto board home (TASK-91, spec §5). The prior-
@@ -201,4 +203,33 @@ function collectDirs(dir: string): string[] {
 /** `<primary>/.taskwright/board.materialized` — delete the v1 CAS leftover. */
 export function cleanMaterializedMarker(primaryRoot: string): void {
   fs.rmSync(path.join(primaryRoot, '.taskwright', 'board.materialized'), { force: true });
+}
+
+/**
+ * Split-brain heal (spec §5.3): fold stray board files a stale pre-reload
+ * writer left under the primary `backlog/` into the board worktree — union-
+ * merge (board = ours, strays = theirs; newer `updated_date` wins, conflicts
+ * surfaced), commit, then clear the verified strays. Returns null when there
+ * was nothing to fold. Shared by the activation heal and the doctor repair.
+ */
+export async function foldPrimaryStrays(
+  primaryRoot: string
+): Promise<{ folded: number; conflicts: MergeConflict[] } | null> {
+  const primaryMap = readBoardDirFileMap(primaryRoot);
+  if (Object.keys(primaryMap).length === 0) return null;
+  const boardWorktree = boardWorktreePathFor(primaryRoot);
+  const boardMap = readBoardDirFileMap(boardWorktree);
+  const { merged, conflicts } = mergeBoards(undefined, boardMap, primaryMap);
+  for (const [rel, content] of Object.entries(merged)) {
+    const abs = path.join(boardWorktree, ...rel.split('/'));
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, content);
+  }
+  await autoCommitBoard(boardWorktree);
+  await executeVerifiedMove({
+    primaryRoot,
+    boardWorktree,
+    conflictPaths: new Set(conflicts.map((c) => c.path)),
+  });
+  return { folded: Object.keys(primaryMap).length, conflicts };
 }

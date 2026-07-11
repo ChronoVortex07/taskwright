@@ -10,7 +10,8 @@ import type { MergeConflict } from './boardMerge';
  */
 
 export interface LastBoardSync {
-  type: 'push' | 'pull';
+  /** `sync` = a git-auto automatic pass (commit → fetch/fold → push). */
+  type: 'push' | 'pull' | 'sync';
   /** ISO timestamp of the sync attempt. */
   atIso: string;
   ok: boolean;
@@ -44,13 +45,21 @@ export function formatBoardSyncStatusBar(state: BoardSyncStatusBarState): Status
 
   const { lastSync } = state;
   if (!lastSync) {
+    if (state.mode === 'git-auto') {
+      return {
+        text: '$(sync) Board Sync: Auto',
+        tooltip:
+          'Automatic board sync is on — the board lives in its hidden worktree and commits/syncs itself on events. Click to sync now.',
+      };
+    }
     return {
       text: '$(sync) Board Sync',
       tooltip: 'Board sync is on. Click to push or pull the board.',
     };
   }
 
-  const verb = lastSync.type === 'push' ? 'pushed' : 'pulled';
+  const verb =
+    lastSync.type === 'push' ? 'pushed' : lastSync.type === 'pull' ? 'pulled' : 'synced';
   const time = formatTimeUtc(lastSync.atIso);
 
   if (!lastSync.ok) {
@@ -73,7 +82,7 @@ export function formatBoardSyncStatusBar(state: BoardSyncStatusBarState): Status
   };
 }
 
-export type BoardSyncQuickPickAction = 'push' | 'pull' | 'enableSync';
+export type BoardSyncQuickPickAction = 'sync' | 'push' | 'pull' | 'enableSync';
 
 export interface BoardSyncQuickPickItem {
   label: string;
@@ -81,7 +90,7 @@ export interface BoardSyncQuickPickItem {
   action: BoardSyncQuickPickAction;
 }
 
-/** Sync-off only offers enabling it; sync-on offers the two backbone actions. */
+/** Sync-off only offers enabling it; git offers the two backbone actions; git-auto adds sync-now + mode switch. */
 export function buildBoardSyncQuickPickItems(
   state: BoardSyncStatusBarState
 ): BoardSyncQuickPickItem[] {
@@ -90,6 +99,30 @@ export function buildBoardSyncQuickPickItems(
       {
         label: '$(sync) Enable Board Sync',
         description: 'Move the board off code branches and turn on push/pull',
+        action: 'enableSync',
+      },
+    ];
+  }
+  if (state.mode === 'git-auto') {
+    return [
+      {
+        label: '$(sync) Sync Board Now',
+        description: 'Commit and sync the board immediately',
+        action: 'sync',
+      },
+      {
+        label: '$(arrow-up) Push Board',
+        description: 'Runs the same sync pass (manual escape hatch)',
+        action: 'push',
+      },
+      {
+        label: '$(arrow-down) Pull Board',
+        description: 'Runs the same sync pass (manual escape hatch)',
+        action: 'pull',
+      },
+      {
+        label: '$(settings-gear) Switch Sync Mode…',
+        description: 'Leave git-auto (moves the board back into backlog/)',
         action: 'enableSync',
       },
     ];

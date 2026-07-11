@@ -403,9 +403,9 @@ export function makePrimaryBoard(primaryRoot: string, exec: GitExecFn, home?: Bo
 - Modify: `src/language/documentSelector.ts` — add `{ language: 'markdown', pattern: `**/${backlogDir}/milestones/**/*.md` }`.
 - Test: `src/test/unit/boardSyncUx.test.ts` (existing — add git-auto presentation cases); `src/test/unit/documentSelector.test.ts` if present, else covered by typecheck.
 
-- [ ] **Step 1: Failing boardSyncUx tests** (git-auto text/tooltip/quick-pick items).
-- [ ] **Step 2:** FAIL. **Step 3: Implement** ux + extension wiring + selector. **Step 4:** PASS + `bun run typecheck`.
-- [ ] **Step 5: Commit** `feat(sync): git-auto activation bootstrap, watcher repoint, status bar (TASK-91)`.
+- [x] **Step 1: Failing boardSyncUx tests** (git-auto text/tooltip/quick-pick items).
+- [x] **Step 2:** FAIL. **Step 3: Implement** ux + extension wiring + selector. **Step 4:** PASS + `bun run typecheck`.
+- [x] **Step 5: Commit** `feat(sync): git-auto activation bootstrap, watcher repoint, status bar (TASK-91)`.
 
 ---
 
