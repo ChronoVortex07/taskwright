@@ -55,7 +55,7 @@
 - Produces: `type SyncMode = 'off' | 'git' | 'git-auto'` — every later task imports this.
 - Legacy coercions unchanged: `'local'→'off'`, `'github'→'git'`, unknown→`'off'`.
 
-- [ ] **Step 1: Write the failing tests** — in the existing `syncConfig.test.ts` describe block:
+- [x] **Step 1: Write the failing tests** — in the existing `syncConfig.test.ts` describe block:
 
 ```ts
 it('passes git-auto through coerceMode', () => {
@@ -68,10 +68,10 @@ it('still coerces legacy values with git-auto present', () => {
 });
 ```
 
-- [ ] **Step 2: Run** `bun run test -- syncConfig` — expect FAIL (git-auto coerced to 'off').
-- [ ] **Step 3: Implement** — `SyncMode = 'off' | 'git' | 'git-auto'`; in `coerceMode` add `if (v === 'git-auto') return v;` alongside the existing pass-throughs. In `package.json` add `"git-auto"` to the `taskwright.sync.mode` enum with enumDescription "Board lives in a hidden worktree (.taskwright/board) with automatic event-driven commit/sync".
-- [ ] **Step 4: Run** `bun run test -- syncConfig` — expect PASS.
-- [ ] **Step 5: Commit** `feat(sync): add git-auto mode to sync config (TASK-91)`.
+- [x] **Step 2: Run** `bun run test -- syncConfig` — expect FAIL (git-auto coerced to 'off').
+- [x] **Step 3: Implement** — `SyncMode = 'off' | 'git' | 'git-auto'`; in `coerceMode` add `if (v === 'git-auto') return v;` alongside the existing pass-throughs. In `package.json` add `"git-auto"` to the `taskwright.sync.mode` enum with enumDescription "Board lives in a hidden worktree (.taskwright/board) with automatic event-driven commit/sync".
+- [x] **Step 4: Run** `bun run test -- syncConfig` — expect PASS.
+- [x] **Step 5: Commit** `feat(sync): add git-auto mode to sync config (TASK-91)`.
 
 ---
 

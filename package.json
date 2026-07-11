@@ -73,10 +73,16 @@
           "type": "string",
           "enum": [
             "off",
-            "git"
+            "git",
+            "git-auto"
+          ],
+          "enumDescriptions": [
+            "The board is local, git-ignored working files — no versioning.",
+            "The board is additionally snapshotted onto a dedicated `taskwright-board` ref you can explicitly push/pull to share it — no live/background sync.",
+            "The board lives in a hidden worktree (`.taskwright/board`) on the `taskwright-board` branch with automatic event-driven commit/sync — no interval polling."
           ],
           "default": "off",
-          "markdownDescription": "How the Taskwright board is versioned. `off` (default): the board is local, git-ignored working files — no versioning. `git`: the board is additionally snapshotted onto a dedicated `taskwright-board` ref you can explicitly push/pull to share it — no live/background sync. Enable via the **Taskwright: Enable Board Sync** command, which performs the one-time off-branch migration and seeds the ref."
+          "markdownDescription": "How the Taskwright board is versioned. `off` (default): the board is local, git-ignored working files — no versioning. `git`: the board is additionally snapshotted onto a dedicated `taskwright-board` ref you can explicitly push/pull to share it — no live/background sync. `git-auto`: the board's one physical home is a hidden worktree at `.taskwright/board` (branch `taskwright-board`) with event-driven auto-commit/auto-sync. Switch modes via the **Taskwright: Enable Board Sync** command, which performs the required migration — do not flip this setting by hand."
         },
         "taskwright.sync.ref": {
           "type": "string",

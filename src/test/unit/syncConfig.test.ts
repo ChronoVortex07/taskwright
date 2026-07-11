@@ -56,6 +56,16 @@ describe('syncConfig', () => {
     expect(resolveSyncConfigFromSettings({ mode: 'off' }).mode).toBe('off');
   });
 
+  it('passes git-auto through coerceMode', () => {
+    expect(resolveSyncConfigFromSettings({ mode: 'git-auto' }).mode).toBe('git-auto');
+  });
+
+  it('still coerces legacy values with git-auto present', () => {
+    expect(resolveSyncConfigFromSettings({ mode: 'local' }).mode).toBe('off');
+    expect(resolveSyncConfigFromSettings({ mode: 'github' }).mode).toBe('git');
+    expect(resolveSyncConfigFromSettings({ mode: 'nonsense' }).mode).toBe('off');
+  });
+
   it('coerces installHooks to a boolean, defaulting to false', () => {
     expect(resolveSyncConfigFromSettings({ installHooks: true }).installHooks).toBe(true);
     expect(resolveSyncConfigFromSettings({ installHooks: false }).installHooks).toBe(false);

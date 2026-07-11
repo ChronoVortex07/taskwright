@@ -7,7 +7,7 @@ import type { QueueFsDeps } from './mergeQueue';
  * out-of-process MCP server read the same source of truth. Mirrors mergeConfig.
  */
 
-export type SyncMode = 'off' | 'git';
+export type SyncMode = 'off' | 'git' | 'git-auto';
 
 export interface SyncConfig {
   mode: SyncMode;
@@ -27,9 +27,9 @@ export function syncConfigPath(commonDir: string): string {
   return path.join(commonDir, 'taskwright', 'sync-config.json');
 }
 
-/** v1 modes read from an old settings.json / sync-config.json, remapped to v2's `off | git`. */
+/** v1 modes read from an old settings.json / sync-config.json, remapped to `off | git | git-auto`. */
 function coerceMode(v: unknown): SyncMode {
-  if (v === 'off' || v === 'git') return v;
+  if (v === 'off' || v === 'git' || v === 'git-auto') return v;
   if (v === 'local') return 'off';
   if (v === 'github') return 'git';
   return DEFAULT_SYNC_CONFIG.mode;
