@@ -1,17 +1,14 @@
 ---
 id: TASK-101
 title: Make development and release automation cross-platform
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-11 02:35'
-updated_date: '2026-07-11 09:45'
+updated_date: '2026-07-11 09:47'
 labels: []
 dependencies: []
 priority: medium
 category: Misc
-claimed_by: '@agent/main'
-worktree: main
-claimed_at: '2026-07-11 17:26'
 ---
 
 ## Description
