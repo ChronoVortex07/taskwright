@@ -590,7 +590,7 @@
                     title="Read-only task from {getReadOnlyTaskContext(task)}"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 3v12"/><path d="M18 9a3 3 0 0 0-3-3H6"/><path d="M6 15h9a3 3 0 1 1 0 6h-3"/></svg>
-                    {getReadOnlyTaskContext(task)}
+                    <span class="readonly-indicator-label">{getReadOnlyTaskContext(task)}</span>
                   </span>
                 {/if}
                 {#if blockerCount > 0}

@@ -368,4 +368,60 @@ test.describe('Tree detail popover', () => {
     await expect(page.locator('[data-testid="tp-action-cancelDispatch"]')).toBeVisible();
     await expect(page.locator('[data-testid="tp-action-markDone"]')).toHaveCount(0);
   });
+
+  test('TASK-89: Claimed-by line shows the short identity; full identity + worktree live in the tooltip', async ({
+    page,
+  }) => {
+    // 95 chars, like the real TASK-91 claim that blew the popover out.
+    const longIdentity =
+      '@agent/task-91-hidden-worktree-board-home-resolution-and-cross-session-claim-identity-stability';
+    const longWorktree =
+      'task-91-hidden-worktree-board-home-resolution-and-cross-session-claim-identity-stability';
+    expect(longIdentity).toHaveLength(95);
+    await postMessageToWebview(page, {
+      type: 'tasksUpdated',
+      tasks: [
+        {
+          id: 'TASK-14',
+          title: 'Claimed with a 95-char identity',
+          status: 'In Progress',
+          category: 'Misc',
+          milestone: 'v1',
+          labels: [],
+          assignee: [],
+          dependencies: [],
+          acceptanceCriteria: [],
+          definitionOfDone: [],
+          claimedBy: longIdentity,
+          claimedByMe: false,
+          worktree: longWorktree,
+          layout: { lane: 'Misc', band: 'v1', depth: 0, subRow: 0 },
+          filePath: '/b/tasks/task-14.md',
+        },
+      ],
+    });
+    await page.waitForTimeout(150);
+    await page.locator('[data-testid="tree-node-TASK-14"]').click();
+
+    const worker = page.locator('[data-testid="tp-worker"]');
+    await expect(worker).toBeVisible();
+    // Display uses the collapsed identity, not the raw 95-char one.
+    await expect(worker).toContainText('@agent/task-91');
+    const displayed = (await worker.textContent()) ?? '';
+    expect(displayed).not.toContain(longIdentity);
+    expect(displayed).not.toContain(longWorktree);
+    // Tooltip carries the full identity and the worktree.
+    const title = await worker.getAttribute('title');
+    expect(title).toContain(longIdentity);
+    expect(title).toContain(longWorktree);
+    // No popover blowout: the claimed-by line must not spill out of the popover.
+    const popover = page.locator('[data-testid="tree-popover"]');
+    const popBox = await popover.boundingBox();
+    const workerBox = await worker.boundingBox();
+    expect(popBox).not.toBeNull();
+    expect(workerBox).not.toBeNull();
+    expect(workerBox!.x + workerBox!.width).toBeLessThanOrEqual(popBox!.x + popBox!.width + 0.5);
+    const workerOverflow = await worker.evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(workerOverflow).toBeLessThanOrEqual(0);
+  });
 });

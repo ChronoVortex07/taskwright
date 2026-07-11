@@ -793,17 +793,36 @@ body.tasks-page .view-content {
   vertical-align: middle;
 }
 
+/*
+ * Indicator badges (readonly / claim / active / merge) share a flex-overflow
+ * hazard (TASK-89): a nowrap label is a flex item whose default min-width:auto
+ * refuses to shrink below its content, so a long value (e.g. a 95-char claim
+ * identity or branch name) pushes past the badge's max-width and spills out of
+ * the card. Every badge therefore clips (overflow: hidden) and every label
+ * opts out of the automatic minimum (min-width: 0) so it can shrink and
+ * ellipsize instead.
+ */
 .readonly-indicator {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   margin-left: 8px;
+  max-width: 120px;
+  overflow: hidden;
   font-size: 10px;
   color: var(--vscode-descriptionForeground, #858585);
 }
 
 .readonly-indicator svg {
   opacity: 0.75;
+  flex-shrink: 0;
+}
+
+.readonly-indicator-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .claim-indicator {
@@ -812,6 +831,7 @@ body.tasks-page .view-content {
   gap: 4px;
   margin-left: 6px;
   max-width: 120px;
+  overflow: hidden;
   font-size: 10px;
   color: var(--vscode-textLink-foreground, #3794ff);
 }
@@ -822,6 +842,7 @@ body.tasks-page .view-content {
 }
 
 .claim-indicator-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -837,6 +858,8 @@ body.tasks-page .view-content {
   align-items: center;
   gap: 4px;
   margin-left: 6px;
+  max-width: 120px;
+  overflow: hidden;
   font-size: 10px;
   color: var(--vscode-charts-green, #89d185);
 }
@@ -847,6 +870,9 @@ body.tasks-page .view-content {
 }
 
 .active-task-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -855,6 +881,8 @@ body.tasks-page .view-content {
   align-items: center;
   gap: 4px;
   margin-left: 6px;
+  max-width: 120px;
+  overflow: hidden;
   font-size: 10px;
   color: var(--vscode-charts-blue, #3794ff);
 }
@@ -865,6 +893,9 @@ body.tasks-page .view-content {
 }
 
 .merge-indicator-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

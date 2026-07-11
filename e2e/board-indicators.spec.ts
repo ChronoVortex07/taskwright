@@ -11,6 +11,14 @@ const SHOTS = 'e2e/__screenshots__/board';
 
 type BoardTask = Task & { isActiveTask?: boolean; claimStale?: boolean };
 
+/**
+ * 95 characters, mirroring the real overflow seen on the board (TASK-91's
+ * claim). Deliberately has no '/<task-id>' core so shortClaimIdentity cannot
+ * collapse it — the badge must survive on CSS containment alone (TASK-89 AC #5/#7).
+ */
+const LONG_CLAIM_IDENTITY =
+  '@agent-task-91-hidden-worktree-board-home-resolution-and-cross-session-claim-identity-stability';
+
 const tasks: BoardTask[] = [
   {
     id: 'TASK-1',
@@ -54,6 +62,20 @@ const tasks: BoardTask[] = [
     claimedAt: '2026-06-01 09:00',
     claimStale: true,
   },
+  {
+    id: 'TASK-4',
+    title: 'Claimed with a 95-char identity',
+    status: 'In Progress',
+    labels: [],
+    assignee: [],
+    dependencies: [],
+    acceptanceCriteria: [],
+    definitionOfDone: [],
+    filePath: '/dummy/backlog/tasks/task-4.md',
+    claimedBy: LONG_CLAIM_IDENTITY,
+    worktree: 'task-91-hidden-worktree-board-home',
+    claimedAt: '2026-06-30 15:05',
+  },
 ];
 
 test.describe('Board agentic indicators', () => {
@@ -86,5 +108,43 @@ test.describe('Board agentic indicators', () => {
     await expect(staleClaim).toContainText('stale');
 
     await page.screenshot({ path: `${SHOTS}/01-indicators.png`, fullPage: true });
+  });
+
+  test('TASK-89: 95-char claim identity stays within the card and ellipsizes', async ({ page }) => {
+    expect(LONG_CLAIM_IDENTITY).toHaveLength(95);
+
+    const badge = page.locator('[data-testid="claim-indicator-TASK-4"]');
+    await expect(badge).toBeVisible();
+
+    // The tooltip keeps the FULL identity (and the worktree).
+    const title = await badge.getAttribute('title');
+    expect(title).toContain(LONG_CLAIM_IDENTITY);
+    expect(title).toContain('task-91-hidden-worktree-board-home');
+
+    // The clientWidth assertion: nothing spills out of the badge box.
+    const badgeOverflow = await badge.evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(badgeOverflow).toBeLessThanOrEqual(0);
+
+    // The label is clipped with a CSS ellipsis instead of pushing the badge open.
+    const label = badge.locator('.claim-indicator-label');
+    const metrics = await label.evaluate((el) => ({
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+      textOverflow: getComputedStyle(el).textOverflow,
+    }));
+    expect(metrics.textOverflow).toBe('ellipsis');
+    expect(metrics.clientWidth).toBeGreaterThan(0);
+    // The (already JS-shortened) label is still wider than the badge allows,
+    // so CSS truncation must actually be engaged.
+    expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth);
+
+    // And the badge (label included) stays within the card bounds.
+    const cardBox = await page.locator('[data-testid="task-TASK-4"]').boundingBox();
+    const labelBox = await label.boundingBox();
+    expect(cardBox).not.toBeNull();
+    expect(labelBox).not.toBeNull();
+    expect(labelBox!.x + labelBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width + 0.5);
+
+    await page.screenshot({ path: `${SHOTS}/02-long-claim-identity.png`, fullPage: true });
   });
 });

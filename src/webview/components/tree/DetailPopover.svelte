@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Task, TaskIdDisplayMode } from '../../lib/types';
   import { formatTaskIdForDisplay } from '../../lib/taskIdDisplay';
+  import { shortClaimIdentity } from '../../../core/claimIdentity';
 
   type PopoverTask = Task & {
     claimedByMe?: boolean;
@@ -46,6 +47,14 @@
     !!task.mergeState && !task.mergeState.approved && task.mergeState.mode === 'manual-review'
   );
   const claimedByMe = $derived(task.claimedByMe === true);
+  // Display the compact identity (e.g. '@agent/task-91'); the tooltip keeps
+  // the full identity and the worktree, which can each run ~95 chars (TASK-89).
+  const claimDisplay = $derived(task.claimedBy ? shortClaimIdentity(task.claimedBy) : '');
+  const claimTooltip = $derived(
+    task.claimedBy
+      ? `Claimed by ${task.claimedBy}${task.worktree ? ` on ${task.worktree}` : ''}`
+      : ''
+  );
   const hasWorktree = $derived(!!task.worktree);
   const hasDispatchedWorktree = $derived(task.dispatchedWorktree === true);
   const displayId = $derived(formatTaskIdForDisplay(task.id, taskIdDisplay));
@@ -197,8 +206,8 @@
   {/if}
 
   {#if task.claimedBy}
-    <div class="tp-worker" data-testid="tp-worker">
-      Claimed by {claimedByMe ? 'you' : task.claimedBy}{#if task.worktree} · {task.worktree}{/if}
+    <div class="tp-worker" data-testid="tp-worker" title={claimTooltip}>
+      Claimed by {claimedByMe ? 'you' : claimDisplay}
     </div>
   {/if}
 
@@ -356,6 +365,11 @@
   .tp-worker {
     font-size: 11px;
     opacity: 0.85;
+    /* Belt-and-braces: even a long un-collapsible identity must not blow the
+       popover open — clip and ellipsize instead (TASK-89). */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .tp-actions {
     display: flex;
