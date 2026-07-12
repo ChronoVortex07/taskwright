@@ -7,13 +7,13 @@ type: bug
 status: In Progress
 assignee: []
 created_date: '2026-07-12 16:48'
-updated_date: '2026-07-12 16:48'
+updated_date: '2026-07-12 17:10'
 labels:
   - bug
   - board-sync
 dependencies: []
 priority: high
-category: 'Board sync'
+category: Board sync
 claimed_by: '@agent/task-123-enablesync-git-auto-verification-report-why-files-fail-tolerate-eol-normalization-fold-a-drifted-board-worktree'
 worktree: task-123-enablesync-git-auto-verification-report-why-files-fail-tolerate-eol-normalization-fold-a-drifted-board-worktree
 claimed_at: '2026-07-13 00:59'
@@ -37,10 +37,32 @@ Manual unblock applied to asterra-game 2026-07-13 (normalize the 4 files to LF; 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 verifyMove returns classified failures ({ path, reason: 'absent' | 'eol-only' | 'content-drift' }) instead of bare paths; existing callers (executeVerifiedMove, foldPrimaryStrays) keep working.
-- [ ] #2 An EOL-only difference verifies as OK: git's own text=auto policy produced it, no content is lost, and the board becomes canonically LF. The primary copy is safe to delete in that case.
-- [ ] #3 A pre-existing board worktree whose working tree has drifted from the live board no longer aborts the migration: the drift is folded (union merge, conflicts surfaced) or the worktree is synced to the freshly-seeded ref tip before verification — a repo cannot get permanently stuck by one failed attempt.
-- [ ] #4 The abort notification lists EVERY failing file with its per-file reason (not just the count and missing[0]) and offers a details/output-channel action; it does not tell the user to 're-run to retry' when the failure is deterministic.
-- [ ] #5 Unit tests in src/test/unit/boardHomeMigration.test.ts cover: eol-only verifies OK, absent vs content-drift are distinguished, and a drifted pre-existing board worktree completes instead of aborting.
-- [ ] #6 bun run test && bun run lint && bun run typecheck all pass.
+- [x] #1 verifyMove returns classified failures ({ path, reason: 'absent' | 'eol-only' | 'content-drift' }) instead of bare paths; existing callers (executeVerifiedMove, foldPrimaryStrays) keep working.
+- [x] #2 An EOL-only difference verifies as OK: git's own text=auto policy produced it, no content is lost, and the board becomes canonically LF. The primary copy is safe to delete in that case.
+- [x] #3 A pre-existing board worktree whose working tree has drifted from the live board no longer aborts the migration: the drift is union-merge folded (conflicts surfaced) before the verified move — a repo cannot get permanently stuck by one failed attempt.
+- [x] #4 The abort notification lists EVERY failing file with its per-file reason behind a 'Show details' output channel, and does not tell the user to 're-run to retry' when the failure is deterministic.
+- [x] #5 Unit tests cover eol-only verifying OK, absent vs content-drift, and a drifted worktree completing; integration tests reproduce BOTH field shapes against real git (text=auto normalization; stale worktree).
+- [x] #6 bun run test && bun run lint && bun run typecheck all pass (2097 tests).
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Diagnosed against the live repro repo (asterra-game) rather than from code alone: re-running verifyMove's comparison over its 123 board files gave 118 identical, 0 absent, 4 EOL-only, 1 content-drift — which named all three defects at once.
+
+1. **No reason** (the reported symptom). `verifyMove` returned `string[]`; extension.ts:527 printed `missing.length` + `missing[0]`. Now returns `{ ok, blocking: MoveFailure[], eolOnly: MoveFailure[] }` with reason `absent | eol-only | content-drift`, and `showMigrationBlockers` lists every blocker with its reason + remedy behind a "Show details" output channel.
+
+2. **EOL normalization was the permanent blocker.** `.gitattributes: * text=auto` (+ core.autocrlf=true) normalizes CRLF→LF into the blob on `git add`. Crucially, an IN-TREE attribute overrides config, so `NO_EOL_CONVERT` (`-c core.autocrlf=false -c core.eol=lf`) cannot prevent it — the "round-trip byte-for-byte" claim at boardRef.ts:36 is false in any such repo. The board worktree (whose branch carries no .gitattributes) then checks the file out as LF, and byte equality fails forever. An EOL-only difference is now VERIFIED: git's own declared policy produced it, no content is lost, and the board becomes canonically LF. (Rejected alternative: rewriting the user's primary files to LF before snapshot — that mutates their working tree to satisfy our check.)
+
+3. **Stale worktree comparison.** `ensureBoardWorktree` short-circuits on an existing worktree (`seeded:'existing'`) WITHOUT resetting its working tree to the newly-seeded ref tip; an aborted migration leaves exactly such a worktree behind. So each retry compared the live board against stale working files and re-aborted on anything edited since — self-perpetuating. New `moveBoardIntoWorktree` core: classify → if blocking, union-merge the drift forward with `mergeBoards` (newer `updated_date` wins, conflicts surfaced, EOL-equal files excluded from the merge so they cannot raise phantom conflicts) → commit → verified move. `foldPrimaryStrays` now delegates to it, so the activation split-brain heal and the board-doctor repair inherit the same tolerance.
+
+Both field shapes are covered by integration tests against REAL git — a hand-rolled fixture cannot fake `text=auto` normalization or a stale worktree's working files.
+
+asterra-game was also unblocked by hand this session (4 files normalized to LF; the clean, at-tip board worktree removed so it is recreated from a fresh snapshot). The code change makes that manual step unnecessary.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+"Enable Board Sync" can no longer wedge a repo, and when it does refuse it says why. EOL-only differences (git's own text=auto normalization) verify instead of blocking forever; a board worktree that drifted from the live board is union-merge folded rather than aborted against; and every blocker is listed with its reason and remedy. Verified: 2097 unit tests, plus real-git integration tests reproducing both field shapes; lint and typecheck clean.
+<!-- SECTION:FINAL_SUMMARY:END -->
