@@ -4,7 +4,7 @@ title: Stop Playwright silently reusing another worktree's Vite server (wrong di
 status: In Progress
 assignee: []
 created_date: '2026-07-12 16:35'
-updated_date: '2026-07-12 16:35'
+updated_date: '2026-07-12 22:10'
 labels:
   - testing
   - dx
@@ -34,8 +34,35 @@ Options (pick during implementation): derive the port per worktree (e.g. hash th
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A Playwright run cannot silently consume a Vite server started from a different worktree — it either uses a tree-unique port, or fails loudly with an actionable message naming the mismatch.
-- [ ] #2 The failure mode is proven, not assumed: a test//manual check demonstrates that starting a server from worktree A and running the suite in worktree B now errors instead of passing against the wrong dist/.
-- [ ] #3 `e2e/global-setup.ts`'s existing missing-bundle guard still fires (do not regress it).
-- [ ] #4 Running the suite normally (no stale server) is unaffected; `bun run test:playwright` still passes.
+- [x] #1 A Playwright run cannot silently consume a Vite server started from a different worktree — it either uses a tree-unique port, or fails loudly with an actionable message naming the mismatch.
+- [x] #2 The failure mode is proven, not assumed: a test//manual check demonstrates that starting a server from worktree A and running the suite in worktree B now errors instead of passing against the wrong dist/.
+- [x] #3 `e2e/global-setup.ts`'s existing missing-bundle guard still fires (do not regress it).
+- [x] #4 Running the suite normally (no stale server) is unaffected; `bun run test:playwright` still passes.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Fixed with BOTH options from the description (belt and braces), because either alone leaves a hole.
+
+**1. Tree-unique port — removes the collision instead of detecting it.**
+New pure core `scripts/lib/fixtureServer.ts` (sits beside `scripts/lib/platform.ts`, the established home for unit-tested script helpers). `fixtureServerPort(rootDir)`:
+- **Primary checkout → 5173, unchanged.** Detected by `isLinkedWorktree()`: in a linked worktree `.git` is a FILE (`gitdir: …`), in the primary it is a directory. One stat, no subprocess. Keeping 5173 for the primary is deliberate — the documented agent-browser / visual-proof workflow and every doc that says `localhost:5173` stays correct in the main checkout.
+- **Linked worktree → `5174 + FNV-1a(normalized path) % 800`.** Deterministic, stable across processes/platforms. This worktree resolved to **5673**.
+- `TASKWRIGHT_FIXTURE_PORT` overrides both (escape hatch; also how the proof below forces a collision).
+Both `vite.config.ts` and `playwright.config.ts` call it with their own `__dirname`, so a tree's server and its suite always agree and nothing has to be threaded through. Bonus: two worktrees can now run `test:playwright` concurrently, which the fixed port never allowed — this matters on a repo where several agent worktrees are live at once.
+
+**2. Identity endpoint — the backstop.**
+A port can still be occupied by a hash collision, a stale server, or an unrelated process, and `reuseExistingServer` would consume it. So every fixture server now stamps itself: `fixtureRootMiddleware` (mounted by a small `taskwright-fixture-root` vite plugin) answers `GET /__taskwright_fixture_root` with `{ root: <abs path of the tree it serves> }`. `e2e/global-setup.ts` probes that endpoint and aborts unless the server is THIS tree.
+Semantics, chosen to be ordering-independent: nothing listening ⇒ no-op (Playwright starts ours); answers with our root ⇒ pass; answers with a different root ⇒ abort naming BOTH trees + the port; answers without the endpoint ⇒ abort "not a Taskwright fixture server". Path compare is separator/trailing-slash-agnostic and case-insensitive on win32/darwin only (`sameTreeRoot`).
+
+**Ordering fact worth keeping:** Playwright runs `webServer` (a plugin setup task) BEFORE `globalSetup` — verified in `node_modules/playwright/lib/runner/index.js` `createGlobalSetupTasks()`, which is `[removeOutputDirs, ...pluginSetupTasks, ...globalSetups]`. So by the time globalSetup probes, the server it is about to test against (fresh or reused) is the one answering. The guard is written so it would still be correct if that ever flipped.
+
+**AC#3 (don't regress the missing-bundle guard):** kept, but moved out of `global-setup.ts` into `missingRequiredBundles()` / `missingBundlesMessage()` in the same lib, so it is now unit-tested rather than untestable inline. `global-setup.ts` composes the two guards (bundles first, then server identity) and is now `async`.
+
+**Proof (AC#2), done end-to-end through the real Playwright globalSetup, not asserted:** started a fixture server stamped with the PRIMARY tree's root, pinned both sides to port 5199 via `TASKWRIGHT_FIXTURE_PORT` to force the old fixed-port collision, then ran this worktree's suite. It exited 1 with the message naming `…/.worktrees/task-111-…` as "this tree" and `…/GitHub/taskwright` as what port 5199 serves. Pre-change, that exact run would have passed silently against the primary's `dist/webview/`. Also re-verified the bundle guard fires by moving `dist/webview/styles.css` aside.
+
+**Docs:** `AGENTS.md` and `.claude/skills/visual-proof/SKILL.md` hardcoded `localhost:5173`; both now state the port is per-checkout (5173 primary, derived in a worktree — use the URL vite prints) and why.
+
+Verification: `bun run test` 2150/2150 · `bun run test:playwright` 447/447 · `bun run lint` · `bun run typecheck` — all clean. New: `src/test/unit/fixtureServer.test.ts` (22 tests, incl. real `http.createServer` servers proving mismatch/foreign/absent/match).
+<!-- SECTION:NOTES:END -->
