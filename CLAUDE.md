@@ -391,6 +391,16 @@ rebase_conflict`) so `/orchestrate-board` branches without parsing prose. **Dura
   repointed to the real `.agents/skills/agent-browser/SKILL.md`). Install/update/uninstall flows in
   `docs/codex-plugin.md`. Coverage:
   `src/test/unit/{agentSkills,codexPlugin,agentConvention,visualProofSkill}.test.ts`.
+- **Stable user-scope MCP registration (1.6.1)** ✅: the Claude Code user-scope entry is registered
+  against a launcher in the extension's `globalStorage` (`src/core/globalMcpLauncher.ts`) — a path keyed
+  by extension **id**, not version — which resolves the current build from a sibling pointer file that
+  activation refreshes. **Do not reintroduce an unregister-on-deactivate**: `~/.claude.json` holds ONE
+  global `taskwright` entry shared by every window and every running session, while `deactivate` runs per
+  *window*, so removing it there deleted the server for all other windows and made Taskwright vanish from
+  new sessions until a reload (the 1.6.1 bug). For the same reason registration is idempotent —
+  `ensureTaskwrightMcpRegistered` (`src/core/claudeMcp.ts`) rewrites `~/.claude.json` only when the entry
+  is missing or stale, because live sessions write that file too. Coverage:
+  `src/test/unit/{globalMcpLauncher,claudeMcp}.test.ts`.
 
 ## Conventions
 

@@ -39,9 +39,9 @@ import * as fs from 'fs';
 import {
   isClaudeCliAvailable,
   isTaskwrightMcpRegistered,
-  registerTaskwrightMcp,
-  unregisterTaskwrightMcp,
+  ensureTaskwrightMcpRegistered,
 } from './core/claudeMcp';
+import { installGlobalMcpLauncher } from './core/globalMcpLauncher';
 import { injectConvention, injectAgentsConvention } from './core/agentConvention';
 import { installTaskwrightSkills, type SkillInstallResult } from './core/skillInstaller';
 import { extractTaskwrightServer, upsertTaskwrightMcpServer } from './core/mcpProjectConfig';
@@ -106,9 +106,6 @@ const execFileAsync = promisify(execFile);
 let fileWatcher: FileWatcher | undefined;
 let workspaceStatusBarItem: vscode.StatusBarItem | undefined;
 let boardSyncStatusBarItem: vscode.StatusBarItem | undefined;
-// True once this session has (re-)registered the Taskwright MCP server with
-// Claude Code, so deactivate only attempts cleanup for users who set it up.
-let claudeMcpRegistered = false;
 
 const GUARD_REL = '.taskwright/hooks/worktree-guard.js';
 const WARN_REL = '.taskwright/hooks/worktree-warn.js';
@@ -2212,10 +2209,18 @@ export async function activate(context: vscode.ExtensionContext) {
   // Claude Code (user scope, via its CLI) and offer to add the agent convention
   // to CLAUDE.md so sessions actually call get_active_task / claim_task.
   const CLAUDE_SETUP_DISMISSED_KEY = 'taskwright.claudeSetupDismissed';
-  // Set once the user opts into MCP integration; drives the deactivate cleanup
-  // and the on-activate refresh below.
+  // Set once the user opts into MCP integration; drives the on-activate refresh
+  // below.
   const CLAUDE_MCP_REGISTERED_KEY = 'taskwright.mcpRegistered';
   const mcpServerPath = path.join(context.extensionPath, 'dist', 'mcp', 'server.js');
+
+  // The command registered with Claude Code is a launcher in globalStorage —
+  // a path keyed by extension *id*, not version — that resolves the current
+  // build at run time. Registering `extensionPath/dist/mcp/server.js` directly
+  // would pin the single global `~/.claude.json` entry to a versioned install
+  // directory that the next extension update deletes.
+  const installMcpLauncher = (): string =>
+    installGlobalMcpLauncher(context.globalStorageUri.fsPath, mcpServerPath);
 
   // Shared adapter step: offer the Taskwright convention block for AGENTS.md —
   // the agent-neutral instruction surface (Claude Code reads it via CLAUDE.md's
@@ -2269,11 +2274,10 @@ export async function activate(context: vscode.ExtensionContext) {
     // 1) Register the MCP server with Claude Code at user scope.
     if (await isClaudeCliAvailable()) {
       try {
-        await registerTaskwrightMcp(mcpServerPath);
+        await ensureTaskwrightMcpRegistered(installMcpLauncher());
         // Stop the activation prompt from re-checking the CLI on every launch.
         await context.globalState.update(CLAUDE_SETUP_DISMISSED_KEY, true);
         await context.globalState.update(CLAUDE_MCP_REGISTERED_KEY, true);
-        claudeMcpRegistered = true;
         vscode.window.showInformationMessage(
           'Registered the Taskwright MCP server with Claude Code (user scope). Restart Claude Code to load it.'
         );
@@ -2506,18 +2510,19 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // Once the user has opted into MCP integration, refresh the registration on
-  // every activation. This (a) re-points it at the current build after an
-  // extension update moves the install directory, and (b) restores it after a
-  // window reload — deactivate best-effort-removes the entry, and this re-adds
-  // it. Fire-and-forget so it never blocks activation.
+  // Once the user has opted into MCP integration, re-point the launcher at this
+  // build on every activation — that is what makes an extension update safe, and
+  // it is a plain file write, never a mutation of the shared `~/.claude.json`.
+  // The registration itself is only rewritten if it is missing or stale, so the
+  // steady state touches nothing a concurrent Claude Code session could race.
+  // Fire-and-forget so it never blocks activation.
   if (context.globalState.get<boolean>(CLAUDE_MCP_REGISTERED_KEY)) {
-    claudeMcpRegistered = true;
     void (async () => {
       if (!fs.existsSync(mcpServerPath)) return;
-      if (!(await isClaudeCliAvailable())) return;
       try {
-        await registerTaskwrightMcp(mcpServerPath);
+        const launcherPath = installMcpLauncher();
+        if (!(await isClaudeCliAvailable())) return;
+        await ensureTaskwrightMcpRegistered(launcherPath);
       } catch {
         // Best-effort refresh; a failure just leaves the prior registration in place.
       }
@@ -2642,16 +2647,15 @@ export function deactivate(): Thenable<void> | undefined {
   if (workspaceStatusBarItem) {
     workspaceStatusBarItem.dispose();
   }
-  // Best-effort cleanup: remove the user-scope MCP registration so a disabled or
-  // reloaded extension doesn't leave a `taskwright` entry pointing at a
-  // `dist/mcp/server.js` that may later be deleted. `unregisterTaskwrightMcp`
-  // never throws. On a window reload this entry is re-added on the next
-  // activation (see CLAUDE_MCP_REGISTERED_KEY). Limitation: VS Code does NOT run
-  // deactivate on *uninstall*, so an uninstall can leave a stale entry behind —
-  // remove it manually with `claude mcp remove taskwright -s user`.
-  if (claudeMcpRegistered) {
-    return unregisterTaskwrightMcp().then(() => undefined);
-  }
+  // The user-scope MCP registration is deliberately LEFT IN PLACE. It is a single
+  // global entry in `~/.claude.json` shared by every window and every running
+  // Claude Code session, whereas deactivate runs per window — so removing it here
+  // deleted Taskwright's tools for every *other* open window too, and any session
+  // created before some window's next activation re-added it silently had no
+  // Taskwright MCP (a reload "fixed" it, which is what made this look random).
+  // The entry can no longer go stale: it points at the globalStorage launcher,
+  // whose path is version-independent (see installGlobalMcpLauncher). To remove
+  // it after uninstalling, run `claude mcp remove taskwright -s user`.
   return undefined;
 }
 

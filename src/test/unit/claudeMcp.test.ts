@@ -1,11 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   buildAddArgs,
+  buildGetArgs,
   buildRemoveArgs,
   isClaudeCliAvailable,
   isTaskwrightMcpRegistered,
+  registrationMatches,
+  ensureTaskwrightMcpRegistered,
   registerTaskwrightMcp,
-  unregisterTaskwrightMcp,
   type ExecFn,
 } from '../../core/claudeMcp';
 
@@ -78,17 +80,65 @@ describe('claudeMcp', () => {
     });
   });
 
-  describe('unregisterTaskwrightMcp', () => {
-    it('removes the user-scope registration via buildRemoveArgs', async () => {
-      const exec = vi.fn<ExecFn>(() => ok());
-      await expect(unregisterTaskwrightMcp(exec)).resolves.toBe(true);
-      expect(exec).toHaveBeenCalledWith('claude', buildRemoveArgs());
+  describe('registrationMatches', () => {
+    const LAUNCHER = 'C:\\storage\\taskwright\\taskwright-mcp.cjs';
+
+    it('matches the launcher path in `claude mcp get` output', () => {
+      expect(registrationMatches(`taskwright: node ${LAUNCHER}`, LAUNCHER)).toBe(true);
     });
 
-    it('is best-effort: resolves false (never throws) when the CLI is missing or nothing is registered', async () => {
-      const exec = vi.fn<ExecFn>(() => fail());
-      await expect(unregisterTaskwrightMcp(exec)).resolves.toBe(false);
-      expect(exec).toHaveBeenCalledWith('claude', buildRemoveArgs());
+    it('does not match a registration pointing somewhere else', () => {
+      expect(
+        registrationMatches('taskwright: node C:\\ext\\taskwright-1.5.0\\dist\\mcp\\server.js', LAUNCHER)
+      ).toBe(false);
+    });
+
+    it('is separator- and case-insensitive (Windows paths round-trip through the CLI)', () => {
+      expect(registrationMatches('taskwright: node c:/storage/taskwright/taskwright-mcp.cjs', LAUNCHER)).toBe(
+        true
+      );
+    });
+  });
+
+  describe('ensureTaskwrightMcpRegistered', () => {
+    const LAUNCHER = '/storage/taskwright-mcp.cjs';
+
+    it('is a no-op when the registration already points at the launcher — never touches ~/.claude.json', async () => {
+      const calls: string[][] = [];
+      const exec: ExecFn = (_cmd, args) => {
+        calls.push(args);
+        return ok(`taskwright: node ${LAUNCHER}`);
+      };
+
+      await expect(ensureTaskwrightMcpRegistered(LAUNCHER, exec)).resolves.toBe('unchanged');
+      expect(calls).toEqual([buildGetArgs()]);
+      expect(calls.some((a) => a[1] === 'add' || a[1] === 'remove')).toBe(false);
+    });
+
+    it('re-registers when the recorded path differs (e.g. a legacy version-pinned entry)', async () => {
+      const calls: string[][] = [];
+      const exec: ExecFn = (_cmd, args) => {
+        calls.push(args);
+        if (args[1] === 'get') return ok('taskwright: node /ext/taskwright-1.5.0/dist/mcp/server.js');
+        return ok();
+      };
+
+      await expect(ensureTaskwrightMcpRegistered(LAUNCHER, exec)).resolves.toBe('registered');
+      expect(calls[0]).toEqual(buildGetArgs());
+      expect(calls[1]).toEqual(buildRemoveArgs());
+      expect(calls[2]).toEqual(buildAddArgs(LAUNCHER));
+    });
+
+    it('registers when nothing is registered yet (`mcp get` errors)', async () => {
+      const calls: string[][] = [];
+      const exec: ExecFn = (_cmd, args) => {
+        calls.push(args);
+        if (args[1] === 'get') return fail();
+        return ok();
+      };
+
+      await expect(ensureTaskwrightMcpRegistered(LAUNCHER, exec)).resolves.toBe('registered');
+      expect(calls.some((a) => a[1] === 'add')).toBe(true);
     });
   });
 });

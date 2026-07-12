@@ -120,12 +120,12 @@ Codex gets the four workflow skills as **native `.agents/skills/` SKILL.md packa
 
 ### MCP registration lifecycle
 
-The **Set Up Claude Code Integration** command registers the MCP server at **user scope** (`claude mcp add taskwright -s user …`). Taskwright manages that entry for you:
+The **Set Up Claude Code Integration** command registers the MCP server at **user scope** (`claude mcp add taskwright -s user …`). The registered command is a small launcher Taskwright writes into its `globalStorage` directory — a path keyed by extension **id**, not version — which resolves the current build at run time from a pointer file beside it.
 
-- **On activation**, if you previously set it up, Taskwright refreshes the registration so it always points at the current build — this heals a stale entry after an extension update moves the install directory.
-- **On deactivation** (disabling the extension or reloading the window), Taskwright best-effort-removes the entry so nothing is left pointing at a `dist/mcp/server.js` that may later be deleted. After a window reload the entry is re-added on the next activation, so the integration keeps working.
+- **On activation**, Taskwright refreshes that pointer so the launcher always runs the current build. This is a plain file write; it does not touch `~/.claude.json`. The registration itself is only (re)written when it is missing or stale, so the steady state never rewrites the shared config a running Claude Code session might be writing to concurrently.
+- **On deactivation**, the registration is deliberately **left in place**. It is one global entry shared by every window and every running session, while `deactivate` runs per window — removing it there would delete Taskwright's tools for every other open window too. Because the registered path is version-independent, it cannot go stale, so there is nothing to clean up.
 
-> **Uninstall limitation:** VS Code does **not** run an extension's `deactivate` hook on uninstall, only on disable/reload. So uninstalling Taskwright can leave a stale user-scope `taskwright` entry behind. Remove it manually with:
+> **Uninstall:** VS Code does not run an extension's `deactivate` hook on uninstall, and the entry is intentionally persistent, so uninstalling Taskwright leaves the user-scope `taskwright` entry behind. Remove it with:
 >
 > ```bash
 > claude mcp remove taskwright -s user

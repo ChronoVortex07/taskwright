@@ -4,6 +4,36 @@ All notable changes to Taskwright are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] — 2026-07-12
+
+The **stable MCP registration** release: Taskwright's MCP server no longer randomly disappears from
+new Claude Code sessions.
+
+### Fixed
+
+- **The Taskwright MCP server randomly dropped out of new Claude Code sessions** (a window reload
+  brought it back). The user-scope registration is a **single global entry** in `~/.claude.json`,
+  shared by every window and every running session — but `deactivate()` **removed** it, and
+  `activate()` re-added it. Since `deactivate` runs per *window*, reloading or closing **any**
+  Taskwright window deleted the server for every **other** open window too, and any session started
+  before that window's next activation silently had no Taskwright tools. Two narrower races made it
+  worse: re-registration was an unconditional `mcp remove` **then** `mcp add` (a window in which the
+  entry does not exist), and both are read-modify-writes of the same `~/.claude.json` that live
+  sessions write to, so a concurrent write could drop the entry.
+
+  The registration is now **version-stable and permanent**. Claude Code is registered against a
+  launcher in the extension's `globalStorage` — a path keyed by extension **id**, not version
+  (`src/core/globalMcpLauncher.ts`) — which resolves the current build from a sibling pointer file
+  refreshed on each activation. Because the registered path can no longer rot across an extension
+  update, `deactivate()` no longer removes anything (`src/extension.ts`), and registration is
+  idempotent: `ensureTaskwrightMcpRegistered` (`src/core/claudeMcp.ts`) reads the current entry and
+  rewrites `~/.claude.json` **only** when it is missing or stale.
+
+  This also fixes the stale version-pinned entry it was originally working around — registrations
+  pointing at a deleted install directory (`Cannot find module …taskwright-0.0.1\dist\mcp\server.js`)
+  are impossible now that the registered path is version-independent. Coverage:
+  `src/test/unit/{globalMcpLauncher,claudeMcp}.test.ts`.
+
 ## [1.6.0] — 2026-07-11
 
 The **Agent-authoring ergonomics** release: `create_task` takes a task's full field set in one call,
