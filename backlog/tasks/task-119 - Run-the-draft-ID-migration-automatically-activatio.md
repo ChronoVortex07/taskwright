@@ -39,13 +39,13 @@ Confirm the real names of `parser.getBacklogPath()`, the output channel, and the
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The migration runs from the deferred bootstrap in `src/extension.ts` (appended, not inserted mid-block) and from `src/mcp/server.ts` after board-root resolution.
-- [ ] #2 A migration failure LOGS and surfaces as a doctor finding — it never rejects into `activate()` and never blocks activation or a board write.
-- [ ] #3 CONCURRENCY PROVEN: a test runs two migrations concurrently against one temp board and asserts a single coherent outcome (no double-rename, no lost reference, no id collision). This is the riskiest step — do not assume, demonstrate.
-- [ ] #4 `boardDoctor` gains a `legacy-draft-ids` finding with a `migrate-draft-ids` repair; a clean board reports nothing (silent when clean).
-- [ ] #5 A user-visible notification names the migrated ids (e.g. `DRAFT-3 → TASK-111`) when migrated > 0, and says nothing when 0.
-- [ ] #6 Activation cost does not regress (TASK-109): no new git/fs burst inline in `activate()`.
-- [ ] #7 bun run test, bun run lint, bun run typecheck all pass.
+- [x] #1 The migration runs from the deferred bootstrap in `src/extension.ts` (appended, not inserted mid-block) and from `src/mcp/server.ts` after board-root resolution.
+- [x] #2 A migration failure LOGS and surfaces as a doctor finding — it never rejects into `activate()` and never blocks activation or a board write.
+- [x] #3 CONCURRENCY PROVEN: a test runs two migrations concurrently against one temp board and asserts a single coherent outcome (no double-rename, no lost reference, no id collision). This is the riskiest step — do not assume, demonstrate.
+- [x] #4 `boardDoctor` gains a `legacy-draft-ids` finding with a `migrate-draft-ids` repair; a clean board reports nothing (silent when clean).
+- [x] #5 A user-visible notification names the migrated ids (e.g. `DRAFT-3 → TASK-111`) when migrated > 0, and says nothing when 0.
+- [x] #6 Activation cost does not regress (TASK-109): no new git/fs burst inline in `activate()`.
+- [x] #7 bun run test, bun run lint, bun run typecheck all pass.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -126,3 +126,31 @@ the notification text if you assert on user-visible output.
 Verify: bun run test (2233 pass, 153 files), bun run lint, bun run typecheck — all green. Build clean;
 MCP bundle still vscode-free.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The legacy-draft-ID migration now runs itself, on every surface, safely under concurrency.
+
+`runDraftIdMigration` (TASK-118) is wired into extension activation (appended last inside the existing
+deferred bootstrap — never inline, so TASK-109's activation cost does not regress), MCP server startup
+(so an agent-only/headless session converges exactly like a UI session), and the board doctor
+(`legacy-draft-ids` finding → `migrate-draft-ids` repair, silent on a clean board).
+
+All three go through ONE new locked entry point, `runDraftIdMigrationLocked`, which is the substance of
+this task. `peekNextTaskId` is lock-free by design, so the critical section is plan AND execute: an
+extension host and an MCP server starting at the same instant would otherwise both scan the same
+`nextId`, plan the same rename, and the second would re-id a file the first had already moved. The lock
+is `<board>/.locks/draft-id-migration.lock` — keyed on the ONE physical board path, so any two processes
+contend from any worktree — built on the existing `acquireSyncLock` (generalized with a `lockName`,
+deliberately NOT sharing board-sync's mutex). Contention is a bounded wait, not a skip: the loser waits,
+re-reads, and reports an honest `migrated: 0`.
+
+The risk the plan flagged was demonstrated, not assumed: two concurrent migrations against one temp
+board assert a single coherent outcome, and neutering the lock makes them fail with the exact
+double-rename race (`ENOENT: rename 'draft-1 - A.md'`). Also verified end-to-end against the BUILT
+`dist/mcp/server.js` on a real git repo: `draft-3` → `task-10` (id TASK-10, still a draft — never
+promoted), the dependent task's edge remapped, logs on stderr with stdout at 0 bytes.
+
+2233 tests / 153 files pass; lint, typecheck, and build clean; the MCP bundle stays vscode-free.
+<!-- SECTION:FINAL_SUMMARY:END -->
