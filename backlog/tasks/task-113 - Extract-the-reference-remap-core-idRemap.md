@@ -4,7 +4,7 @@ title: Extract the reference-remap core (idRemap)
 status: In Progress
 assignee: []
 created_date: '2026-07-12 16:41'
-updated_date: '2026-07-12 21:38'
+updated_date: '2026-07-12 21:39'
 labels:
   - stable-task-ids
 milestone: Stable Task IDs
@@ -74,3 +74,20 @@ For Task 6 (the migration): call `remapIds` AFTER all file moves are complete �
 
 Verification: `bun run test` 2114/2114 pass (147 files), `bun run lint` exit 0, `bun run typecheck` exit 0, prettier clean.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Shipped `src/core/idRemap.ts` — one pure, vscode-free core that rewrites every inbound reference to a set of renamed task IDs — and repointed `promoteDrafts` at it, closing the three fields it silently dangled.
+
+**What changed**
+- **New `src/core/idRemap.ts`**: `remapIds(deps: IdRemapDeps, oldToNew: Map<string,string>): Promise<string[]>`. Rewrites all five reference kinds across the live board (tasks + drafts) — `dependencies`, bug `caused_by`, `parent_task_id`, `subtasks`, `references[]` — and returns the IDs actually rewritten. Whole-ID, uppercased map lookup; never a substring/regex replace, so remapping TASK-1 cannot corrupt TASK-11. Empty map ⇒ returns `[]` with zero reads and zero writes.
+- **`src/core/BacklogWriter.ts`**: extended `updateTask` to persist `parentTaskId` → `parent_task_id` and `subtasks`. It previously handled `references` but neither of these, so two of the three gaps would have silently no-op'd. No serializer change needed — both keys were already in `FRONTMATTER_FIELD_ORDER` / `FRONTMATTER_OMIT_IF_EMPTY`, so field order stays byte-compatible with Backlog.md.
+- **`src/core/promoteDrafts.ts`**: the 30-line inline remap pass is gone; it now builds an `oldToNew` map (filtered to entries where the ID actually changed) and delegates to `remapIds`. Behavior unchanged — all 6 existing tests pass untouched.
+
+**Coverage**: `src/test/unit/idRemap.test.ts`, 15 tests — one per reference kind, all-five-kinds-on-one-task (reported once, not once per field), case-insensitive keys, shared-prefix non-corruption, non-ID `references[]` entries (paths/URLs) left verbatim, inbound refs held by a *draft*, zero-write no-op (spied), empty map, CRLF round-trip, and surgical-field (`category`/`claimed_by`) preservation through the rewrite.
+
+**Verification**: 2114/2114 unit tests pass (147 files), lint exit 0, typecheck exit 0, prettier clean.
+
+**For Task 6 (migration)**: call `remapIds` only *after* all file moves are complete — it re-reads the board from disk. The `from !== to` filter in `promoteDrafts` is a forward-compatible no-op today; it becomes load-bearing when Task 3 makes drafts mint stable task IDs and a draft promotes in place.
+<!-- SECTION:FINAL_SUMMARY:END -->
