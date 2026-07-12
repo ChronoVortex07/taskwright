@@ -528,4 +528,44 @@ test.describe('Tree find bar', () => {
     await expect(titleInput).toBeFocused();
     await expect(titleInput).toHaveValue('New feature idea');
   });
+
+  // --- Stale-nonce replay on remount (Important regression) ---
+
+  test('a tab round-trip does not reopen the find bar by itself (stale-nonce regression)', async ({
+    page,
+  }) => {
+    // findRequestNonce lives in Tasks.svelte and persists for the whole webview session,
+    // but TechTreeCanvas is destroyed and re-created on every tab switch ({:else if
+    // activeTab === 'tree'}). Before the fix, TechTreeCanvas seeded its own
+    // lastFindRequestNonce guard from 0 on every mount, so a prior `/` press (nonce bumped
+    // to 1, then closed with Escape) looked like a fresh bump on the NEXT mount — the find
+    // bar reopened and stole keyboard focus with no keystroke from the user.
+    await openFind(page, 'login');
+    await expect(page.getByTestId('tree-find-bar')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('tree-find-bar')).not.toBeVisible();
+
+    // Switch away from Tree (unmounts TechTreeCanvas) and back (remounts it) without
+    // touching find at all.
+    await page.getByTestId('tab-kanban').click();
+    await expect(page.getByTestId('tab-kanban')).toHaveAttribute('aria-selected', 'true');
+    await page.getByTestId('tab-tree').click();
+    await expect(page.getByTestId('tree-canvas')).toBeVisible();
+    await page.waitForTimeout(150);
+
+    // The bar must NOT have reopened on its own, and focus must not have been pulled into
+    // the search input.
+    await expect(page.getByTestId('tree-find-bar')).not.toBeVisible();
+    const activeTestId = await page.evaluate(() =>
+      document.activeElement?.getAttribute('data-testid')
+    );
+    expect(activeTestId).not.toBe('tree-search-input');
+
+    // Prove the fix didn't just disable the feature: a REAL `/` press after the round-trip
+    // still opens the bar.
+    await clickEmptyCanvas(page);
+    await page.keyboard.press('/');
+    await expect(page.getByTestId('tree-find-bar')).toBeVisible();
+    await expect(page.getByTestId('tree-search-input')).toBeFocused();
+  });
 });

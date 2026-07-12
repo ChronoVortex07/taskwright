@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import type { Task, TaskIdDisplayMode } from '../../lib/types';
   import { vscode } from '../../stores/vscode.svelte';
   import {
@@ -284,7 +284,16 @@ import ContextMenu from './ContextMenu.svelte';
   // It reads neither findResults/findMatchIds/dimmedIds nor any derived, so it adds no edge
   // to the find/dim derived graph — the "findResults may depend only on the primitive dim
   // sources" invariant documented below is untouched.
-  let lastFindRequestNonce = 0;
+  // Seeded from the prop's MOUNT-TIME value, NOT 0: findRequestNonce lives in Tasks.svelte
+  // and persists for the whole webview session, while this canvas is destroyed and
+  // re-created on every tab switch (see the {:else if activeTab === 'tree'} block in
+  // Tasks.svelte). Seeding from 0 would make a stale nonce from a PRIOR mount (e.g. after
+  // opening find with `/` and pressing Escape, then switching tabs and back) look like a
+  // fresh bump on remount, silently reopening the find bar and stealing keyboard focus with
+  // no keystroke from the user. Do not "normalize" this back to 0. `untrack` makes the
+  // one-time, non-reactive read explicit (and silences Svelte's `state_referenced_locally`
+  // warning, which would otherwise fire on every build for this deliberately-once read).
+  let lastFindRequestNonce = untrack(() => findRequestNonce);
   $effect(() => {
     if (findRequestNonce === lastFindRequestNonce) return;
     lastFindRequestNonce = findRequestNonce;
