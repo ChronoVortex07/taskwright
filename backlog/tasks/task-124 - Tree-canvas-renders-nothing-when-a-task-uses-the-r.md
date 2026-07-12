@@ -7,7 +7,7 @@ type: bug
 status: In Progress
 assignee: []
 created_date: '2026-07-12 17:28'
-updated_date: '2026-07-12 17:28'
+updated_date: '2026-07-12 17:32'
 labels:
   - bug
   - tree
@@ -33,9 +33,27 @@ Secondary hazard from the same line: `backburnerIdx` is computed as `bandOrder.l
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 deriveTreeLayout emits Backburner exactly once in bandOrder, and always LAST, even when tasks or the config declare a milestone named Backburner (any casing).
-- [ ] #2 A task whose milestone is Backburner is laid out in the Backburner band (not a phantom duplicate band), and backburnerIdx still points at the real Backburner band.
-- [ ] #3 Unit test in src/test/unit/treeLayout.test.ts fails on the duplicate (it is a pure-core regression, not a webview one).
-- [ ] #4 Verified in the real UI: injecting this repo's actual board payload into the tasks fixture and clicking the Tree tab renders >0 tree nodes with 0 page errors (before the fix: 0 nodes, each_key_duplicate).
-- [ ] #5 bun run test && bun run lint && bun run typecheck all pass.
+- [x] #1 deriveTreeLayout emits Backburner exactly once in bandOrder, and always LAST, even when tasks or the config declare a milestone named Backburner (any casing).
+- [x] #2 A task whose milestone is Backburner is laid out in the Backburner band (not a phantom duplicate band), and backburnerIdx still points at the real Backburner band.
+- [x] #3 Unit tests in src/test/unit/treeLayout.test.ts fail on the duplicate (pure-core regression).
+- [x] #4 Verified in the real UI: injecting this repo's actual board payload into the tasks fixture and clicking the Tree tab renders >0 tree nodes with 0 page errors (before the fix: 0 nodes, each_key_duplicate).
+- [x] #5 bun run test && bun run lint && bun run typecheck all pass (2099 tests).
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Found by reproducing the real UI, not by reading code: a Playwright script injected this repo's actual 115-task board payload (built exactly as TasksController does — note `TreeBoard.states` is a Map, so a naive `states[id]` lookup silently yields no layout and produces a false "0 nodes" result) into the tasks.html fixture and clicked the Tree tab. Result: the tab activated and #tree-view mounted, but 0 tree nodes rendered and the page threw exactly one error — https://svelte.dev/e/each_key_duplicate.
+
+The duplicate key was `bandOrder` containing "Backburner" twice. `deriveTreeLayout` de-duplicates declared and discovered milestone bands through `pushBand()`, then appended the reserved band with a raw `bandOrder.push(BACKBURNER_BAND)` that bypassed the dedupe. Several tasks on this board carry `milestone: Backburner` explicitly, so it was already present as a discovered band. The webview keys the band `{#each}` by band name ⇒ duplicate key ⇒ Svelte throws ⇒ the whole TechTreeCanvas subtree fails to render. No other repo has a Backburner milestone on a task, which is exactly why it reproduced only here.
+
+Fix: seed `seenBand` with `backburner` before the declared/discovered loops, so neither can inject the reserved band, and keep the single append at the end. NOTE for future maintainers: simply routing that final push through `pushBand()` would NOT have been correct — a discovered "Backburner" sorts into the middle of the discovered bands, while `backburnerIdx` is `bandOrder.length - 1`, so the index would then point at an unrelated band.
+
+Related hardening worth considering later: the create_milestone reserved-guard already blocks a milestone literally named Backburner, but nothing stops a task's `milestone` field from being set to it (drag-to-reslot, edit_task, hand-written frontmatter), so the layout core is the right place for the invariant.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The Tree tab renders again on this board. The reserved Backburner band was being emitted twice in bandOrder whenever a task explicitly used it as its milestone; the webview keys the band {#each} by name, so Svelte threw each_key_duplicate and the entire tree canvas rendered nothing. Backburner is now reserved up front and appended exactly once, last. Verified in the real UI against the actual 115-task board (0 nodes + 1 page error → 115 nodes + 0 errors) and by pure-core regression tests; 2099 unit tests, lint and typecheck green.
+<!-- SECTION:FINAL_SUMMARY:END -->
