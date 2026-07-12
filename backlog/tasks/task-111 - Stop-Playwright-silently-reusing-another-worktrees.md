@@ -66,3 +66,17 @@ Semantics, chosen to be ordering-independent: nothing listening ⇒ no-op (Playw
 
 Verification: `bun run test` 2150/2150 · `bun run test:playwright` 447/447 · `bun run lint` · `bun run typecheck` — all clean. New: `src/test/unit/fixtureServer.test.ts` (22 tests, incl. real `http.createServer` servers proving mismatch/foreign/absent/match).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+A Playwright run can no longer silently test another worktree's build.
+
+The fixture-server port is now derived from the checkout (`scripts/lib/fixtureServer.ts`): the primary keeps the documented **5173**, every linked `.worktrees/<branch>` gets a stable hash-derived port (this one: 5673). `vite.config.ts` and `playwright.config.ts` each derive it from their own `__dirname`, so a tree's server and its suite always agree — the fixed-port collision that let `reuseExistingServer` consume another tree's `dist/webview/` simply cannot occur, and two worktrees can now run the suite concurrently.
+
+As a backstop for anything else that lands on the port (hash collision, stale server, unrelated process), every fixture server stamps its identity at `GET /__taskwright_fixture_root`, and `e2e/global-setup.ts` aborts unless that root is THIS tree — naming both trees and the port. Proven end-to-end, not assumed: forcing the old collision via `TASKWRIGHT_FIXTURE_PORT=5199` against a server stamped with the primary's root made the suite exit 1 with exactly that message, where pre-change it would have passed against the wrong `dist/`.
+
+The pre-existing half-built-`dist/` guard is preserved and, having moved into the same lib, is now unit-tested too. Docs that hardcoded 5173 (AGENTS.md, visual-proof SKILL.md) explain the per-checkout port.
+
+2150/2150 unit (22 new) · 447/447 Playwright · lint · typecheck.
+<!-- SECTION:FINAL_SUMMARY:END -->
