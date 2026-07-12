@@ -36,12 +36,12 @@ Preserve CRLF/LF on the move (the existing `detectCRLF` / `normalizeToLF` / `res
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `promoteDraft` on a stable-id draft is a PURE MOVE: same id returned, file relocated drafts/ → tasks/, status preserved, old file gone.
-- [ ] #2 A Done draft promotes to a Done task (status preserved, not reset to the board default — P6/D2d).
-- [ ] #3 LEGACY path intact: a `DRAFT-N` draft still re-ids to a fresh `TASK-M` on promotion.
-- [ ] #4 `demoteTask` is likewise a pure move: same id, same status, file relocated tasks/ → drafts/.
-- [ ] #5 CRLF/LF is preserved across both moves.
-- [ ] #6 bun run test, bun run lint, bun run typecheck all pass.
+- [x] #1 `promoteDraft` on a stable-id draft is a PURE MOVE: same id returned, file relocated drafts/ → tasks/, status preserved, old file gone.
+- [x] #2 A Done draft promotes to a Done task (status preserved, not reset to the board default — P6/D2d).
+- [x] #3 LEGACY path intact: a `DRAFT-N` draft still re-ids to a fresh `TASK-M` on promotion.
+- [x] #4 `demoteTask` is likewise a pure move: same id, same status, file relocated tasks/ → drafts/.
+- [x] #5 CRLF/LF is preserved across both moves.
+- [x] #6 bun run test, bun run lint, bun run typecheck all pass.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -72,3 +72,17 @@ Two existing tests asserted the OLD contract and were repointed (strengthened, n
 
 Verify gate: **2184 tests pass, lint clean, typecheck clean.**
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Promote and demote are now pure file moves — the payoff of the Stable Task IDs chain.
+
+`promoteDraft` on a stable-id draft returns the SAME id: `drafts/` → `tasks/` is a rename, status and zero-padding ride along, and there is nothing to remap because nothing changed. `demoteTask` is the exact mirror, and the `getNextTaskId(backlogPath, 'draft')` re-id call that TASK-115 flagged as legacy is deleted — which incidentally kills a real bug, since demote used to re-id `TASK-11` → `DRAFT-9` while remapping nothing, dangling every inbound reference instantly.
+
+The legacy `DRAFT-N` path survives, gated by one new exported predicate `idHasPrefix(id, taskPrefix)` that tests the board's configured prefix rather than the literal string `DRAFT-` (so a `STORY`-prefixed board classifies its own drafts as stable). TASK-118's migration must reuse that same predicate.
+
+Also corrected the `promote_draft` / `promote_drafts` / `demote_task` MCP tool descriptions + handler JSDoc, which still promised agents "a new TASK-N id" / "new DRAFT-N id" — false as of this change, and the agent-facing surface for the exact behavior it alters.
+
+16 new tests in a real-fs `BacklogWriter.pureMove.test.ts` (pure moves, Done-status preservation, legacy re-id, custom prefix + zero padding, CRLF round-trips on both moves, create→demote→promote id round-trip, and a demoted dependency target whose dependent still resolves). Two tests asserting the old DRAFT-N contract were repointed and strengthened. Gate: 2184 tests, lint, typecheck all pass.
+<!-- SECTION:FINAL_SUMMARY:END -->
