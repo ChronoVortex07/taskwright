@@ -105,29 +105,6 @@ import ContextMenu from './ContextMenu.svelte';
   let selectedId = $state<string | null>(null);
   const lod = $derived(lodTier(vp.scale));
 
-  // --- Find (NOT filter). The navigator's navSearch filter is separate and untouched;
-  // find composes with it — a node the filter dimmed is not a find candidate.
-  let findOpen = $state(false);
-  let findQuery = $state('');
-  let findIdx = $state(0);
-  let findBar = $state<ReturnType<typeof TreeFindBar> | undefined>();
-
-  /** Match ids in spatial (reading) order. Only nodes the navigator filter left visible. */
-  const findResults = $derived.by(() => {
-    if (!findOpen) return [] as string[];
-    const candidates = layoutNodes.filter(
-      (t) => !navFilterDimmedIds.has(t.id) && !hiddenIds.has(t.id)
-    );
-    return findMatches(candidates, findQuery, geometry);
-  });
-  const findMatchIds = $derived(new Set(findResults));
-  const findActive = $derived(findOpen && findResults.length > 0);
-  /** Clamped so a shrinking result set (as the user types) can never leave findIdx past the end. */
-  const currentFindIdx = $derived(
-    findResults.length === 0 ? -1 : Math.min(findIdx, findResults.length - 1)
-  );
-  const currentFindId = $derived(currentFindIdx >= 0 ? findResults[currentFindIdx] : null);
-
   let popoverTaskId = $state<string | null>(null);
   let popoverX = $state(0);
   let popoverY = $state(0);
@@ -185,10 +162,44 @@ import ContextMenu from './ContextMenu.svelte';
   });
   const fadedIds = $derived(new Set<string>([...dimmedIds, ...hiddenIds]));
 
+  // --- Find (NOT filter). The navigator's navSearch filter is separate and untouched;
+  // find composes with it — a node the filter dimmed is not a find candidate. Declared
+  // here (below navFilterDimmedIds/hiddenIds/dimmedIds/fadedIds) so declaration order
+  // matches dependency order: findResults reads only the two primitive dim sources
+  // above it, never the composed dimmedIds/fadedIds — dimmedIds depends on find's
+  // output, so a find→dimmedIds/fadedIds dependency would be a reactive cycle
+  // (`derived_references_self`). Keep it that way.
+  let findOpen = $state(false);
+  let findQuery = $state('');
+  let findIdx = $state(0);
+  let findBar = $state<ReturnType<typeof TreeFindBar> | undefined>();
+
+  /** The one candidate predicate for find: nodes the navigator filter left visible. */
+  const findCandidates = $derived(
+    layoutNodes.filter((t) => !navFilterDimmedIds.has(t.id) && !hiddenIds.has(t.id))
+  );
+  /** Match ids in spatial (reading) order. */
+  const findResults = $derived.by(() => {
+    if (!findOpen) return [] as string[];
+    return findMatches(findCandidates, findQuery, geometry);
+  });
+  const findMatchIds = $derived(new Set(findResults));
+  const findActive = $derived(findOpen && findResults.length > 0);
+  /** Clamped so a shrinking result set (as the user types) can never leave findIdx past the end. */
+  const currentFindIdx = $derived(
+    findResults.length === 0 ? -1 : Math.min(findIdx, findResults.length - 1)
+  );
+  const currentFindId = $derived(currentFindIdx >= 0 ? findResults[currentFindIdx] : null);
+
   const draftNodes = $derived(
     layoutNodes.filter((t) => t.status === 'Draft' || t.folder === 'drafts')
   );
-  const promotableDrafts = $derived(draftNodes.filter((t) => !fadedIds.has(t.id)));
+  // Promote-all stays find-agnostic (find is not filter, and must never gate a write):
+  // it uses the navigator-filter dim/hidden sets directly, NOT fadedIds (which also
+  // folds in find's non-matches). Do not re-point this at fadedIds.
+  const promotableDrafts = $derived(
+    draftNodes.filter((t) => !navFilterDimmedIds.has(t.id) && !hiddenIds.has(t.id))
+  );
   function promoteAll() {
     vscode.postMessage({ type: 'promoteDrafts', taskIds: promotableDrafts.map((t) => t.id) });
   }
@@ -314,11 +325,10 @@ import ContextMenu from './ContextMenu.svelte';
     findQuery = q;
     findIdx = 0;
     // Center the first hit as the user types, so a query lands you somewhere immediately.
-    const first = findMatches(
-      layoutNodes.filter((t) => !navFilterDimmedIds.has(t.id) && !hiddenIds.has(t.id)),
-      q,
-      geometry
-    )[0];
+    // findResults already reflects this query: Svelte 5 deriveds are lazy/pull-based,
+    // so reading it here (after assigning findQuery above) yields the fresh value —
+    // no separate recomputation of the candidate predicate needed (M1).
+    const first = findResults[0];
     if (first) centerOn(first);
   }
 
@@ -795,6 +805,17 @@ import ContextMenu from './ContextMenu.svelte';
   }
 
   function onCanvasKeydown(e: KeyboardEvent) {
+    // Bail out for keystrokes originating in a text-entry element (e.g. TreeFindBar's
+    // input, which renders inside this container) — same convention as
+    // Tasks.svelte's handleGlobalKeydown — so bare j/k/arrows/`/` node-nav bindings
+    // below don't swallow the find box's own typing and caret movement.
+    const target = e.target as HTMLElement | null;
+    if (
+      target &&
+      (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+    ) {
+      return;
+    }
     if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
       e.preventDefault();
       openFind();
@@ -955,12 +976,19 @@ import ContextMenu from './ContextMenu.svelte';
       the region itself is intentionally not a tab stop. Svelte's aria-query
       classifies `application` as non-interactive and flags the pointer/key
       listeners; the role is intentional here.
+
+      tabindex="-1" below keeps it OUT of the tab order (still not a tab stop —
+      the comment above still holds) but makes it programmatically focusable, so
+      closeFind()'s viewportEl?.focus() actually lands focus somewhere that keeps
+      the canvas's own key bindings (/, Ctrl-F, j/k, arrows) alive after the find
+      bar closes, instead of falling through to <body>.
     -->
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
       class="tree-viewport"
       class:panning
       data-testid="tree-viewport"
+      tabindex="-1"
       bind:this={viewportEl}
       onpointerdown={onPointerDown}
       onpointermove={onPointerMove}
