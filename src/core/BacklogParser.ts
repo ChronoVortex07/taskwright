@@ -267,7 +267,10 @@ export class BacklogParser {
 
         if (task) {
           task.milestone = this.resolveMilestoneValue(task.milestone, milestones);
-          task.folder = (folderName === 'archive/tasks' ? 'archive' : folderName) as TaskFolder;
+          // Both archive subfolders (archive/tasks, archive/drafts) flatten to folder 'archive';
+          // the file PATH keeps the record of which side it was archived from, which is what
+          // restore routes on (TASK-117).
+          task.folder = (folderName.startsWith('archive/') ? 'archive' : folderName) as TaskFolder;
           tasks.push(task);
         }
       } catch (error) {
@@ -332,18 +335,26 @@ export class BacklogParser {
   }
 
   /**
-   * Get archived tasks from the archive/tasks/ folder.
+   * Get archived tasks from BOTH archive subfolders — archive/tasks/ and archive/drafts/.
    * Sets folder: 'archive' on all returned tasks.
+   *
+   * archive/drafts/ has been scaffolded since day one but nothing wrote to it until TASK-117
+   * routed archiving by folder. It must be enumerated here (and in getTask): an archived draft
+   * the parser cannot see is invisible to the board and unrestorable — data loss, not cosmetics.
    */
   async getArchivedTasks(): Promise<Task[]> {
-    return this.getTasksFromFolder('archive/tasks');
+    const [tasks, drafts] = await Promise.all([
+      this.getTasksFromFolder('archive/tasks'),
+      this.getTasksFromFolder('archive/drafts'),
+    ]);
+    return [...tasks, ...drafts];
   }
 
   /**
-   * Get a single task by ID, searching tasks/, then drafts/, then completed/, then archive/tasks/
+   * Get a single task by ID, searching tasks/, drafts/, completed/, then both archive subfolders.
    */
   async getTask(taskId: string): Promise<Task | undefined> {
-    for (const folder of ['tasks', 'drafts', 'completed', 'archive/tasks']) {
+    for (const folder of ['tasks', 'drafts', 'completed', 'archive/tasks', 'archive/drafts']) {
       const tasks = await this.getTasksFromFolder(folder);
       const found = tasks.find((t) => t.id === taskId);
       if (found) {

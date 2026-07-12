@@ -1425,7 +1425,7 @@ export async function completeTaskHandler(
   return { taskId: args.taskId, outcome: 'completed', path: dest };
 }
 
-/** Move a task into archive/tasks/. */
+/** Archive a task — into archive/tasks/, or archive/drafts/ when it lives in drafts/ (TASK-117). */
 export async function archiveTaskHandler(
   deps: McpHandlerDeps,
   args: { taskId: string }
@@ -1434,7 +1434,8 @@ export async function archiveTaskHandler(
   return { taskId: args.taskId, outcome: 'archived', path: dest };
 }
 
-/** Move an archived task back into tasks/ (or drafts/ for DRAFT- ids). */
+/** Restore an archived task to the folder it was archived FROM — archive/drafts/ → drafts/,
+ *  archive/tasks/ → tasks/. Routed by folder, never by id prefix (TASK-117). */
 export async function restoreTaskHandler(
   deps: McpHandlerDeps,
   args: { taskId: string }

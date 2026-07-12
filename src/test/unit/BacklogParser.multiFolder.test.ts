@@ -417,9 +417,16 @@ status: To Do
       vi.clearAllMocks();
     });
 
-    it('should return tasks from archive/tasks/ folder with folder set to archive', async () => {
+    /** Serve files only for the named archive subfolder; the other one reads as empty. */
+    function onlyIn(subfolder: 'tasks' | 'drafts', files: string[]): void {
       vi.mocked(fs.existsSync).mockReturnValue(true);
-      (fs.readdirSync as ReturnType<typeof vi.fn>).mockReturnValue(['task-1 - Archived-Task.md']);
+      (fs.readdirSync as ReturnType<typeof vi.fn>).mockImplementation((p: unknown) =>
+        toPosix(String(p)).endsWith(`archive/${subfolder}`) ? files : []
+      );
+    }
+
+    it('should return tasks from archive/tasks/ folder with folder set to archive', async () => {
+      onlyIn('tasks', ['task-1 - Archived-Task.md']);
       vi.mocked(fs.readFileSync).mockReturnValue(`---
 id: TASK-1
 title: Archived Task
@@ -436,6 +443,25 @@ status: Done
       expect(archived[0].title).toBe('Archived Task');
     });
 
+    it('should also enumerate archive/drafts/ — an archived draft must stay visible (TASK-117)', async () => {
+      onlyIn('drafts', ['task-9 - Archived-Draft.md']);
+      vi.mocked(fs.readFileSync).mockReturnValue(`---
+id: TASK-9
+title: Archived Draft
+status: To Do
+---
+`);
+
+      const parser = new BacklogParser('/fake/backlog');
+      const archived = await parser.getArchivedTasks();
+
+      expect(archived).toHaveLength(1);
+      expect(archived[0].id).toBe('TASK-9');
+      // Both archive subfolders flatten to 'archive'; the PATH records which side it came from.
+      expect(archived[0].folder).toBe('archive');
+      expect(toPosix(archived[0].filePath)).toContain('/archive/drafts/');
+    });
+
     it('should return empty array when no archive/tasks/ folder exists', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
 
@@ -446,11 +472,7 @@ status: Done
     });
 
     it('should parse multiple archived tasks', async () => {
-      vi.mocked(fs.existsSync).mockReturnValue(true);
-      (fs.readdirSync as ReturnType<typeof vi.fn>).mockReturnValue([
-        'task-1 - First.md',
-        'task-2 - Second.md',
-      ]);
+      onlyIn('tasks', ['task-1 - First.md', 'task-2 - Second.md']);
 
       const parser = new BacklogParser('/fake/backlog');
       vi.spyOn(parser, 'parseTaskFile').mockImplementation(async (filePath: string) => {

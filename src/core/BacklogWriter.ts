@@ -105,6 +105,23 @@ export function idHasPrefix(id: string, taskPrefix: string): boolean {
 }
 
 /**
+ * Is this file path inside `archive/drafts/`?
+ *
+ * The parser flattens both archive subfolders to `folder: 'archive'`, so the path is the only
+ * record of which side a task was archived from — and since TASK-115 the id cannot be asked (a
+ * draft is a `TASK-N` too). Restore reads this, never the id.
+ */
+export function isArchivedDraftPath(filePath: string): boolean {
+  return filePath.split(path.sep).join('/').includes('/archive/drafts/');
+}
+
+/** Is this file path inside either archive subfolder (`archive/tasks/` or `archive/drafts/`)? */
+export function isArchivedPath(filePath: string): boolean {
+  const posix = filePath.split(path.sep).join('/');
+  return posix.includes('/archive/tasks/') || posix.includes('/archive/drafts/');
+}
+
+/**
  * Error thrown when a file has been modified externally
  */
 export class FileConflictError extends Error {
@@ -394,19 +411,37 @@ export class BacklogWriter {
   }
 
   /**
-   * Archive a task (cancelled/duplicate) to the archive/tasks/ folder
+   * Archive a task (cancelled/duplicate). Routes by SOURCE FOLDER: a draft goes to
+   * archive/drafts/, a task to archive/tasks/ — so restore can put it back where it came from
+   * without ever reading the id. (archive/drafts/ has been scaffolded by initBacklog since the
+   * beginning and nothing had ever written to it.)
    */
   async archiveTask(taskId: string, parser: BacklogParser): Promise<string> {
-    const destinationPath = await this.moveTaskToFolder(taskId, 'archive/tasks', parser);
+    const task = await parser.getTask(taskId);
+    if (!task) {
+      throw new Error(`Task ${taskId} not found`);
+    }
+    const destFolder = task.folder === 'drafts' ? 'archive/drafts' : 'archive/tasks';
+    const destinationPath = await this.moveTaskToFolder(taskId, destFolder, parser);
     await this.sanitizeArchivedTaskLinks(taskId, parser);
     return destinationPath;
   }
 
   /**
-   * Restore an archived task: moves from archive/tasks/ back to tasks/ (or drafts/ for DRAFT- IDs)
+   * Restore an archived task to the folder it was archived FROM: archive/drafts/ → drafts/,
+   * archive/tasks/ → tasks/.
+   *
+   * This replaces the last id-prefix branch in the codebase (`startsWith('DRAFT-')`), which could
+   * not survive a draft being named TASK-112 (TASK-115). The folder is — and always was — the
+   * draftness marker.
    */
   async restoreArchivedTask(taskId: string, parser: BacklogParser): Promise<string> {
-    const destFolder = taskId.startsWith('DRAFT-') ? 'drafts' : 'tasks';
+    const task = await parser.getTask(taskId);
+    if (!task) {
+      throw new Error(`Task ${taskId} not found`);
+    }
+    // The parser reports both archive subfolders as folder 'archive', so inspect the path.
+    const destFolder = isArchivedDraftPath(task.filePath) ? 'drafts' : 'tasks';
     return this.moveTaskToFolder(taskId, destFolder, parser);
   }
 
@@ -570,10 +605,9 @@ export class BacklogWriter {
     }
 
     // Calculate destination path - go up from file to backlog root
-    // Files in archive/tasks/ are 3 levels deep, others are 2 levels deep
-    const isArchived = task.filePath.includes(path.join('archive', 'tasks'));
-    const backlogPath = isArchived
-      ? path.dirname(path.dirname(path.dirname(task.filePath))) // backlog/archive/tasks/file -> backlog/
+    // Files in archive/tasks/ and archive/drafts/ are 3 levels deep, others are 2 levels deep
+    const backlogPath = isArchivedPath(task.filePath)
+      ? path.dirname(path.dirname(path.dirname(task.filePath))) // backlog/archive/<sub>/file -> backlog/
       : path.dirname(path.dirname(task.filePath)); // backlog/tasks/file -> backlog/
     const destDir = path.join(backlogPath, destFolder);
     const fileName = path.basename(task.filePath);
