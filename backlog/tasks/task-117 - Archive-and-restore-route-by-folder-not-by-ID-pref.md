@@ -4,7 +4,7 @@ title: 'Archive and restore route by folder, not by ID prefix'
 status: In Progress
 assignee: []
 created_date: '2026-07-12 16:42'
-updated_date: '2026-07-12 23:19'
+updated_date: '2026-07-12 23:20'
 labels:
   - stable-task-ids
 milestone: Stable Task IDs
@@ -37,12 +37,12 @@ Modify `src/core/BacklogWriter.ts:371-386` (`archiveTask`, `restoreArchivedTask`
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `archiveTask` sends a draft to `archive/drafts/` and a task to `archive/tasks/`.
-- [ ] #2 `restoreArchivedTask` returns a draft to `drafts/` and a task to `tasks/` — routed by FOLDER, never by ID prefix.
-- [ ] #3 A `TASK-N` draft survives an archive → restore round-trip with its id and draftness intact (the regression the old `startsWith('DRAFT-')` branch could not survive).
-- [ ] #4 CONFIRMED (with a test): `BacklogParser` enumerates `archive/drafts/` so an archived draft is visible to `getTask`. If it did not before, it does now — an invisible archived draft is data loss.
-- [ ] #5 The `taskId.startsWith('DRAFT-')` branch is deleted — no runtime branch on an ID prefix remains in the codebase.
-- [ ] #6 bun run test, bun run lint, bun run typecheck all pass.
+- [x] #1 `archiveTask` sends a draft to `archive/drafts/` and a task to `archive/tasks/`.
+- [x] #2 `restoreArchivedTask` returns a draft to `drafts/` and a task to `tasks/` — routed by FOLDER, never by ID prefix.
+- [x] #3 A `TASK-N` draft survives an archive → restore round-trip with its id and draftness intact (the regression the old `startsWith('DRAFT-')` branch could not survive).
+- [x] #4 CONFIRMED (with a test): `BacklogParser` enumerates `archive/drafts/` so an archived draft is visible to `getTask`. If it did not before, it does now — an invisible archived draft is data loss.
+- [x] #5 The `taskId.startsWith('DRAFT-')` branch is deleted — no runtime branch on an ID prefix remains in the codebase.
+- [x] #6 bun run test, bun run lint, bun run typecheck all pass.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -76,3 +76,13 @@ Modify `src/core/BacklogWriter.ts:371-386` (`archiveTask`, `restoreArchivedTask`
 - `src/test/unit/BacklogParser.multiFolder.test.ts`: its `getArchivedTasks` fs mock returned the same files for every folder, so the union doubled them — the mock is now path-aware (`onlyIn(subfolder, files)`), plus a new test that `archive/drafts/` is enumerated.
 - Full suite: **2196 passed / 152 files**, lint + typecheck clean, prettier clean.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Archive and restore now route by the FOLDER a task's file lives in, never by parsing its id — the last runtime id-prefix branch (`taskId.startsWith('DRAFT-')` in `restoreArchivedTask`) is deleted, and a build-enforcing guard test fails if any source file reintroduces one.
+
+`archiveTask` sends a `drafts/` task to `archive/drafts/` (scaffolded since day one; this is its first writer) and everything else to `archive/tasks/`; `restoreArchivedTask` reads the archived file's path and puts it back where it came from. Confirmed the plan's data-loss warning was REAL: `BacklogParser` did not enumerate `archive/drafts/` at all, so an archived stable-id draft would have been invisible to `getTask`, absent from the Archive view, and unrestorable. `getTask` and `getArchivedTasks` now cover both archive subfolders, both flattening to `folder: 'archive'` — the file path is the sole record of which side a task was archived from, which is exactly what restore routes on. Also fixed `moveTaskToFolder`'s backlog-root derivation, which only recognised `archive/tasks` as 3-levels-deep and would have silently no-op'd a restore out of `archive/drafts/`.
+
+11 new tests in `src/test/unit/BacklogWriter.archiveFolder.test.ts` (real temp board, RED first: 6 of 11 failed), plus a path-aware fix and a new case in `BacklogParser.multiFolder.test.ts`. Full suite 2196 passing, lint + typecheck clean.
+<!-- SECTION:FINAL_SUMMARY:END -->
