@@ -419,6 +419,16 @@
         return;
       }
 
+      // Find (Ctrl/Cmd-F). Handled before the single-key switch, alongside Ctrl/Cmd-N.
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+        e.preventDefault();
+        const searchInput = document.querySelector(
+          '[data-testid="tree-search-input"], [data-testid="search-input"]'
+        ) as HTMLInputElement | null;
+        searchInput?.focus();
+        return;
+      }
+
       // With the create-form modal open, bare single-key shortcuts must not fire behind it
       // (e.g. focus on a form <select>/<button> is not INPUT/TEXTAREA, so `t`/`z`/… would
       // switch tabs). Escape stays live: the form's own <svelte:window> handles close.
@@ -445,7 +455,11 @@
         case 'r': vscode.postMessage({ type: 'refresh' }); break;
         case '/': {
           e.preventDefault();
-          const searchInput = document.querySelector('[data-testid="search-input"]') as HTMLInputElement;
+          // The Tree's find bar and the List's search box never coexist (each renders only
+          // on its own tab), so a union selector resolves to whichever is mounted.
+          const searchInput = document.querySelector(
+            '[data-testid="tree-search-input"], [data-testid="search-input"]'
+          ) as HTMLInputElement | null;
           searchInput?.focus();
           break;
         }
