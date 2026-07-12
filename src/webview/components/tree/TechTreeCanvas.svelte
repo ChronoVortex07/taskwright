@@ -343,6 +343,30 @@ import ContextMenu from './ContextMenu.svelte';
   let panning = $state(false);
   let panStart = { x: 0, y: 0, tx: 0, ty: 0 };
 
+  /**
+   * Gesture-scoped compositor hint (TASK-108).
+   *
+   * `will-change: transform` promotes `.tree-surface` to its own layer and tells
+   * the compositor to expect the transform to keep animating — so Chromium
+   * rasterizes the layer ONCE and scales that bitmap for later transforms rather
+   * than re-rasterizing text at the new scale. Left on permanently, zooming in
+   * magnifies a texture rendered at the old scale: blurry glyphs.
+   *
+   * So we only ask for the hint while a gesture is actually in flight (where it
+   * genuinely buys smooth panning) and drop it the moment the viewport settles,
+   * which is when the browser re-rasterizes the text crisply at the new scale.
+   * A wheel has no "end" event, so it settles on a short idle timer.
+   */
+  const WHEEL_SETTLE_MS = 180;
+  let wheeling = $state(false);
+  let wheelSettleTimer: ReturnType<typeof setTimeout> | undefined;
+  function markWheelGesture() {
+    wheeling = true;
+    if (wheelSettleTimer) clearTimeout(wheelSettleTimer);
+    wheelSettleTimer = setTimeout(() => (wheeling = false), WHEEL_SETTLE_MS);
+  }
+  const gesturing = $derived(panning || wheeling);
+
   function onPointerDown(e: PointerEvent) {
     const target = e.target as HTMLElement;
     if (target.closest('.tree-toolbar') || target.closest('.tree-popover')) return;
@@ -675,6 +699,7 @@ import ContextMenu from './ContextMenu.svelte';
   function onWheel(e: WheelEvent) {
     e.preventDefault();
     if (!viewportEl) return;
+    markWheelGesture();
     if (classifyWheel(e) === 'pan') {
       // Trackpad two-finger scroll → pan by the raw pixel deltas.
       setViewport({ scale: vp.scale, tx: vp.tx - e.deltaX, ty: vp.ty - e.deltaY });
@@ -876,6 +901,7 @@ import ContextMenu from './ContextMenu.svelte';
 
       <div
         class="tree-surface"
+        class:gesturing
         data-testid="tree-surface"
         style="width:{geometry.width}px; height:{geometry.height}px; transform: translate({vp.tx}px, {vp.ty}px) scale({vp.scale});"
       >
@@ -1014,6 +1040,11 @@ import ContextMenu from './ContextMenu.svelte';
     top: 0;
     left: 0;
     transform-origin: 0 0;
+  }
+  /* Only while the transform is genuinely animating. A standing `will-change`
+     here keeps the surface on a cached raster, so a zoom scales the old bitmap
+     and the node text comes out blurry (TASK-108). */
+  .tree-surface.gesturing {
     will-change: transform;
   }
   .tree-lane-collapsed {
