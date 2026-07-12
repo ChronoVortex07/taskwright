@@ -48,6 +48,11 @@ export { isReadOnlyTask, getReadOnlyTaskContext } from '../../core/types';
 export type { MergeMode } from '../../core/mergeQueue';
 export type { TreeLayout } from '../../core/treeLayout';
 
+// `export type { … } from` re-exports a name without binding it locally, so the two types
+// used in this file's own interfaces below must also be imported.
+import type { MergeTaskState } from '../../core/types';
+import type { MergeMode } from '../../core/mergeQueue';
+
 /**
  * Dashboard statistics data structure
  */
