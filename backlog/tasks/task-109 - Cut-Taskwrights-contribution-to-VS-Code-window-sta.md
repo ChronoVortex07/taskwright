@@ -1,7 +1,7 @@
 ---
 id: TASK-109
 title: Cut Taskwright's contribution to VS Code window startup time
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-12 06:21'
 updated_date: '2026-07-12 06:21'
@@ -12,6 +12,9 @@ milestone: Performance & Startup Cost
 dependencies: []
 priority: high
 category: 'Core Board'
+claimed_by: '@agent/task-109-cut-taskwright-s-contribution-to-vs-code-window-startup-time'
+worktree: task-109-cut-taskwright-s-contribution-to-vs-code-window-startup-time
+claimed_at: '2026-07-12 14:43'
 ---
 
 ## Description
