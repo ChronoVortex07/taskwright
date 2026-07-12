@@ -149,6 +149,19 @@ interface FrontmatterData {
  */
 export class BacklogWriter {
   /**
+   * Every folder a task id can live in. A task id must be unique across ALL of them:
+   * scanning only `tasks/` is why a restore from `archive/` could land on a live task's id,
+   * and — once drafts mint from this same counter — why a draft could collide with a task.
+   */
+  private static readonly ID_SCAN_DIRS: readonly string[] = [
+    'tasks',
+    'drafts',
+    'completed',
+    path.join('archive', 'tasks'),
+    path.join('archive', 'drafts'),
+  ];
+
+  /**
    * Create a new milestone file in backlog/milestones.
    * Mirrors upstream ID allocation semantics by scanning both active and archived milestone files.
    */
@@ -423,7 +436,7 @@ export class BacklogWriter {
     const config = await parser.getConfig();
     const taskPrefix = config.task_prefix || 'TASK';
     const zeroPadding = config.zero_padded_ids || 0;
-    const nextId = this.getNextTaskId(destDir, taskPrefix, crossBranchIds);
+    const nextId = this.getNextTaskId(backlogPath, taskPrefix, crossBranchIds);
     const paddedId = zeroPadding > 0 ? String(nextId).padStart(zeroPadding, '0') : String(nextId);
     const newTaskId = `${taskPrefix}-${paddedId}`.toUpperCase();
     const lowerPrefix = taskPrefix.toLowerCase();
@@ -759,13 +772,14 @@ export class BacklogWriter {
     const zeroPadding = config.zero_padded_ids || 0;
     const lowerPrefix = taskPrefix.toLowerCase();
 
-    // Scan for the next likely id (considering cross-branch IDs to avoid collisions), then
-    // claim it atomically: two concurrent creates can both scan before either has written
-    // (DRAFT-25) — allocateAndWrite retries the next candidate instead of colliding.
-    const scannedId = this.getNextTaskId(tasksDir, taskPrefix, crossBranchIds);
+    // Scan the WHOLE board for the next likely id (considering cross-branch IDs to avoid
+    // collisions), then claim it atomically under the shared lock namespace: two concurrent
+    // creates can both scan before either has written (DRAFT-25) — allocateAndWrite retries
+    // the next candidate instead of colliding.
+    const scannedId = this.getNextTaskId(backlogPath, taskPrefix, crossBranchIds);
 
     return this.allocateAndWrite(
-      tasksDir,
+      backlogPath,
       scannedId,
       (id) => `.${lowerPrefix}-${id}.lock`,
       (id) => {
@@ -846,13 +860,19 @@ export class BacklogWriter {
     const config = parser ? await parser.getConfig() : undefined;
     const status = opts?.status?.trim() || config?.default_status || 'To Do';
 
-    // Scan for the next likely id, then claim it atomically: two concurrent creates can
-    // both scan before either has written (DRAFT-25) — allocateAndWrite retries the next
-    // candidate instead of both landing on DRAFT-<N> under different filenames.
+    // Scan for the next likely id, then claim it atomically in the board's SHARED lock
+    // namespace: two concurrent creates can both scan before either has written (DRAFT-25) —
+    // allocateAndWrite retries the next candidate instead of both landing on DRAFT-<N> under
+    // different filenames.
+    //
+    // The draft counter is still separate here (TASK-115 makes drafts mint TASK-N from the
+    // shared counter). What matters now is that the LOCK lives in the one shared directory, so
+    // that when the counters merge the two writers actually contend instead of each winning a
+    // private lock.
     const scannedId = this.getNextDraftId(draftsDir);
 
     return this.allocateAndWrite(
-      draftsDir,
+      backlogPath,
       scannedId,
       (id) => `.draft-${id}.lock`,
       (id) => {
@@ -898,14 +918,28 @@ export class BacklogWriter {
    * per candidate so the id is baked into its frontmatter/filename.
    */
   private allocateAndWrite<T>(
-    dir: string,
+    backlogPath: string,
     startId: number,
     lockDirName: (id: number) => string,
     buildFile: (id: number) => { filePath: string; content: string; result: T }
   ): T {
+    // ONE shared lock namespace for the whole board. The lock dir used to live inside the
+    // TARGET directory (tasks/.task-N.lock vs drafts/.draft-N.lock) — two namespaces that
+    // could not see each other. Harmless while tasks and drafts had separate counters; a live
+    // clobber race (the TASK-48 bug, re-armed) the moment they share one.
+    //
+    // `.locks/` is transient state at the backlog ROOT: BacklogParser only ever enumerates the
+    // named board subfolders (tasks/drafts/completed/archive/*), and boardRef's BOARD_SUBDIRS
+    // allow-list is what the sync ref snapshots and autoSync stages — so it is never parsed as
+    // content and never committed.
+    const locksDir = path.join(backlogPath, '.locks');
+    if (!fs.existsSync(locksDir)) {
+      fs.mkdirSync(locksDir, { recursive: true });
+    }
+
     let candidate = startId;
     for (let attempts = 0; attempts < 10_000; attempts++) {
-      const lockDir = path.join(dir, lockDirName(candidate));
+      const lockDir = path.join(locksDir, lockDirName(candidate));
       try {
         fs.mkdirSync(lockDir);
       } catch (err) {
@@ -934,7 +968,7 @@ export class BacklogWriter {
       }
       return result;
     }
-    throw new Error(`Could not allocate a unique id under ${dir} after 10000 attempts`);
+    throw new Error(`Could not allocate a unique id under ${backlogPath} after 10000 attempts`);
   }
 
   /**
@@ -1044,24 +1078,35 @@ export class BacklogWriter {
   }
 
   /**
-   * Get the next available task ID number.
-   * Optionally scans cross-branch task IDs to avoid collisions.
+   * Get the next available task ID number, scanning EVERY folder a task id can occupy
+   * (tasks, drafts, completed, archive) plus any cross-branch ids.
+   *
+   * Takes the BACKLOG ROOT, not a single directory — a single-directory scan is exactly the
+   * bug this closes: `tasks/` alone left an archived task's id free to be re-minted, so
+   * restoring it collided with a live task. Drafts are scanned for the same reason, since a
+   * draft can carry a task id.
+   *
+   * The filename pattern is anchored on the configured `prefix`, so a legacy `draft-99 - X.md`
+   * sitting in `drafts/` contributes nothing to the max and cannot collide.
    */
   private getNextTaskId(
-    tasksDir: string,
+    backlogPath: string,
     prefix: string = 'task',
     crossBranchIds?: string[]
   ): number {
-    const files = fs.existsSync(tasksDir) ? fs.readdirSync(tasksDir) : [];
     let maxId = 0;
 
     const pattern = new RegExp(`^${prefix}-(\\d+)`, 'i');
-    for (const file of files) {
-      const match = file.match(pattern);
-      if (match) {
-        const id = parseInt(match[1], 10);
-        if (id > maxId) {
-          maxId = id;
+    for (const sub of BacklogWriter.ID_SCAN_DIRS) {
+      const dir = path.join(backlogPath, sub);
+      const files = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+      for (const file of files) {
+        const match = file.match(pattern);
+        if (match) {
+          const id = parseInt(match[1], 10);
+          if (id > maxId) {
+            maxId = id;
+          }
         }
       }
     }
