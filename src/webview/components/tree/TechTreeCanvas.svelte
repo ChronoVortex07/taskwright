@@ -26,6 +26,8 @@
   import MilestonePopover from './MilestonePopover.svelte';
   import InFlightPanel from './InFlightPanel.svelte';
 import ContextMenu from './ContextMenu.svelte';
+  import TreeFindBar from './TreeFindBar.svelte';
+  import { findMatches, cycleIndex } from '../../lib/treeFind';
 
   interface Props {
     tasks: Task[];
@@ -103,6 +105,29 @@ import ContextMenu from './ContextMenu.svelte';
   let selectedId = $state<string | null>(null);
   const lod = $derived(lodTier(vp.scale));
 
+  // --- Find (NOT filter). The navigator's navSearch filter is separate and untouched;
+  // find composes with it — a node the filter dimmed is not a find candidate.
+  let findOpen = $state(false);
+  let findQuery = $state('');
+  let findIdx = $state(0);
+  let findBar = $state<ReturnType<typeof TreeFindBar> | undefined>();
+
+  /** Match ids in spatial (reading) order. Only nodes the navigator filter left visible. */
+  const findResults = $derived.by(() => {
+    if (!findOpen) return [] as string[];
+    const candidates = layoutNodes.filter(
+      (t) => !navFilterDimmedIds.has(t.id) && !hiddenIds.has(t.id)
+    );
+    return findMatches(candidates, findQuery, geometry);
+  });
+  const findMatchIds = $derived(new Set(findResults));
+  const findActive = $derived(findOpen && findResults.length > 0);
+  /** Clamped so a shrinking result set (as the user types) can never leave findIdx past the end. */
+  const currentFindIdx = $derived(
+    findResults.length === 0 ? -1 : Math.min(findIdx, findResults.length - 1)
+  );
+  const currentFindId = $derived(currentFindIdx >= 0 ? findResults[currentFindIdx] : null);
+
   let popoverTaskId = $state<string | null>(null);
   let popoverX = $state(0);
   let popoverY = $state(0);
@@ -137,10 +162,25 @@ import ContextMenu from './ContextMenu.svelte';
     for (const t of layoutNodes) if (t.layout && collapsedSet.has(t.layout.lane)) set.add(t.id);
     return set;
   });
-  const dimmedIds = $derived.by(() => {
+  /**
+   * Ids dimmed by the navigator's own search/priority filter, independent of find. Kept
+   * separate from `dimmedIds` below so find's candidate computation never depends on its
+   * own output (folding find dimming into `dimmedIds` and then reading `dimmedIds` back
+   * out of `findResults` would be a reactive cycle).
+   */
+  const navFilterDimmedIds = $derived.by(() => {
     const set = new Set<string>();
     if (!navSearch.trim() && !navPriority) return set;
     for (const t of layoutNodes) if (!matchesFilter(t)) set.add(t.id);
+    return set;
+  });
+  const dimmedIds = $derived.by(() => {
+    const set = new Set<string>(navFilterDimmedIds);
+    // Find dim: with >=1 hit, every non-match fades back. A zero-result query dims
+    // NOTHING — fading the whole board conveys nothing and just hides the map.
+    if (findActive) {
+      for (const t of layoutNodes) if (!findMatchIds.has(t.id)) set.add(t.id);
+    }
     return set;
   });
   const fadedIds = $derived(new Set<string>([...dimmedIds, ...hiddenIds]));
@@ -180,19 +220,23 @@ import ContextMenu from './ContextMenu.svelte';
     }
   });
 
+  /** Center the viewport on a node. Shared by the navigator jump and the find cycle. */
+  function centerOn(taskId: string) {
+    const box = geometry.nodes.get(taskId);
+    if (!box || !viewportEl) return;
+    setViewport({
+      scale: vp.scale,
+      tx: viewportEl.clientWidth / 2 - (box.x + box.width / 2) * vp.scale,
+      ty: viewportEl.clientHeight / 2 - (box.y + box.height / 2) * vp.scale,
+    });
+  }
+
   // Jump to a specific task node when the navigator asks (nonce lets retrigger).
   let lastJumpTaskNonce = 0;
   $effect(() => {
     if (jumpTaskNonce === lastJumpTaskNonce) return;
     lastJumpTaskNonce = jumpTaskNonce;
-    const box = geometry.nodes.get(jumpTaskId);
-    if (box && viewportEl) {
-      setViewport({
-        scale: vp.scale,
-        tx: viewportEl.clientWidth / 2 - (box.x + box.width / 2) * vp.scale,
-        ty: viewportEl.clientHeight / 2 - (box.y + box.height / 2) * vp.scale,
-      });
-    }
+    centerOn(jumpTaskId);
   });
 
   // Minimap drag-to-pan: center the viewport on the normalized (x,y) world point.
@@ -251,6 +295,40 @@ import ContextMenu from './ContextMenu.svelte';
   }
   function closeMilestone() {
     milestoneBand = null;
+  }
+
+  function openFind() {
+    findOpen = true;
+    // The bar renders on the next tick; focus after it exists.
+    queueMicrotask(() => findBar?.focus());
+  }
+
+  function closeFind() {
+    findOpen = false;
+    findQuery = '';
+    findIdx = 0;
+    viewportEl?.focus();
+  }
+
+  function onFindQueryChange(q: string) {
+    findQuery = q;
+    findIdx = 0;
+    // Center the first hit as the user types, so a query lands you somewhere immediately.
+    const first = findMatches(
+      layoutNodes.filter((t) => !navFilterDimmedIds.has(t.id) && !hiddenIds.has(t.id)),
+      q,
+      geometry
+    )[0];
+    if (first) centerOn(first);
+  }
+
+  function stepFind(dir: 1 | -1) {
+    if (findResults.length === 0) return;
+    findIdx = cycleIndex(currentFindIdx, findResults.length, dir);
+    const id = findResults[findIdx];
+    // Center only — deliberately NOT handleSelect(): opening the popover posts
+    // popoverActiveChanged, which would rewrite the ephemeral active task on every Enter.
+    if (id) centerOn(id);
   }
 
   let restored = false;
@@ -717,6 +795,16 @@ import ContextMenu from './ContextMenu.svelte';
   }
 
   function onCanvasKeydown(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+      e.preventDefault();
+      openFind();
+      return;
+    }
+    if (e.key === '/' && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      openFind();
+      return;
+    }
     const key = e.key;
     if (!['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown', 'j', 'k'].includes(key)) return;
     const nodes = Array.from(viewportEl?.querySelectorAll<HTMLElement>('.tree-node') ?? []);
@@ -885,6 +973,18 @@ import ContextMenu from './ContextMenu.svelte';
       role="application"
       aria-label="Tech tree canvas"
     >
+      {#if findOpen}
+        <TreeFindBar
+          bind:this={findBar}
+          query={findQuery}
+          matchCount={findResults.length}
+          currentIndex={currentFindIdx}
+          onQueryChange={onFindQueryChange}
+          onNext={() => stepFind(1)}
+          onPrev={() => stepFind(-1)}
+          onClose={closeFind}
+        />
+      {/if}
       <AgeBandHeader
         bands={geometry.bands}
         scale={vp.scale}
@@ -943,6 +1043,8 @@ import ContextMenu from './ContextMenu.svelte';
               hovered={hoveredId === task.id}
               dimmed={dimmedIds.has(task.id)}
               hidden={hiddenIds.has(task.id)}
+              matched={findMatchIds.has(task.id)}
+              currentMatch={currentFindId === task.id}
               onSelect={handleSelect}
               onHover={(id) => (hoveredId = id)}
               onPromote={(pid) => vscode.postMessage({ type: 'promoteDraft', taskId: pid })}
