@@ -401,8 +401,8 @@ async function main(): Promise<void> {
     {
       title: 'Promote draft',
       description:
-        'Promote a draft (DRAFT-N) into a task with a new TASK-N id. Returns the promoted task summary.',
-      inputSchema: { taskId: z.string().describe('Draft ID to promote, e.g. DRAFT-3.') },
+        'Promote a draft into a real task. The id does NOT change — a draft carries its task id from birth (TASK-112 in drafts/ becomes TASK-112 in tasks/), so a reference written against a draft stays valid. Promotion is a pure file move; the status is preserved. (A legacy DRAFT-N draft is still re-id\'d to a fresh TASK-M.) Returns the promoted task summary.',
+      inputSchema: { taskId: z.string().describe('Draft ID to promote, e.g. TASK-112.') },
     },
     async (args) => runTool(() => promoteDraftHandler(deps, args))
   );
@@ -412,11 +412,11 @@ async function main(): Promise<void> {
     {
       title: 'Promote drafts (bulk)',
       description:
-        'Promote a SET of reviewed draft proposals (DRAFT-N) into real tasks at once, remapping every inbound dependency and bug caused_by reference so a linked proposal set keeps its structure. Use after the human has reviewed the drafts on the board. Returns { promoted: [{from,to}], remapped: [...] }.',
+        'Promote a SET of reviewed draft proposals into real tasks at once. Ids are stable, so a promoted draft keeps its id and the set keeps its structure for free; any LEGACY DRAFT-N draft that must be re-id\'d has every inbound dependency, caused_by, parent_task_id, subtask and reference rewritten to follow it. Use after the human has reviewed the drafts on the board. Returns { promoted: [{from,to}], remapped: [...] }.',
       inputSchema: {
         taskIds: z
           .array(z.string())
-          .describe('Draft IDs to promote together, e.g. ["DRAFT-1","DRAFT-2"].'),
+          .describe('Draft IDs to promote together, e.g. ["TASK-112","TASK-113"].'),
       },
     },
     async (args) => runTool(() => promoteDraftsHandler(deps, args))
@@ -427,7 +427,7 @@ async function main(): Promise<void> {
     {
       title: 'Demote task',
       description:
-        "Demote a task into a draft (new DRAFT-N id; the task's status is preserved — a Done task becomes a Done draft, P6/D2e). Returns the demoted task summary.",
+        "Demote a task back into a draft. A pure file move: the id does NOT change (so nothing that referenced the task dangles) and the status is preserved — a Done task becomes a Done draft (P6/D2e). The drafts/ folder is the provisional marker, not the id. Returns the demoted task summary.",
       inputSchema: { taskId: z.string().describe('Task ID to demote, e.g. TASK-7.') },
     },
     async (args) => runTool(() => demoteTaskHandler(deps, args))

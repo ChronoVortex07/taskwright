@@ -303,7 +303,7 @@ describe('draft lifecycle', () => {
     expect(promoted.status).toBe('To Do');
   });
 
-  it('demotes a task to a draft, preserving its real (non-default) status (P6/D2e)', async () => {
+  it('demotes a task to a draft as a pure move — id kept, real status preserved (TASK-116, P6/D2e)', async () => {
     const d = deps();
     await createTaskHandler(d, { title: 'Too early' });
     // Seed a NON-default status so the assertion is falsifying: 'Done' ≠ the config default
@@ -311,8 +311,11 @@ describe('draft lifecycle', () => {
     // migrate-on-read alias would surface the config default ('To Do'), not 'Done' — failing here.
     await editTaskHandler(d, { taskId: 'TASK-1', status: 'Done' });
     const demoted = await demoteTaskHandler(d, { taskId: 'TASK-1' });
-    expect(demoted.id).toMatch(/^DRAFT-\d+$/);
+    // TASK-116: demote keeps the id. Draftness is the FOLDER, so the file must land in drafts/.
+    expect(demoted.id).toBe('TASK-1');
     expect(demoted.status).toBe('Done'); // status preserved through demote
+    expect(fs.existsSync(path.join(backlogPath, 'drafts', 'task-1 - Too-early.md'))).toBe(true);
+    expect(fs.readdirSync(path.join(backlogPath, 'tasks'))).toEqual([]);
   });
 
   it('a Done baseline draft round-trips its status and promotes to a Done task (P6/D2)', async () => {
@@ -348,10 +351,12 @@ describe('promoteDraftsHandler', () => {
     const res = await promoteDraftsHandler(d, { taskIds: [base.id, 'TASK-2'] });
     expect(res.promoted).toHaveLength(2);
 
-    // Assert the INVARIANT, not a literal id: whatever id Base ends up with after promotion,
-    // the inbound dependency must point at it. (Promotion still re-ids until TASK-116 makes it
-    // a pure move — at which point from === to and this assertion holds unchanged.)
+    // Assert the INVARIANT: whatever id Base ends up with after promotion, the inbound
+    // dependency must point at it. Since TASK-116 promotion is a pure move, so `to === from`
+    // and the edge survives with nothing to remap at all — assert that too.
     const basePromotedId = res.promoted.find((p) => p.from === base.id)!.to;
+    expect(basePromotedId).toBe(base.id); // TASK-116: the id never changed
+    expect(res.remapped).toEqual([]); // …so there was nothing to rewrite
     const uses = fs.readFileSync(
       path.join(
         backlogPath,

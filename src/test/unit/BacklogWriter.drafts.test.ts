@@ -312,7 +312,7 @@ status: Draft
     });
   });
   describe('demoteTask', () => {
-    it('should preserve the task status on demote (P6/D2e)', async () => {
+    it('is a pure move: keeps the id and the status (TASK-116, P6/D2e)', async () => {
       const taskContent =
         '---\nid: TASK-5\ntitle: Some Task\nstatus: In Progress\n---\n\n## Description\nContent\n';
       vi.mocked(fs.readFileSync).mockReturnValue(taskContent);
@@ -320,10 +320,16 @@ status: Draft
 
       const newDraftId = await writer.demoteTask('TASK-5', mockParser);
 
-      expect(newDraftId).toBe('DRAFT-1');
-      expect(fs.renameSync).toHaveBeenCalled();
+      // TASK-116: demote no longer re-ids to DRAFT-N. The id is stable for life, so every
+      // inbound reference to TASK-5 keeps resolving; only the FOLDER changes.
+      expect(newDraftId).toBe('TASK-5');
+      expect(fs.renameSync).toHaveBeenCalledWith(
+        posixPath('/fake/backlog/tasks/task-5 - Some-Task.md'),
+        posixPath('/fake/backlog/drafts/task-5 - Some-Task.md')
+      );
       const writtenContent = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
-      expect(writtenContent).toContain('id: DRAFT-1');
+      expect(writtenContent).toContain('id: TASK-5');
+      expect(writtenContent).not.toContain('DRAFT-');
       expect(writtenContent).toContain('status: In Progress');
     });
   });

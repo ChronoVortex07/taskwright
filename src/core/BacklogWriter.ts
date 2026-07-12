@@ -93,6 +93,18 @@ export function nowTimestamp(): string {
 }
 
 /**
+ * Does this id belong to the board's task namespace (i.e. carry the configured prefix)?
+ *
+ * This is the ONLY legacy-draft test in the codebase. It deliberately does not look for the
+ * literal string 'DRAFT-': a board with a custom `task_prefix` must classify its own drafts as
+ * stable, not legacy. Both `promoteDraft` and the draft-id migration (TASK-118) use this one
+ * predicate — if they disagreed, a draft could be re-id'd by one and left in place by the other.
+ */
+export function idHasPrefix(id: string, taskPrefix: string): boolean {
+  return new RegExp(`^${taskPrefix}-\\d+`, 'i').test(id.trim());
+}
+
+/**
  * Error thrown when a file has been modified externally
  */
 export class FileConflictError extends Error {
@@ -411,9 +423,17 @@ export class BacklogWriter {
   }
 
   /**
-   * Promote a draft to a regular task: assigns new TASK-N ID, moves from drafts/ to tasks/,
-   * and PRESERVES the draft's real status (P6/D2d — a Done draft promotes to a Done task).
-   * Only a legacy/blank synthetic 'Draft' status is reset to the config default (or 'To Do').
+   * Promote a draft to a regular task.
+   *
+   * For a STABLE-ID draft (the normal case, since TASK-115) this is a PURE MOVE: drafts/ →
+   * tasks/, id and status untouched. Nothing needs remapping because no id changed — that is
+   * the whole point of minting task ids at draft creation, and it means a reference written
+   * against a draft (structurally, or in prose) stays valid forever.
+   *
+   * LEGACY FALLBACK: a draft whose id does not carry the configured `task_prefix` (an old
+   * DRAFT-N file, or one written by the upstream Backlog.md CLI) is re-id'd to a fresh TASK-M,
+   * exactly as before. Callers that need inbound references rewritten for that case should go
+   * through `promoteDrafts`, which runs `remapIds` when the id changes.
    */
   async promoteDraft(
     taskId: string,
@@ -432,14 +452,25 @@ export class BacklogWriter {
       fs.mkdirSync(destDir, { recursive: true });
     }
 
-    // Generate a new task ID
     const config = await parser.getConfig();
     const taskPrefix = config.task_prefix || 'TASK';
     const zeroPadding = config.zero_padded_ids || 0;
-    const nextId = this.getNextTaskId(backlogPath, taskPrefix, crossBranchIds);
-    const paddedId = zeroPadding > 0 ? String(nextId).padStart(zeroPadding, '0') : String(nextId);
-    const newTaskId = `${taskPrefix}-${paddedId}`.toUpperCase();
     const lowerPrefix = taskPrefix.toLowerCase();
+
+    // The id only changes for a LEGACY draft — one outside the board's task namespace.
+    const isLegacy = !idHasPrefix(task.id, taskPrefix);
+
+    let newTaskId: string;
+    let paddedId: string;
+    if (isLegacy) {
+      const nextId = this.getNextTaskId(backlogPath, taskPrefix, crossBranchIds);
+      paddedId = zeroPadding > 0 ? String(nextId).padStart(zeroPadding, '0') : String(nextId);
+      newTaskId = `${taskPrefix}-${paddedId}`.toUpperCase();
+    } else {
+      // Pure move: keep the id (and its existing zero padding) exactly as minted.
+      newTaskId = task.id;
+      paddedId = task.id.slice(task.id.lastIndexOf('-') + 1);
+    }
 
     // Build new filename from task title
     const sanitizedTitle = (task.title || 'Untitled')
@@ -449,11 +480,11 @@ export class BacklogWriter {
     const newFileName = `${lowerPrefix}-${paddedId} - ${sanitizedTitle}.md`;
     const destPath = path.join(destDir, newFileName);
 
-    // Move draft file to tasks/ with new name
+    // Move draft file to tasks/
     fs.renameSync(task.filePath, destPath);
     parser.invalidateTaskCache(task.filePath);
 
-    // Update frontmatter: new ID, status, and updated_date
+    // Update frontmatter: id (unchanged unless legacy), status, and updated_date
     const rawContent = fs.readFileSync(destPath, 'utf-8');
     const hasCRLF = detectCRLF(rawContent);
     const content = normalizeToLF(rawContent);
@@ -475,9 +506,12 @@ export class BacklogWriter {
   }
 
   /**
-   * Demote a task to a draft: assigns new DRAFT-N ID, moves from tasks/ to drafts/,
-   * and PRESERVES the task's real status (P6/D2e — the drafts/ folder is the provisional
-   * marker, orthogonal to completion status).
+   * Demote a task to a draft: a PURE MOVE from tasks/ to drafts/. The id and the status are
+   * both preserved — the drafts/ folder is the provisional marker (P6/D2e), and the id is
+   * stable for life (TASK-115). Nothing needs remapping because no id changed.
+   *
+   * (Before stable ids this re-id'd TASK-11 → DRAFT-9 and remapped nothing at all, so every
+   * inbound `dependencies: [TASK-11]` dangled instantly. That bug is gone.)
    */
   async demoteTask(taskId: string, parser: BacklogParser): Promise<string> {
     const task = await parser.getTask(taskId);
@@ -492,42 +526,34 @@ export class BacklogWriter {
       fs.mkdirSync(destDir, { recursive: true });
     }
 
-    // Generate a new draft ID.
-    //
-    // LEGACY (TASK-115): drafts now mint TASK-N from the shared counter, so `getNextDraftId`
-    // is gone — the general scanner, run over the legacy `draft` namespace, subsumes it (and
-    // scans every folder a draft-N file can hide in, not just drafts/). Demote still re-ids to
-    // DRAFT-N here; TASK-116 turns this whole method into a pure move and drops the call.
-    const nextId = this.getNextTaskId(backlogPath, 'draft');
-    const newDraftId = `DRAFT-${nextId}`;
+    const config = await parser.getConfig();
+    const lowerPrefix = (config.task_prefix || 'TASK').toLowerCase();
+    // Keep the id's numeric part verbatim, zero padding included.
+    const numericPart = task.id.slice(task.id.lastIndexOf('-') + 1);
 
     // Build new filename from task title
     const sanitizedTitle = (task.title || 'Untitled')
       .replace(/[^a-zA-Z0-9\s-]/g, '')
       .replace(/\s+/g, '-')
       .substring(0, 50);
-    const newFileName = `draft-${nextId} - ${sanitizedTitle}.md`;
+    const newFileName = `${lowerPrefix}-${numericPart} - ${sanitizedTitle}.md`;
     const destPath = path.join(destDir, newFileName);
 
-    // Move task file to drafts/ with new name
+    // Move task file to drafts/
     fs.renameSync(task.filePath, destPath);
     parser.invalidateTaskCache(task.filePath);
 
-    // Update frontmatter: new ID and updated_date (status preserved, P6/D2e)
+    // id and status are both preserved — only the timestamp moves.
     const rawContent = fs.readFileSync(destPath, 'utf-8');
     const hasCRLF = detectCRLF(rawContent);
     const content = normalizeToLF(rawContent);
     const { frontmatter, body } = this.extractFrontmatter(content);
-    frontmatter.id = newDraftId;
-    // P6/D2e: preserve the task's real status on demote (symmetric with promoteDraft) — the
-    // drafts/ folder is the provisional marker, so demoting no longer clobbers status to a
-    // synthetic 'Draft' (which would silently lose e.g. a Done task's status).
     frontmatter.updated_date = nowTimestamp();
     const updatedContent = restoreLineEndings(this.reconstructFile(frontmatter, body), hasCRLF);
     atomicWriteFileSync(destPath, updatedContent);
     parser.invalidateTaskCache(destPath);
 
-    return newDraftId;
+    return task.id;
   }
 
   /**

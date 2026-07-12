@@ -1443,9 +1443,10 @@ export async function restoreTaskHandler(
   return { taskId: args.taskId, outcome: 'restored', path: dest };
 }
 
-/** Promote a draft (DRAFT-N) to a task (new TASK-N id). Routes through the bulk core so
- *  inbound dependency/caused_by references are remapped (contract unchanged: returns the
- *  promoted task summary). */
+/** Promote a draft to a task. Ids are stable, so this is normally a pure move that KEEPS the
+ *  id (TASK-116). Still routes through the bulk core, which remaps inbound references for the
+ *  legacy DRAFT-N case where the id does change (contract unchanged: returns the promoted
+ *  task summary). */
 export async function promoteDraftHandler(
   deps: McpHandlerDeps,
   args: { taskId: string }
@@ -1466,7 +1467,8 @@ export async function promoteDraftsHandler(
   return promoteDrafts(deps, ids);
 }
 
-/** Demote a task to a draft (new DRAFT-N id; status preserved, P6/D2e). */
+/** Demote a task to a draft: a pure file move (TASK-116) — the id is KEPT, so nothing that
+ *  referenced the task dangles, and the status is preserved (P6/D2e). */
 export async function demoteTaskHandler(
   deps: McpHandlerDeps,
   args: { taskId: string }
