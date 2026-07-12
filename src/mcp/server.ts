@@ -268,7 +268,7 @@ async function main(): Promise<void> {
     {
       title: 'Create task',
       description:
-        'Create a new Backlog.md task (or draft) on the board. Returns the created task summary.',
+        'Create a new Backlog.md task (or draft) on the board. Fill in as many fields as you can up front — acceptance criteria, definition of done, implementation plan, references, priority, milestone, category, dependencies — so the task is unambiguous without a follow-up edit_task. Returns the created task summary.',
       inputSchema: {
         title: z.string().describe('Task title, imperative mood.'),
         description: z.string().optional(),
@@ -284,6 +284,21 @@ async function main(): Promise<void> {
           .array(z.string())
           .optional()
           .describe('Task IDs this task depends on (must exist; no cycles).'),
+        acceptanceCriteria: z
+          .array(z.object({ text: z.string(), checked: z.boolean().optional() }))
+          .optional()
+          .describe('Acceptance criteria checklist items (rendered as `- [ ] #N text`).'),
+        definitionOfDone: z
+          .array(z.object({ text: z.string(), checked: z.boolean().optional() }))
+          .optional()
+          .describe('Definition-of-done checklist items.'),
+        implementationPlan: z
+          .string()
+          .optional()
+          .describe('Implementation plan body (markdown). For a linked plan file, use attach_plan.'),
+        implementationNotes: z.string().optional().describe('Implementation notes body (markdown).'),
+        finalSummary: z.string().optional().describe('Final summary body (markdown).'),
+        references: z.array(z.string()).optional().describe('Reference URLs or paths.'),
         draft: z.boolean().optional().describe('Create as a draft (DRAFT-N in drafts/).'),
       },
     },

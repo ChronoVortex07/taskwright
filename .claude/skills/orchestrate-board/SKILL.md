@@ -137,7 +137,9 @@ Do this, in order:
    plan / independent subtasks / TDD), does the work in this worktree, records progress with
    `edit_task`, and closes by calling `request_merge` from inside the worktree — which rebases, runs
    the verify gate, waits its turn in the shared merge queue, fast-forward-merges, marks the task
-   Done, and removes the worktree.
+   Done, and removes the worktree. If a plan or spec gets authored while running the task,
+   `/execute-task` attaches it to the task with `attach_plan` so it lives on the board, not just in
+   the run's context.
 4. If `/execute-task` stops for cancellation (the worktree's `.taskwright/cancelled` marker is
    present, or the worktree vanished), do NOT `request_merge`; report
    {"status":"cancelled","taskId":"{{taskId}}"}.

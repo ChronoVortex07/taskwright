@@ -1,7 +1,7 @@
 ---
 name: execute-task
 description: Execute a single Taskwright task end-to-end in its isolated worktree — pick the right execution strategy, do the work, record progress, and close through the merge queue. Use when the user says /execute-task, or asks you to "execute", "work on", "do the task", or "run this task". Works from ANY session: a dispatched worktree session, or a primary-rooted session that bootstraps its own worktree via start_task. Subscription-safe: runs in-session, never spawns `claude -p`.
-allowed-tools: mcp__taskwright__get_active_task, mcp__taskwright__start_task, mcp__taskwright__claim_task, mcp__taskwright__edit_task, mcp__taskwright__request_merge, mcp__taskwright__release_task, mcp__taskwright__get_board, Skill(superpowers:executing-plans), Skill(superpowers:subagent-driven-development), Skill(superpowers:test-driven-development), Bash, Read, Grep, Glob
+allowed-tools: mcp__taskwright__get_active_task, mcp__taskwright__start_task, mcp__taskwright__claim_task, mcp__taskwright__edit_task, mcp__taskwright__attach_plan, mcp__taskwright__request_merge, mcp__taskwright__release_task, mcp__taskwright__get_board, Skill(superpowers:executing-plans), Skill(superpowers:subagent-driven-development), Skill(superpowers:test-driven-development), Skill(superpowers:writing-plans), Bash, Read, Grep, Glob
 ---
 
 # Execute task (Taskwright)
@@ -93,6 +93,12 @@ agent. The sub-skills it invokes (`superpowers:executing-plans`, `superpowers:su
    3. **Otherwise** ⇒ invoke `superpowers:test-driven-development` (write the failing test first,
       then implement).
       Precedence is **plan > independent-subtasks > TDD**.
+
+   **Attach any plan you author.** If the task had no plan but you write a spec or plan during
+   execution (e.g. via `superpowers:writing-plans` for a large/ambiguous task), link it to the
+   task with **`attach_plan`** — its checkbox progress then surfaces on the board and survives a
+   handoff. The same applies to a plan produced while orchestrating: a plan that outlives the
+   session belongs on the task, not just in your context.
 
 5. **Record progress.** As you go, use `edit_task` to append implementation notes (decisions,
    surprises) and, when done, a final summary. Do **not** call `complete_task` — `request_merge`

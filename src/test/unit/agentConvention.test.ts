@@ -69,6 +69,15 @@ describe('injectAgentsConvention', () => {
     expect(TASKWRIGHT_CONVENTION).not.toContain('request_merge');
   });
 
+  it('scopes the ask-which-task prompt to task-work requests, not standalone ones', () => {
+    // A standalone request (e.g. a code review) must not trigger a "which task?" clarification;
+    // only a "work on a board task" request with no named task should.
+    for (const block of [TASKWRIGHT_AGENTS_CONVENTION, TASKWRIGHT_CONVENTION]) {
+      expect(block).toMatch(/only when the user asked you to work on a board task/i);
+      expect(block).toMatch(/standalone request/i);
+    }
+  });
+
   it('stays within the Codex instruction budget by deferring detail to skills', () => {
     // AC#4: AGENTS.md must not inline the detailed workflows — it points at the
     // progressively-disclosed native skills instead, and stays under budget.

@@ -1339,6 +1339,12 @@ export interface CreateTaskArgs {
   type?: string;
   causedBy?: string;
   dependencies?: string[];
+  acceptanceCriteria?: ChecklistInput[];
+  definitionOfDone?: ChecklistInput[];
+  implementationPlan?: string;
+  implementationNotes?: string;
+  finalSummary?: string;
+  references?: string[];
   draft?: boolean;
 }
 
@@ -1352,7 +1358,15 @@ export async function createTaskHandler(
   if (args.priority !== undefined) assertValidPriority(args.priority, resolvePriorities(config));
   await assertDependenciesValid(deps, args.dependencies ?? []); // no targetId: new task cannot form a cycle
 
-  const created = await createTaskWithTreeFields(deps, args);
+  // Render checklist inputs to the string body form the core/writer expect (edit_task parity),
+  // so an author can seed acceptance criteria / DoD at create without a follow-up edit_task.
+  const created = await createTaskWithTreeFields(deps, {
+    ...args,
+    acceptanceCriteria: args.acceptanceCriteria
+      ? renderChecklist(args.acceptanceCriteria)
+      : undefined,
+    definitionOfDone: args.definitionOfDone ? renderChecklist(args.definitionOfDone) : undefined,
+  });
   return requireSummary(deps, created.id);
 }
 

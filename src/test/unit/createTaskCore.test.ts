@@ -278,6 +278,50 @@ describe('createTaskWithTreeFields — draft field completeness (GAP-2)', () => 
   });
 });
 
+describe('createTaskWithTreeFields — body-section + reference fields at create (edit_task parity)', () => {
+  it('folds acceptanceCriteria/definitionOfDone/implementationPlan/references into one updateTask (non-draft)', async () => {
+    const m = makeDeps();
+    await createTaskWithTreeFields(m.deps, {
+      title: 'Full task',
+      acceptanceCriteria: '- [ ] #1 works',
+      definitionOfDone: '- [ ] #1 tests pass',
+      implementationPlan: '1. do it',
+      implementationNotes: 'note',
+      finalSummary: 'done',
+      references: ['https://example.com'],
+    });
+    expect(m.updateTask).toHaveBeenCalledTimes(1);
+    expect(m.updateTask).toHaveBeenCalledWith(
+      'TASK-9',
+      {
+        acceptanceCriteria: '- [ ] #1 works',
+        definitionOfDone: '- [ ] #1 tests pass',
+        implementationPlan: '1. do it',
+        implementationNotes: 'note',
+        finalSummary: 'done',
+        references: ['https://example.com'],
+      },
+      m.deps.parser
+    );
+  });
+
+  it('draft create also carries body-section fields through the same updateTask', async () => {
+    const m = makeDeps();
+    await createTaskWithTreeFields(m.deps, {
+      title: 'Proposed',
+      draft: true,
+      acceptanceCriteria: '- [ ] #1 first',
+      priority: 'high',
+    });
+    expect(m.updateTask).toHaveBeenCalledTimes(1);
+    expect(m.updateTask).toHaveBeenCalledWith(
+      'DRAFT-1',
+      expect.objectContaining({ acceptanceCriteria: '- [ ] #1 first', priority: 'high' }),
+      m.deps.parser
+    );
+  });
+});
+
 describe('normalizeType', () => {
   it('accepts bug, blanks to undefined, rejects others', () => {
     expect(normalizeType('bug')).toBe('bug');

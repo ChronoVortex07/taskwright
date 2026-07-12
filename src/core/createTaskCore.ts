@@ -42,6 +42,17 @@ export interface CreateTaskCoreArgs {
   type?: string;
   causedBy?: string;
   dependencies?: string[];
+  /**
+   * Body-section fields, already rendered to the string form BacklogWriter.updateTask
+   * expects (AC/DoD as `- [ ] #N text` blocks). Accepted at create so an author can seed
+   * everything in one call — the caller renders checklist inputs before passing them here.
+   */
+  acceptanceCriteria?: string;
+  definitionOfDone?: string;
+  implementationPlan?: string;
+  implementationNotes?: string;
+  finalSummary?: string;
+  references?: string[];
   draft?: boolean;
   /** Post-create dependency wiring for drop-on-empty (built now for P3b; the P3a form never sets it). */
   linkTo?: CreateTaskLink;
@@ -112,9 +123,19 @@ export async function createTaskWithTreeFields(
   // type / dependencies go through BacklogWriter (both serialized there). On the DRAFT
   // path, createDraft accepts only title/description, so priority/milestone/labels/
   // assignee are folded into the SAME updateTask (GAP-2 — one write, not two).
-  const canonical: Partial<Task> = {};
+  // Body-section + references fields are written by neither createTask nor createDraft,
+  // so they fold into this same updateTask for BOTH paths (edit_task parity — an author
+  // seeds AC/DoD/plan/references at create without a follow-up edit_task).
+  const canonical: Record<string, unknown> = {};
   if (type !== undefined) canonical.type = type;
   if (dependencies.length > 0) canonical.dependencies = dependencies;
+  if (args.acceptanceCriteria !== undefined) canonical.acceptanceCriteria = args.acceptanceCriteria;
+  if (args.definitionOfDone !== undefined) canonical.definitionOfDone = args.definitionOfDone;
+  if (args.implementationPlan !== undefined) canonical.implementationPlan = args.implementationPlan;
+  if (args.implementationNotes !== undefined)
+    canonical.implementationNotes = args.implementationNotes;
+  if (args.finalSummary !== undefined) canonical.finalSummary = args.finalSummary;
+  if (args.references !== undefined) canonical.references = args.references;
   if (args.draft) {
     if (args.priority !== undefined) canonical.priority = args.priority;
     if (args.milestone !== undefined) canonical.milestone = args.milestone;
@@ -122,7 +143,7 @@ export async function createTaskWithTreeFields(
     if (args.assignee !== undefined) canonical.assignee = args.assignee;
   }
   if (Object.keys(canonical).length > 0) {
-    await deps.writer.updateTask(id, canonical, deps.parser);
+    await deps.writer.updateTask(id, canonical as Partial<Task>, deps.parser);
   }
 
   // category / caused_by are Taskwright-only: written surgically after create.

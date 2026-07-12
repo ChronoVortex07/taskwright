@@ -131,6 +131,19 @@ The **Set Up Claude Code Integration** command registers the MCP server at **use
 > claude mcp remove taskwright -s user
 > ```
 
+**User scope vs. project scope — why the general path is user scope.** The server _binary_
+(`dist/mcp/server.js`) ships **inside the extension**, not in your project; the board _data_
+(`backlog/`) lives in each project you initialize. User-scope registration points at the extension's
+bundled binary and roots it at whatever repo you open, so any of **your** Taskwright-initialized
+projects gets a working board with one registration. There is a **second** path used only when
+hacking on Taskwright's own source: this repo's committed `.mcp.json` launches the server via
+`scripts/taskwright-mcp.cjs`, which resolves _this checkout's_ built `dist/mcp/server.js` (and works
+in its `.worktrees/`). That launcher needs a built Taskwright source tree, so it only applies to the
+Taskwright repo itself — an end-user project has no build for it to find. If you develop Taskwright
+**and** have set up the user-scope entry, `claude mcp list` will flag a `taskwright` scope conflict;
+keep the project-scope entry here and drop the user-scope duplicate with
+`claude mcp remove taskwright -s user`.
+
 ## Development
 
 ```bash

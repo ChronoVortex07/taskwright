@@ -14,7 +14,7 @@ This project is managed with [Taskwright](https://github.com/ChronoVortex07/task
 2. Call **\`claim_task\`** with your task ID to mark it in progress, so parallel sessions in other worktrees don't collide. Claiming is advisory.
 3. When you finish or hand off, call **\`release_task\`**.
 
-The active task is chosen on the Taskwright board ("Set active") or set by a dispatch. If \`get_active_task\` reports none is set, ask which task to work on rather than assuming.`;
+The active task is chosen on the Taskwright board ("Set active") or set by a dispatch. If \`get_active_task\` reports none is set, ask which task to work on **only when the user asked you to work on a board task without naming one**. For a standalone request — a code review, a question, an ad-hoc change — just do what was asked; you don't need an active task.`;
 
 /**
  * Insert or update Taskwright's convention block in an existing CLAUDE.md body
@@ -43,7 +43,7 @@ This project is managed with [Taskwright](https://github.com/ChronoVortex07/task
 3. Do the work inside your worktree. Record progress with **\`edit_task\`** (implementationNotes / finalSummary).
 4. Close with **\`request_merge\`** from inside your worktree — it rebases, verifies, merges to the base branch, and marks the task Done.
 
-If \`get_active_task\` reports none is set, ask which task to work on rather than assuming.
+If \`get_active_task\` reports none is set, ask which task to work on **only when the user asked you to work on a board task without naming one**. For a standalone request — a code review, a question, an ad-hoc change — just do what was asked; you don't need an active task.
 
 The full workflows are **progressively disclosed as native skills** under \`.agents/skills/\` (\`create-task\`, \`execute-task\`, \`index-codebase\`, \`orchestrate-board\`) — invoke a skill by name to load its detailed instructions on demand instead of inlining them here.`;
 

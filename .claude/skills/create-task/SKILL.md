@@ -55,9 +55,12 @@ or plan is warranted) drafts files via `superpowers:writing-plans`.
 4. **Propose as drafts.** Commit the proposal so nothing hits the active board until the
    human promotes:
    - `create_category` first for any approved-new lane.
-   - `create_task` with `draft: true` for each task, setting `category`, `priority`,
-     `milestone`, and `dependencies` in the one call (drafts carry all of these). Use
-     `type: "bug"` + `causedBy` for a bug node. `create_subtask` for within-task breakdowns.
+   - `create_task` with `draft: true` for each task. **Fill in as many fields as you can in
+     that one call** so the draft is unambiguous and needs no follow-up `edit_task`: `category`,
+     `priority`, `milestone`, `dependencies`, and the body — `acceptanceCriteria`,
+     `definitionOfDone`, `implementationPlan`, `references`, `labels`, `assignee`, `description`
+     (drafts carry all of these). Use `type: "bug"` + `causedBy` for a bug node.
+     `create_subtask` for within-task breakdowns.
    - Drafts render as **proposed nodes** on the tree canvas.
 
 5. **Plans (optional).** When a task genuinely warrants a spec/plan (large or ambiguous
@@ -73,6 +76,8 @@ or plan is warranted) drafts files via `superpowers:writing-plans`.
 ## Rules of thumb
 
 - One task = one shippable PR; sequence with dependencies.
+- Front-load detail: seed every field you can at `create_task` time (acceptance criteria, DoD,
+  plan, references, priority, milestone) instead of creating a bare task and editing it after.
 - Reuse a lane before creating one; a new lane is a decision to surface, not assume.
 - Default milestone Backburner when the flow position is unknown.
 - Link to existing work over duplicating it.

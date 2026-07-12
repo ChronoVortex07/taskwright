@@ -4,6 +4,43 @@ All notable changes to Taskwright are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] — 2026-07-11
+
+The **Agent-authoring ergonomics** release: `create_task` takes a task's full field set in one call,
+the session-start convention no longer nags for a task on standalone requests, and plans authored
+mid-execution are attached to their task.
+
+### Added
+
+- **`create_task` full field parity with `edit_task`.** The `create_task` MCP tool now accepts the
+  same body and reference fields as `edit_task` — `acceptanceCriteria`, `definitionOfDone`,
+  `implementationPlan`, `implementationNotes`, `finalSummary`, and `references` — folded into a single
+  write on both the task and draft paths (`src/core/createTaskCore.ts`, `src/mcp/handlers.ts`,
+  `src/mcp/server.ts`). An author (human or agent) can seed a fully-specified task up front instead of
+  following every `create_task` with an `edit_task`. The tool description and the `create-task` skill
+  now instruct filling in as many fields as possible to avoid ambiguity.
+
+### Changed
+
+- **Scoped the "which task?" clarification to task-work requests.** The agent session-start convention
+  (the AGENTS.md/CLAUDE.md blocks in `src/core/agentConvention.ts` and the MCP server instructions in
+  `src/mcp/instructions.ts`) now asks which task to work on **only** when the user asked to work on a
+  board task without naming one. A standalone request — a code review, a question, an ad-hoc change —
+  proceeds without an active task instead of prompting for one.
+- **Plans authored mid-execution are attached to their task.** The `execute-task` skill gains
+  `attach_plan` (and `writing-plans`) plus an explicit step: any spec or plan written while running a
+  task is linked to the task with `attach_plan`, so its checkbox progress surfaces on the board and
+  survives a handoff. `orchestrate-board` documents that this happens via `/execute-task`.
+
+### Docs
+
+- **Clarified MCP registration scope.** The README's "MCP registration lifecycle" section now
+  explains why **user scope** is the general path (the server binary ships in the extension and roots
+  at whatever project you open, so any Taskwright-initialized project works with one registration)
+  versus the **project-scope** `.mcp.json` + `scripts/taskwright-mcp.cjs` path, which only applies
+  inside the Taskwright source checkout and its worktrees (the launcher needs a built `dist/`).
+  Includes how to resolve a `taskwright` scope conflict when developing Taskwright itself.
+
 ## [1.5.0] — 2026-07-11
 
 The **Cross-Agent Skills & Security-Hardening** release: Taskwright's workflow skills now install as

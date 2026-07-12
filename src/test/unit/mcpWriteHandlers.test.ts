@@ -73,6 +73,27 @@ describe('createTaskHandler', () => {
     expect(fs.existsSync(path.join(backlogPath, 'tasks', 'task-1 - Add-login.md'))).toBe(true);
   });
 
+  it('seeds acceptance criteria, definition of done, implementation plan, and references at create (edit_task parity)', async () => {
+    const summary = await createTaskHandler(deps(), {
+      title: 'Fully specified',
+      acceptanceCriteria: [{ text: 'login works' }, { text: 'logout works', checked: true }],
+      definitionOfDone: [{ text: 'tests pass' }],
+      implementationPlan: '1. Wire the form\n2. Add the endpoint',
+      references: ['https://example.com/spec'],
+    });
+    expect(summary.acceptanceCriteria).toHaveLength(2);
+    expect(summary.acceptanceCriteria[1].checked).toBe(true);
+    const file = fs.readFileSync(
+      path.join(backlogPath, 'tasks', 'task-1 - Fully-specified.md'),
+      'utf8'
+    );
+    expect(file).toMatch(/- \[ ] #1 login works/);
+    expect(file).toMatch(/- \[x] #2 logout works/);
+    expect(file).toMatch(/- \[ ] #1 tests pass/);
+    expect(file).toMatch(/Wire the form/);
+    expect(file).toMatch(/https:\/\/example\.com\/spec/);
+  });
+
   it('rejects an invalid status before writing anything', async () => {
     await expect(createTaskHandler(deps(), { title: 'X', status: 'Nope' })).rejects.toThrow(
       'Invalid status'
