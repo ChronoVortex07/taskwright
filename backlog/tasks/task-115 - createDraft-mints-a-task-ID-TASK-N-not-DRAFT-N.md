@@ -4,17 +4,16 @@ title: 'createDraft mints a task ID (TASK-N, not DRAFT-N)'
 status: To Do
 assignee: []
 created_date: '2026-07-12 16:41'
-updated_date: '2026-07-12 16:41'
+updated_date: '2026-07-12 22:48'
 labels:
   - stable-task-ids
 milestone: Stable Task IDs
 dependencies:
   - TASK-114
 references:
-  - docs/superpowers/plans/2026-07-12-stable-task-ids.md
-  - src/core/BacklogWriter.ts
+  - .taskwright/docs/HANDOFF.md
 priority: high
-category: 'Core Board'
+category: Core Board
 ---
 
 ## Description
@@ -38,3 +37,13 @@ Modify `src/core/BacklogWriter.ts:818-875` (`createDraft`) and **delete** `getNe
 - [ ] #5 Status-carrying drafts (P6/D2) still work: a draft can carry any real status, including Done.
 - [ ] #6 bun run test, bun run lint, bun run typecheck all pass.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Carry-over from the TASK-114 merge (READ BEFORE IMPLEMENTING): TASK-114 moved `allocateAndWrite` onto one shared `backlog/.locks/` namespace but deliberately left `createDraft` on `getNextDraftId` + `.draft-N.lock` — only the lock's LOCATION moved. When this task repoints `createDraft` at the task counter it must ALSO switch the lock name to `.${lowerPrefix}-${id}.lock`, identical to `createTask`'s. Sharing the lock directory without sharing the lock NAME leaves the two writers non-contending and re-opens the TASK-48 ID-clobber race.
+
+Also note: the lock only guards an OVERLAPPING writer (it is rmdir'd the instant the file is written), so any test that claims to prove the race must nest the second allocation inside the first's `buildFile` while the lock is still held; a sequential test passes for the test's reason, not the code's.
+
+Session handoff with the full chain context: .taskwright/docs/HANDOFF.md
+<!-- SECTION:NOTES:END -->
