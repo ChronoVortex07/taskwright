@@ -198,7 +198,13 @@ The test library lives in `src/test/cdp/lib/` and uses Chrome DevTools Protocol 
 3. Open a folder containing a `backlog/` directory with task files
 4. Click the **Backlog** icon in the activity bar to see views
 
-The extension activates when it detects `backlog/tasks/*.md` files.
+The extension activates when it detects a board config file at the workspace root
+(`backlog/config.yml`, `backlog/config.yaml`, their `.backlog/` equivalents, or
+`backlog.config.yml`) — a plain `workspaceContains:` path, which VS Code resolves with a single
+file stat. There are deliberately **no glob** activation events: a glob would force VS Code to
+search the whole workspace on every window open, before it could even decide whether to activate
+(TASK-109). A backlog root nested deeper in the tree therefore does not eager-activate — it
+activates when the Taskwright board view is opened.
 
 ### Architecture
 

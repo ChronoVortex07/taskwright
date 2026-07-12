@@ -4,6 +4,84 @@ All notable changes to Taskwright are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] — 2026-07-12
+
+The **performance** release: the tech tree stops repainting the whole board when you hover a node,
+zoomed node text rasterizes crisply again, and Taskwright no longer gates VS Code's eager-extension
+startup phase.
+
+### Fixed
+
+- **Hovering a node repainted the entire tech tree.** On a large board, moving the pointer onto and
+  off a node visibly flickered the whole canvas — every node and every edge, not just the hovered
+  one. `EdgeLayer.svelte` gave every edge path a `class:incident` and a `class:faded` derived from
+  the hovered node, so a single `pointerenter` rewrote **every** edge on the board: a
+  `MutationObserver` on a 120-node / 117-edge board counted **117 mutated elements per hover**. Each
+  of those paths also carried `transition: opacity 0.12s`, so all 117 _animated_ their opacity on
+  every hover in **and** out — and because `.tree-surface` was promoted to a single composited layer
+  (`will-change: transform`), that edge-only restyle re-rasterized every node with it.
+
+  The edge layer is now two layers: a **base group** holding every dependency edge, rendered once and
+  never touched by hover, and a **highlight overlay** carrying only the active node's incident edges,
+  drawn opaque on top. Fading the rest is a single `.has-active` class on the base group, with CSS
+  doing the dimming — **zero per-edge DOM writes**. The board-wide opacity transition is gone.
+  **117 → 2 mutated elements per hover.** The highlight/dim semantics and the bug→cause edge reveal
+  are unchanged. Coverage: `e2e/tree-hover-perf.spec.ts` (mutation budget on a synthetic large
+  board), plus updated `e2e/tree-canvas.spec.ts` hover assertions.
+
+- **Node text rendered blurry when zoomed in.** `.tree-surface` — the element carrying the pan/zoom
+  `transform: scale()` — had a permanent `will-change: transform`. That promotes it to its own
+  composited layer and tells Chromium the transform will keep animating, so it rasterizes the layer
+  once and then _scales that bitmap_ for later transforms rather than re-rasterizing text at the new
+  scale: zooming in magnified a texture rendered at the old scale.
+
+  The compositor hint is now **gesture-scoped** — applied while panning or wheeling (where it
+  actually buys smooth motion) and dropped once the viewport settles, which is exactly when the
+  browser re-rasterizes the text at the new scale. A wheel has no end event, so it settles on a short
+  idle timer. Coverage: `e2e/tree-zoom-raster.spec.ts`.
+
+  > **On the evidence:** this one is verified at the _property_ level, not by pixels. A screenshot
+  > **cannot** show stale-raster blur — capturing one forces the compositor to re-rasterize the layer,
+  > so the before/after images come out identical whether or not the bug is present. The tests assert
+  > that `will-change` is absent at rest, present mid-gesture, and released after settle.
+
+- **Taskwright was the last eager extension to activate, gating VS Code's startup.** The extension
+  host log showed Taskwright activating ~2.1s after the host started, holding up the
+  `Eager extensions activated` milestone — and therefore every `onStartupFinished` extension queued
+  behind it. The board data was never the cause: parsing the full 98-task board takes **40ms cold and
+  2ms warm** (`runBoardDoctor`: 1.5ms). Two things were:
+
+  1. **Every `activationEvents` entry was a recursive glob.** VS Code resolves a plain
+     `workspaceContains:` path with a single file `stat`, but a pattern containing glob
+     metacharacters goes through the **workspace search service** — walking the tree before it can
+     even decide whether to activate. See _Changed_ below.
+  2. **`activate()` fired a burst of git subprocesses inline**: the worktree guard, post-checkout
+     warn, board hooks, merge-config publish + verify doctor, sync-config publish, the board-sync
+     status bar, the git-auto bootstrap (ensure-worktree, fold-strays) and its **network fetch and
+     push**, plus the board doctor. Being un-awaited is not the same as being free — it all competed
+     with window startup. That work now runs through a new deferred runner
+     (`src/core/deferredBootstrap.ts`): once, ~2s after activation, cancellable, pull-forward-able,
+     and it never rejects into activation. The ordering the git-auto engine depends on is preserved
+     (housekeeping → status bar → ensure-worktree → fold-strays → first sync).
+
+  > **On the evidence:** the "before" is measured (extension-host log). The "after" — Taskwright no
+  > longer gating the eager milestone — has **not** yet been re-measured end-to-end, because that
+  > requires this build installed and the window reloaded.
+
+### Changed
+
+- **Activation events are plain paths, never globs.** The six recursive-wildcard `workspaceContains:`
+  patterns are replaced by `backlog/config.yml`, `backlog/config.yaml`, `.backlog/config.yml`,
+  `.backlog/config.yaml`, and `backlog.config.yml` — each a single file stat.
+
+  **Deliberate narrowing:** a backlog root nested _below_ the workspace root (e.g.
+  `packages/foo/backlog/`) no longer **eager**-activates. It still activates as soon as the Taskwright
+  board view is opened, which VS Code triggers from the contributed webview view. A regression test
+  (`src/test/unit/activationEvents.test.ts`) fails the build if a glob is reintroduced.
+
+- **Board and verify doctors run just after activation** rather than inside it, as part of the same
+  deferred bootstrap. Both remain silent when the board is clean.
+
 ## [1.6.1] — 2026-07-12
 
 The **stable MCP registration** release: Taskwright's MCP server no longer randomly disappears from
@@ -14,7 +92,7 @@ new Claude Code sessions.
 - **The Taskwright MCP server randomly dropped out of new Claude Code sessions** (a window reload
   brought it back). The user-scope registration is a **single global entry** in `~/.claude.json`,
   shared by every window and every running session — but `deactivate()` **removed** it, and
-  `activate()` re-added it. Since `deactivate` runs per *window*, reloading or closing **any**
+  `activate()` re-added it. Since `deactivate` runs per _window_, reloading or closing **any**
   Taskwright window deleted the server for every **other** open window too, and any session started
   before that window's next activation silently had no Taskwright tools. Two narrower races made it
   worse: re-registration was an unconditional `mcp remove` **then** `mcp add` (a window in which the

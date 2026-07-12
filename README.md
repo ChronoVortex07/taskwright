@@ -56,7 +56,8 @@ bands = milestones/ages. Pan, zoom, and level-of-detail scaling make large board
   wait for turn → fast-forward merge or open PR); merge-review board status with Approve/Send back;
   configurable verify timeout, machine-readable abort codes, progress notifications, and bounded waits
   that park as `pending` and resume idempotently.
-- **Doctors** — an activation-time board doctor detects and repairs board drift (dangling pointers,
+- **Doctors** — a startup board doctor (run just after activation, off the window-open critical path)
+  detects and repairs board drift (dangling pointers,
   orphaned worktrees, stale claims; also `taskwright.doctor` / the `board_doctor` MCP tool), and a
   verify-command doctor flags merge-verify commands that can't run in your repo and suggests runnable
   replacements.

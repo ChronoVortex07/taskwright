@@ -396,11 +396,42 @@ rebase_conflict`) so `/orchestrate-board` branches without parsing prose. **Dura
   by extension **id**, not version — which resolves the current build from a sibling pointer file that
   activation refreshes. **Do not reintroduce an unregister-on-deactivate**: `~/.claude.json` holds ONE
   global `taskwright` entry shared by every window and every running session, while `deactivate` runs per
-  *window*, so removing it there deleted the server for all other windows and made Taskwright vanish from
+  _window_, so removing it there deleted the server for all other windows and made Taskwright vanish from
   new sessions until a reload (the 1.6.1 bug). For the same reason registration is idempotent —
   `ensureTaskwrightMcpRegistered` (`src/core/claudeMcp.ts`) rewrites `~/.claude.json` only when the entry
   is missing or stale, because live sessions write that file too. Coverage:
   `src/test/unit/{globalMcpLauncher,claudeMcp}.test.ts`.
+
+- **Board performance + startup cost (m-11: TASK-107/108/109, 1.7.0)** ✅: three independent
+  perf defects, each measured before it was fixed. **Hover repaint storm (107):** `EdgeLayer.svelte`
+  derived a `class:incident`/`class:faded` per edge path from the hovered node, so ONE `pointerenter`
+  rewrote every edge — a `MutationObserver` on a 120-node board counted **117 mutated elements per
+  hover** — and each path carried `transition: opacity 0.12s`, so all of them animated on every hover
+  in and out. Amplified by the single composited layer (below), that repainted the whole canvas. The
+  edge layer is now a **base group** (every dependency edge, rendered once, never touched by hover) +
+  a **highlight overlay** (only the active node's incident edges, drawn opaque on top); the dim is one
+  `.has-active` class on the group with CSS doing the fade — **zero per-edge DOM writes, 117 → 2**. A
+  bug→cause edge has no base path (it only exists while incident), so the overlay is its one
+  incarnation and keeps the canonical `tree-edge-{from}-{to}` test id, while a dependency edge's
+  overlay stroke is the `-hl-` twin. **Zoom blur (108):** `.tree-surface` carried a permanent
+  `will-change: transform`, which pins the layer to a cached raster so a `scale()` magnifies the OLD
+  bitmap instead of re-rasterizing text — the hint is now **gesture-scoped** (`panning || wheeling`,
+  wheel settling on a 180ms idle timer) and dropped at rest, which is when the browser re-rasters
+  crisply. NOTE: this cannot be proven by screenshot — capturing one forces a re-raster, so stale-raster
+  blur never appears in the image; the tests assert the _property_ (absent at rest, present mid-gesture,
+  released after settle). **Startup cost (109):** the board was NOT the problem (98 tasks parse in 40ms
+  cold / 2ms warm); Taskwright was the last eager extension, gating `Eager extensions activated`. Two
+  causes: every `activationEvents` entry was a **glob** (VS Code stats a plain `workspaceContains:` path
+  but runs a full workspace SEARCH for a glob one) — now plain paths only, with
+  `src/test/unit/activationEvents.test.ts` failing the build if a glob returns, at the cost of a
+  deliberate narrowing (a nested backlog root no longer eager-activates; it activates on board-view
+  open) — and a burst of git subprocesses inline in `activate()` (worktree guard, post-checkout warn,
+  board hooks, merge-config + verify doctor, sync-config publish, status bar, git-auto bootstrap + its
+  network fetch/push, board doctor), now run once ~2s later via the pure
+  `src/core/deferredBootstrap.ts` (`createDeferredRunner` — at-most-once, cancellable, pull-forward-able,
+  never rejects into activation), preserving the ordering the git-auto engine depends on. Coverage:
+  `e2e/{tree-hover-perf,tree-zoom-raster}.spec.ts`,
+  `src/test/unit/{deferredBootstrap,activationEvents}.test.ts`.
 
 ## Conventions
 
