@@ -20,13 +20,18 @@
     hovered: boolean;
     dimmed?: boolean;
     hidden?: boolean;
+    /** Find (not filter): this node matches the active find query. */
+    matched?: boolean;
+    /** Find: this node is the CURRENT cycle target (Enter centered it). */
+    currentMatch?: boolean;
     onSelect: (id: string, meta?: Pick<Task, 'filePath' | 'source' | 'branch'>) => void;
     onHover: (id: string | null) => void;
     onPromote?: (id: string) => void;
   }
   let {
     task, x, y, w, h, lod, statuses, taskIdDisplay, selected, hovered,
-    dimmed = false, hidden = false, onSelect, onHover, onPromote,
+    dimmed = false, hidden = false, matched = false, currentMatch = false,
+    onSelect, onHover, onPromote,
   }: Props = $props();
 
   const doneStatus = $derived(statuses.length > 0 ? statuses[statuses.length - 1] : 'Done');
@@ -101,6 +106,8 @@
   class:hovered
   class:nav-dimmed={dimmed}
   class:nav-hidden={hidden}
+  class:find-match={matched}
+  class:find-current={currentMatch}
   class:lod-near={lod === 'near'}
   class:lod-mid={lod === 'mid'}
   class:lod-far={lod === 'far'}
@@ -449,5 +456,30 @@
   .tree-node.lod-mid {
     padding-top: 6px;
     padding-bottom: 6px;
+  }
+
+  /*
+   * Find rings (TASK: tree find bar). A match gets an accent ring; the CURRENT cycle
+   * target gets a thicker, brighter one. `box-shadow` (not `border`/`outline`) so the
+   * ring never changes the node's box and cannot reflow the canvas — and it composes
+   * additively with the existing selected/hovered shadows rather than replacing them.
+   */
+  .tree-node.find-match {
+    box-shadow: 0 0 0 2px var(--vscode-editor-findMatchHighlightBorder, var(--vscode-focusBorder));
+  }
+
+  .tree-node.find-current {
+    box-shadow:
+      0 0 0 3px var(--vscode-focusBorder),
+      0 0 12px 2px var(--vscode-focusBorder);
+    z-index: 3;
+  }
+
+  /*
+   * A match always outranks the find-dim: while a find is active every non-match is in
+   * `dimmedIds`, so a matched node must never also read as dimmed.
+   */
+  .tree-node.find-match.nav-dimmed {
+    opacity: 1;
   }
 </style>
