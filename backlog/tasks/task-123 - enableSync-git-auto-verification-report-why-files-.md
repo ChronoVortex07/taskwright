@@ -4,7 +4,7 @@ title: >-
   enableSync git-auto verification: report why files fail, tolerate EOL
   normalization, fold a drifted board worktree
 type: bug
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-12 16:48'
 updated_date: '2026-07-12 17:10'
@@ -14,9 +14,6 @@ labels:
 dependencies: []
 priority: high
 category: Board sync
-claimed_by: '@agent/task-123-enablesync-git-auto-verification-report-why-files-fail-tolerate-eol-normalization-fold-a-drifted-board-worktree'
-worktree: task-123-enablesync-git-auto-verification-report-why-files-fail-tolerate-eol-normalization-fold-a-drifted-board-worktree
-claimed_at: '2026-07-13 00:59'
 ---
 
 ## Description
