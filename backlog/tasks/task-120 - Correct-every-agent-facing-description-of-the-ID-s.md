@@ -1,7 +1,7 @@
 ---
 id: TASK-120
 title: Correct every agent-facing description of the ID space
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-12 16:43'
 updated_date: '2026-07-12 16:43'
@@ -18,6 +18,9 @@ references:
   - AGENTS.md
 priority: medium
 category: 'Docs & Branding'
+claimed_by: '@agent/task-120-correct-every-agent-facing-description-of-the-id-space'
+worktree: task-120-correct-every-agent-facing-description-of-the-id-space
+claimed_at: '2026-07-13 07:48'
 ---
 
 ## Description
