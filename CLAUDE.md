@@ -434,6 +434,29 @@ rebase_conflict`) so `/orchestrate-board` branches without parsing prose. **Dura
   never rejects into activation), preserving the ordering the git-auto engine depends on. Coverage:
   `e2e/{tree-hover-perf,tree-zoom-raster}.spec.ts`,
   `src/test/unit/{deferredBootstrap,activationEvents}.test.ts`.
+- **Tree find bar (1.8.0)** ✅: the Tree tab gets an in-canvas find (`/` or Ctrl/Cmd-F). It matches
+  on task **id + title + description** (the identical predicate the List tab's search already uses —
+  parity is the point), rings the matches, dims the non-matches, and Enter/Shift-Enter cycles the
+  current match in **spatial order** (band/x, then lane/y — Enter walks the board the way you read
+  it), re-centering the viewport via a shared `centerOn()` on each step. Escape closes it and
+  restores the canvas's own key bindings; prev/next/close buttons duplicate the keyboard controls.
+  New pure core `src/webview/lib/treeFind.ts` (match predicate, spatial ordering, wraparound cycle),
+  new `TreeFindBar.svelte`, find-match/find-current ring styling on `TreeNode.svelte`, find state +
+  dim folding + `centerOn()` in `TechTreeCanvas.svelte`. **It is a find, not a filter**: the
+  navigator sidebar's existing dim-filter is untouched and composes with it (a node the navigator
+  filter dims is not a find candidate), and an active find **never narrows a write** — notably the
+  "Promote all proposed" payload stays find-agnostic. Same change: an **empty-canvas left-click no
+  longer creates a task** — it previously made it impossible to click the Tree panel to focus it
+  (e.g. before pressing `/`) without accidentally authoring one; right-click's create-in-place
+  context menu is unaffected (see the P3b bullet above). **`$derived` acyclicity invariant for future
+  maintainers**: in `TechTreeCanvas.svelte`, `findResults` may depend ONLY on the primitive dim
+  sources (`navFilterDimmedIds`, `hiddenIds`) — NEVER on the composed `dimmedIds`/`fadedIds`. The
+  original design had exactly that cycle (`dimmedIds` folds in find's non-matches, `findResults` read
+  `dimmedIds` back out); Svelte 5 deriveds are lazy synchronous getters with no fixed-point
+  iteration, so a derived that transitively reads itself throws `derived_references_self` in dev and
+  stack-overflows in production — keep the two dim sources declared, and read, in that order.
+  Coverage: `src/test/unit/treeFind.test.ts`, `e2e/tree-find.spec.ts` (15 tests). Visual proof:
+  `docs/tree-find-bar-visual-proof.md`.
 
 ## Conventions
 

@@ -34,9 +34,13 @@ The **Tree tab** (default view) renders the board as a dependency graph: lanes =
 bands = milestones/ages. Pan, zoom, and level-of-detail scaling make large boards navigable.
 
 - **Drag surface** — drag-to-connect for dependency edges, drag-to-reslot to change category/milestone,
-  drag-to-reorder within a cell; click empty canvas to create a task pre-slotted into that lane/band.
+  drag-to-reorder within a cell; right-click empty canvas to create a task pre-slotted into that
+  lane/band (a plain left-click just focuses the canvas — it deliberately does not create).
 - **Create surface** — unified form (full / quick / bug modes) via keyboard shortcuts, the TabBar, or
   right-click; shared core ensures parity between human-authored and agent-authored tasks.
+- **Find bar** — `/` or Ctrl/Cmd-F opens an in-canvas find that matches on id/title/description,
+  rings matches, and Enter/Shift-Enter cycles them in spatial (band, then lane) order, re-centering
+  the viewport on each. A find, not a filter — it composes with the navigator sidebar's dim-filter.
 - **Interaction shell** — state-aware detail popover, milestone popover with release checklist, in-flight
   panel for active and merge-queue tasks, sidebar navigator with filterable minimap.
 

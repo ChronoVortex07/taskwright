@@ -4,6 +4,91 @@ All notable changes to Taskwright are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] — 2026-07-12
+
+The **tree find bar** release: the Tree tab gets an in-canvas find, and an empty-canvas left-click
+no longer accidentally authors a task.
+
+### Added
+
+- **Find bar on the Tree tab.** `/` or Ctrl/Cmd-F opens an in-canvas find bar that matches on task
+  **id + title + description** — the identical predicate the List tab's search already uses, so
+  search behaves the same on every tab. Matches get a ring, non-matches dim; Enter / Shift-Enter
+  cycles the current match and Escape closes the bar and restores the canvas's own key bindings.
+  Cycling walks matches in **spatial order** — sorted by band (x) then lane (y), not array order —
+  so Enter steps through the board the way a human reads it, left-to-right then top-to-bottom, and
+  each step re-centers the viewport on the new current match (`centerOn()` in
+  `TechTreeCanvas.svelte`). Prev/next/close buttons duplicate the keyboard controls for mouse users.
+  New pure core `src/webview/lib/treeFind.ts` (match predicate, spatial ordering, wraparound cycle
+  index — unit-tested without a webview), new `TreeFindBar.svelte`, and find-match/find-current ring
+  styling added to `TreeNode.svelte`.
+
+  **This is a find, not a filter.** The navigator sidebar's existing dim-filter is untouched and
+  composes with it — a node the navigator filter already dims is not a find candidate — and an
+  active find never narrows a write: the "Promote all proposed" payload stays find-agnostic even
+  with a query open.
+
+  > **For future maintainers — a `$derived` acyclicity trap.** In `TechTreeCanvas.svelte`,
+  > `findResults` may depend **only** on the two primitive dim sources, `navFilterDimmedIds` and
+  > `hiddenIds` — **never** on the composed `dimmedIds`/`fadedIds` (which themselves fold find's own
+  > output back in to dim non-matches). The original design had exactly that cycle
+  > (`dimmedIds` → `findResults` → `dimmedIds`). Svelte 5 deriveds are lazy, pull-based getters with
+  > no fixed-point iteration: reading a derived that transitively reads itself throws
+  > `derived_references_self` in dev and stack-overflows in a production build. The two sets are kept
+  > as separate deriveds, declared in dependency order, specifically to keep this cycle from
+  > reappearing — see the comments at `TechTreeCanvas.svelte` around `navFilterDimmedIds`/
+  > `findResults`.
+
+  Coverage: `src/test/unit/treeFind.test.ts` (pure core), `e2e/tree-find.spec.ts` (15 tests,
+  including a regression for each bug fixed below). Visual proof:
+  `docs/tree-find-bar-visual-proof.md`.
+
+### Changed
+
+- **An empty-canvas left-click no longer creates a task.** It previously made it impossible to
+  click the Tree panel just to focus it (e.g. before pressing `/`) without accidentally authoring a
+  task. Right-click's context menu remains the create-in-place path, inferring the clicked cell's
+  lane/band exactly as before; drag-to-connect dropped on empty canvas still opens the create form
+  pre-linked, since that's a drop gesture, not a click.
+
+### Fixed
+
+- **On a "cold" Tree tab, the first `/` or Ctrl-F did nothing.** The canvas's key handler is bound
+  to `.tree-viewport`, not `window`, so a keydown targeting `<body>` — which is where focus sits
+  before the user has clicked anything in the canvas — never reached it. Fixed with a mount-time
+  focus of the viewport (once per mount), which backs off if something else already holds focus so
+  it can't steal focus from, e.g., the create-task form's title input if a late/concurrent
+  `tasksUpdated` flips the canvas from empty-state to laid-out while that form is open (caught in
+  review; regression test added in `e2e/tree-find.spec.ts` driving that exact race).
+
+- **The find bar's prev/next/close buttons were visually present but silently unclickable by
+  mouse.** `TechTreeCanvas`'s `onPointerDown` had no guard for `.tree-find-bar` (only
+  `.tree-toolbar`/`.tree-popover` were excluded), so a pointerdown on a find-bar button fell through
+  to the empty-viewport pan branch and captured the pointer onto the canvas before the button ever
+  saw a click. Surfaced by adding e2e coverage that actually clicks the buttons instead of only
+  driving them via keyboard; fixed by adding the missing guard.
+
+- **A node with an active bug that was also a find match lost its red bug ring entirely.** In a
+  CSS `box-shadow` list the *first*-listed shadow paints on top, and `TreeNode.svelte`'s combined
+  `.has-active-bug.find-match` / `.has-active-bug.find-current` rules listed the larger-or-equal bug
+  ring spread first — so the bug ring fully occluded the find ring underneath (and for
+  `find-current`, alpha-blended into an almost-pure-blue smear). Fixed by reordering the shadows so
+  the smaller find ring is listed first (innermost, painted on top) and the bug ring uses a
+  strictly larger, non-overlapping spread listed after it, rendering as two distinct concentric
+  rings instead of one occluding the other. Re-verified with cropped, 2x-scaled screenshots in both
+  dark and light themes (`docs/tree-find-bar-visual-proof.md`) — confirming this is a genuine CSS
+  layering fix, not a theme-contrast coincidence.
+
+- **A half-built `dist/webview/` silently broke three unrelated `tree-canvas` tests.**
+  `dist/webview/styles.css` is emitted only by `build:css`, not `compile:webview` — running the
+  narrower build left it missing, which 404s silently in Chromium and collapses the fixture page's
+  entire height chain, so tests failed exactly like a code regression with no signal pointing at the
+  actual cause. This cost the project roughly an hour of misdiagnosis on this branch (and recurred a
+  second time during this branch's own final verification pass). `playwright.config.ts` now runs a
+  `globalSetup` (`e2e/global-setup.ts`) that asserts `dist/webview/{styles.css,tasks.js,tasks.css}`
+  exist before any test runs, failing loudly with the missing file(s) named instead of letting the
+  suite fail sideways.
+
 ## [1.7.0] — 2026-07-12
 
 The **performance** release: the tech tree stops repainting the whole board when you hover a node,
