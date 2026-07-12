@@ -172,13 +172,16 @@ describe('getBoardHandler', () => {
     const d = deps();
     await createTaskHandler(d, { title: 'Feature X', category: 'Features', milestone: 'v1' });
     await createTaskHandler(d, { title: 'Loose' }); // Misc + Backburner (omitted)
-    await createTaskHandler(d, { title: 'Idea', draft: true });
+    const idea = await createTaskHandler(d, { title: 'Idea', draft: true }); // TASK-3, in drafts/
     const board = await getBoardHandler(d, {});
     const byId = new Map(board.map((b) => [b.id, b]));
     expect(byId.get('TASK-1')!.category).toBe('Features');
     expect(byId.get('TASK-2')!.category).toBeUndefined(); // Misc not synthesized
     expect(byId.get('TASK-2')!.milestone).toBeUndefined(); // Backburner not synthesized
-    expect(byId.get('DRAFT-1')!.draft).toBe(true);
+    // TASK-115: the draft carries a TASK-N id from the shared counter — its `draft` flag comes
+    // from the FOLDER (drafts/), never from the id.
+    expect(idea.id).toBe('TASK-3');
+    expect(byId.get(idea.id)!.draft).toBe(true);
     expect(byId.get('TASK-1')!.draft).toBe(false);
   });
 

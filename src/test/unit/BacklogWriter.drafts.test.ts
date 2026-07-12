@@ -223,24 +223,28 @@ status: Draft
     });
   });
   describe('createDraft', () => {
-    it('should create a draft file in drafts/ folder', async () => {
+    it('should create a draft file in drafts/ folder with a stable TASK-N id', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(true);
       mockReaddirSync([]);
 
       const result = await writer.createDraft('/fake/backlog');
 
-      expect(result.id).toBe('DRAFT-1');
+      // TASK-115: a draft is TASK-N in drafts/, never DRAFT-N. The FOLDER is the draftness
+      // marker; the id is stable for life, so promoting it can never change it.
+      expect(result.id).toBe('TASK-1');
       expect(result.filePath).toContain('drafts');
-      expect(result.filePath).toContain('draft-1 - Untitled.md');
+      expect(result.filePath).toContain('task-1 - Untitled.md');
       expect(fs.writeFileSync).toHaveBeenCalled();
 
       const writtenContent = vi.mocked(fs.writeFileSync).mock.calls[0][1] as string;
       const match = writtenContent.match(/^---\n([\s\S]*?)\n---/);
       expect(match).toBeTruthy();
       const frontmatter = yaml.load(match![1]) as Record<string, unknown>;
-      expect(frontmatter.id).toBe('DRAFT-1');
+      expect(frontmatter.id).toBe('TASK-1');
       expect(frontmatter.title).toBe('Untitled');
       expect(frontmatter.status).toBe('To Do');
+      // Draftness is NEVER written into the file — no `draft: true` field.
+      expect(frontmatter.draft).toBeUndefined();
     });
 
     it('writes the given status when specified (P6/D2b â€” a Done baseline draft)', async () => {
@@ -264,14 +268,25 @@ status: Draft
       expect(frontmatter.status).toBe('Backlog');
     });
 
-    it('should generate sequential draft IDs', async () => {
+    it('should mint the next id from the shared TASK counter', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(true);
-      mockReaddirSync(['draft-1 - Untitled.md', 'draft-3 - Some-Draft.md']);
+      // The mocked readdir answers for every scanned folder; task-3 is the board-wide max.
+      mockReaddirSync(['task-1 - Untitled.md', 'task-3 - Some-Task.md']);
 
       const result = await writer.createDraft('/fake/backlog');
 
-      expect(result.id).toBe('DRAFT-4');
-      expect(result.filePath).toContain('draft-4 - Untitled.md');
+      expect(result.id).toBe('TASK-4');
+      expect(result.filePath).toContain('task-4 - Untitled.md');
+    });
+
+    it('ignores a legacy draft-N filename when minting (it is not in the task namespace)', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      mockReaddirSync(['draft-99 - Legacy.md', 'task-2 - Live.md']);
+
+      const result = await writer.createDraft('/fake/backlog');
+
+      // draft-99 carries no task prefix, so it contributes nothing to the counter.
+      expect(result.id).toBe('TASK-3');
     });
 
     it('should return uppercase ID', async () => {
@@ -280,8 +295,8 @@ status: Draft
 
       const result = await writer.createDraft('/fake/backlog');
 
-      expect(result.id).toBe('DRAFT-1');
-      expect(result.id).toMatch(/^DRAFT-\d+$/);
+      expect(result.id).toBe('TASK-1');
+      expect(result.id).toMatch(/^TASK-\d+$/);
     });
 
     it('should create drafts directory if missing', async () => {

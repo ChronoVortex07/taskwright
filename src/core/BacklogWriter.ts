@@ -492,8 +492,13 @@ export class BacklogWriter {
       fs.mkdirSync(destDir, { recursive: true });
     }
 
-    // Generate a new draft ID
-    const nextId = this.getNextDraftId(destDir);
+    // Generate a new draft ID.
+    //
+    // LEGACY (TASK-115): drafts now mint TASK-N from the shared counter, so `getNextDraftId`
+    // is gone — the general scanner, run over the legacy `draft` namespace, subsumes it (and
+    // scans every folder a draft-N file can hide in, not just drafts/). Demote still re-ids to
+    // DRAFT-N here; TASK-116 turns this whole method into a pure move and drops the call.
+    const nextId = this.getNextTaskId(backlogPath, 'draft');
     const newDraftId = `DRAFT-${nextId}`;
 
     // Build new filename from task title
@@ -832,16 +837,24 @@ export class BacklogWriter {
   }
 
   /**
-   * Create a new draft file in the drafts/ directory. `opts` lets callers seed
-   * the title and description; both default to the empty/"Untitled" form so
-   * existing callers are unaffected. `opts.status` sets the draft's real status
+   * Create a new draft file in the drafts/ directory.
+   *
+   * The draft carries a REAL task id (TASK-N) from birth (TASK-115), minted from the same
+   * shared counter as `createTask` — so promoting it never changes its id, and a reference
+   * written against it (in a spec, a handoff, another task's `dependencies`) stays valid
+   * forever. The drafts/ FOLDER is the provisional marker, which it already was everywhere in
+   * the codebase; the id says nothing about draftness and no `draft:` field is written.
+   *
+   * `opts` lets callers seed the title and description; both default to the empty/"Untitled"
+   * form so existing callers are unaffected. `opts.status` sets the draft's real status
    * (P6/D2b — drafts are status-carrying); it defaults to `config.default_status ?? 'To Do'`
    * (resolved via `parser`) when unspecified.
    */
   async createDraft(
     backlogPath: string,
     parser?: BacklogParser,
-    opts?: { title?: string; description?: string; status?: string }
+    opts?: { title?: string; description?: string; status?: string },
+    crossBranchIds?: string[]
   ): Promise<{ id: string; filePath: string }> {
     const draftsDir = path.join(backlogPath, 'drafts');
     if (!fs.existsSync(draftsDir)) {
@@ -858,26 +871,30 @@ export class BacklogWriter {
     // not a synthetic 'Draft'). Default to the board default when unspecified so authoring a
     // draft without a status, then promoting, is byte-identical to the pre-P6 flow.
     const config = parser ? await parser.getConfig() : undefined;
+    const taskPrefix = config?.task_prefix || 'TASK';
+    const zeroPadding = config?.zero_padded_ids || 0;
+    const lowerPrefix = taskPrefix.toLowerCase();
     const status = opts?.status?.trim() || config?.default_status || 'To Do';
 
-    // Scan for the next likely id, then claim it atomically in the board's SHARED lock
-    // namespace: two concurrent creates can both scan before either has written (DRAFT-25) —
-    // allocateAndWrite retries the next candidate instead of both landing on DRAFT-<N> under
-    // different filenames.
+    // Scan the WHOLE board for the next id (drafts mint from the TASK counter now), then claim
+    // it atomically in the board's SHARED lock namespace: two concurrent creates can both scan
+    // before either has written (DRAFT-25) — allocateAndWrite retries the next candidate.
     //
-    // The draft counter is still separate here (TASK-115 makes drafts mint TASK-N from the
-    // shared counter). What matters now is that the LOCK lives in the one shared directory, so
-    // that when the counters merge the two writers actually contend instead of each winning a
-    // private lock.
-    const scannedId = this.getNextDraftId(draftsDir);
+    // The lock NAME below is identical to createTask's (`.${lowerPrefix}-${id}.lock`), and it
+    // lives in createTask's directory (backlog/.locks/). Both halves are load-bearing: sharing
+    // the counter while keeping a private `.draft-N.lock` name would leave the two writers
+    // non-contending and re-arm the TASK-48 clobber — each would win its own lock and both
+    // would write id N.
+    const scannedId = this.getNextTaskId(backlogPath, taskPrefix, crossBranchIds);
 
     return this.allocateAndWrite(
       backlogPath,
       scannedId,
-      (id) => `.draft-${id}.lock`,
+      (id) => `.${lowerPrefix}-${id}.lock`,
       (id) => {
-        const draftId = `DRAFT-${id}`;
-        const fileName = `draft-${id} - ${sanitizedTitle}.md`;
+        const paddedId = zeroPadding > 0 ? String(id).padStart(zeroPadding, '0') : String(id);
+        const draftId = `${taskPrefix}-${paddedId}`.toUpperCase();
+        const fileName = `${lowerPrefix}-${paddedId} - ${sanitizedTitle}.md`;
         const filePath = path.join(draftsDir, fileName);
 
         const today = nowTimestamp();
@@ -969,26 +986,6 @@ export class BacklogWriter {
       return result;
     }
     throw new Error(`Could not allocate a unique id under ${backlogPath} after 10000 attempts`);
-  }
-
-  /**
-   * Get the next available draft ID number
-   */
-  private getNextDraftId(draftsDir: string): number {
-    const files = fs.existsSync(draftsDir) ? fs.readdirSync(draftsDir) : [];
-    let maxId = 0;
-
-    for (const file of files) {
-      const match = file.match(/^draft-(\d+)/i);
-      if (match) {
-        const id = parseInt(match[1], 10);
-        if (id > maxId) {
-          maxId = id;
-        }
-      }
-    }
-
-    return maxId + 1;
   }
 
   /**

@@ -5,7 +5,7 @@
  * filesystem-level atomicity — `mkdir` EEXIST is the mutex — so a mocked `fs` would prove
  * nothing. The other BacklogWriter suites mock `fs`; this one deliberately does not.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -119,15 +119,17 @@ describe('allocateAndWrite (shared lock namespace)', () => {
     expect(id).toBe('TASK-6');
   });
 
-  it('createDraft locks in the same shared namespace', async () => {
+  it('createDraft honours a lock held under the TASK name (shared dir AND shared name)', async () => {
+    // TASK-115. The two writers now share a counter, so they must also share a lock NAME:
+    // a lock dir keyed `.draft-N.lock` would be invisible to `.task-N.lock` and both writers
+    // would happily claim id 1 — the TASK-48 clobber, re-armed. Holding the task-named lock
+    // (as a concurrent createTask mid-write does) must make createDraft skip that id.
     fs.mkdirSync(locksDir(), { recursive: true });
-    fs.mkdirSync(path.join(locksDir(), '.draft-1.lock'));
+    fs.mkdirSync(path.join(locksDir(), '.task-1.lock'));
 
     const { id } = await writer.createDraft(backlogPath, parser, { title: 'Contender' });
 
-    // Both writers' locks now live in ONE directory — which is what makes the mutex work
-    // across them once they share a counter (and, from Task 3, a lock name).
-    expect(id).toBe('DRAFT-2');
+    expect(id).toBe('TASK-2');
   });
 
   it('releases the lock after a successful allocation', async () => {
@@ -203,6 +205,117 @@ describe('allocateAndWrite (shared lock namespace)', () => {
     expect(fs.existsSync(path.join(backlogPath, 'tasks', 'task-5 - tasks.md'))).toBe(true);
     expect(fs.existsSync(path.join(backlogPath, 'drafts', 'task-6 - drafts.md'))).toBe(true);
     expect(fs.existsSync(path.join(backlogPath, 'drafts', 'task-5 - drafts.md'))).toBe(false);
+  });
+});
+
+describe('createDraft (stable task ids — TASK-115)', () => {
+  it('mints a TASK-N id and writes into drafts/', async () => {
+    const { id, filePath } = await writer.createDraft(backlogPath, parser, {
+      title: 'Explore caching',
+    });
+
+    expect(id).toMatch(/^TASK-\d+$/);
+    expect(filePath).toContain(path.join('drafts', 'task-'));
+    expect(fs.readFileSync(filePath, 'utf-8')).toContain(`id: ${id}`);
+  });
+
+  it('shares ONE counter with createTask — ids are distinct and strictly increasing', async () => {
+    const a = await writer.createTask(backlogPath, { title: 'A' }, parser);
+    const b = await writer.createDraft(backlogPath, parser, { title: 'B' });
+    const c = await writer.createTask(backlogPath, { title: 'C' }, parser);
+
+    const num = (id: string) => parseInt(id.split('-')[1], 10);
+    expect(num(b.id)).toBe(num(a.id) + 1);
+    expect(num(c.id)).toBe(num(b.id) + 1);
+    expect(new Set([a.id, b.id, c.id]).size).toBe(3);
+  });
+
+  it('is still parsed as a draft — the FOLDER is the marker, not the id', async () => {
+    const { id } = await writer.createDraft(backlogPath, parser, { title: 'D' });
+
+    const drafts = await parser.getDrafts();
+    expect(drafts.map((d) => d.id)).toContain(id);
+
+    const task = await parser.getTask(id);
+    expect(task!.folder).toBe('drafts');
+    // No `draft: true` frontmatter field: draftness is never written into the file.
+    expect(fs.readFileSync(task!.filePath, 'utf-8')).not.toMatch(/^draft:/m);
+  });
+
+  it('honours a custom task_prefix and zero padding', async () => {
+    scaffold('story', 3);
+
+    const { id, filePath } = await writer.createDraft(backlogPath, parser, { title: 'E' });
+
+    expect(id).toMatch(/^STORY-\d{3}$/);
+    expect(filePath).toContain(path.join('drafts', 'story-'));
+  });
+
+  it('still carries a real status (P6/D2)', async () => {
+    const { id } = await writer.createDraft(backlogPath, parser, {
+      title: 'F',
+      status: 'Done',
+    });
+
+    const task = await parser.getTask(id);
+    expect(task!.status).toBe('Done');
+    expect(task!.folder).toBe('drafts');
+  });
+
+  it('does not re-mint an id already taken by a legacy DRAFT-N draft in drafts/', async () => {
+    // A legacy draft filename carries no task prefix, so it cannot feed the counter — but it
+    // must not be clobbered either. The stable-id draft simply lands beside it.
+    seed('drafts', 'draft-1 - Legacy.md', 'DRAFT-1');
+    seed('tasks', 'task-4 - Live.md', 'TASK-4');
+
+    const { id, filePath } = await writer.createDraft(backlogPath, parser, { title: 'New' });
+
+    expect(id).toBe('TASK-5');
+    expect(fs.existsSync(filePath)).toBe(true);
+    expect(fs.existsSync(path.join(backlogPath, 'drafts', 'draft-1 - Legacy.md'))).toBe(true);
+  });
+
+  it('a REAL createDraft OVERLAPPING a REAL createTask gets a distinct id', async () => {
+    // The carry-over from TASK-114, proven through the PUBLIC writers.
+    //
+    // The lock is rmdir'd the instant the file is written, so it only ever guards an
+    // OVERLAPPING writer. A `Promise.all([createTask, createDraft])` does NOT overlap them:
+    // allocateAndWrite is fully synchronous, so the first completes before the second starts
+    // and the test would pass on the scan alone — for the test's reason, not the code's.
+    //
+    // So we reproduce a genuine overlap: reconstructFile is called from inside createTask's
+    // `buildFile`, i.e. while the outer writer still holds `.locks/.task-1.lock`. A createDraft
+    // with no parser has no `await` before its own allocateAndWrite, so its whole allocation
+    // runs synchronously right there, inside the outer's lock window.
+    //
+    // With a per-writer lock NAME (`.draft-N.lock`) the inner writer cannot see the held claim,
+    // takes id 1 as well, and two files claim TASK-1. One shared name in one shared dir fixes it.
+    const w = writer as unknown as {
+      reconstructFile: (frontmatter: unknown, body: string) => string;
+    };
+    const original = w.reconstructFile.bind(writer);
+    let inner: { id: string; filePath: string } | undefined;
+    let overlapped = false;
+
+    vi.spyOn(w, 'reconstructFile').mockImplementation((frontmatter: unknown, body: string) => {
+      if (!overlapped) {
+        overlapped = true; // guard the re-entrant call from the inner writer
+        void writer
+          .createDraft(backlogPath, undefined, { title: 'Inner draft' })
+          .then((r) => (inner = r));
+      }
+      return original(frontmatter, body);
+    });
+
+    const outer = await writer.createTask(backlogPath, { title: 'Outer task' }, parser);
+    vi.restoreAllMocks();
+
+    expect(overlapped).toBe(true);
+    expect(outer.id).toBe('TASK-1');
+    expect(inner!.id).toBe('TASK-2'); // NOT TASK-1 — the shared lock name saw the held claim
+    expect(fs.existsSync(outer.filePath)).toBe(true);
+    expect(fs.existsSync(inner!.filePath)).toBe(true);
+    expect(fs.existsSync(path.join(backlogPath, 'drafts', 'task-1 - Inner-draft.md'))).toBe(false);
   });
 });
 

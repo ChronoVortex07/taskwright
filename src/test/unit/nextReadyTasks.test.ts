@@ -129,8 +129,9 @@ describe('nextReadyTasksHandler', () => {
   it('never returns drafts (a draft must be promoted before dispatch)', async () => {
     const d = deps();
     await createTaskHandler(d, { title: 'Real' }); // TASK-1
-    await createTaskHandler(d, { title: 'Idea', draft: true }); // DRAFT-1
+    await createTaskHandler(d, { title: 'Idea', draft: true }); // TASK-2, but in drafts/
     const ready = await nextReadyTasksHandler(d, {});
+    // Excluded by FOLDER (drafts/), not by an id prefix — the draft carries a TASK-N id too.
     expect(ready.map((r) => r.id)).toEqual(['TASK-1']);
   });
 

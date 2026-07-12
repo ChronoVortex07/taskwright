@@ -110,11 +110,10 @@ describe('createTaskHandler', () => {
 
   it('creates a draft when draft is set, with the given title', async () => {
     const summary = await createTaskHandler(deps(), { title: 'Spike caching', draft: true });
-    expect(summary.id).toBe('DRAFT-1');
+    // TASK-115: a draft mints a stable TASK-N id from the shared counter and lives in drafts/.
+    expect(summary.id).toBe('TASK-1');
     expect(summary.title).toBe('Spike caching');
-    expect(fs.existsSync(path.join(backlogPath, 'drafts', 'draft-1 - Spike-caching.md'))).toBe(
-      true
-    );
+    expect(fs.existsSync(path.join(backlogPath, 'drafts', 'task-1 - Spike-caching.md'))).toBe(true);
   });
 
   it('draft create writes priority + milestone into the DRAFT file (GAP-2)', async () => {
@@ -127,9 +126,9 @@ describe('createTaskHandler', () => {
       milestone: 'v1',
       category: 'Features',
     });
-    expect(summary.id).toBe('DRAFT-1');
+    expect(summary.id).toBe('TASK-1');
     const file = fs.readFileSync(
-      path.join(backlogPath, 'drafts', 'draft-1 - Proposed-feature.md'),
+      path.join(backlogPath, 'drafts', 'task-1 - Proposed-feature.md'),
       'utf-8'
     );
     expect(file).toMatch(/^priority:\s*high/m);
@@ -159,8 +158,9 @@ describe('BacklogWriter createDraft/createTask — concurrent id allocation (DRA
     expect(files).toHaveLength(N); // no clobber: every racer's file survives
 
     for (const id of ids) {
-      const num = id.replace(/^DRAFT-/, '');
-      const matching = files.filter((f) => new RegExp(`^draft-${num}\\b`, 'i').test(f));
+      // TASK-115: drafts mint TASK-N from the shared counter, so the file is task-N too.
+      const num = id.replace(/^TASK-/, '');
+      const matching = files.filter((f) => new RegExp(`^task-${num}\\b`, 'i').test(f));
       expect(matching).toHaveLength(1);
     }
 
@@ -187,7 +187,7 @@ describe('BacklogWriter createDraft/createTask — concurrent id allocation (DRA
   it('does not clobber a pre-existing draft when later concurrent creates race the id allocator', async () => {
     const d = deps();
     const first = await d.writer.createDraft(d.backlogPath, d.parser, { title: 'Pre-existing' });
-    expect(first.id).toBe('DRAFT-1');
+    expect(first.id).toBe('TASK-1');
 
     const N = 6;
     const racers = await Promise.all(
@@ -200,7 +200,7 @@ describe('BacklogWriter createDraft/createTask — concurrent id allocation (DRA
     const files = fs.readdirSync(path.join(backlogPath, 'drafts'));
     expect(files).toHaveLength(N + 1); // the pre-existing draft survives alongside all N racers
 
-    const firstFile = files.find((f) => /^draft-1\b/i.test(f));
+    const firstFile = files.find((f) => /^task-1\b/i.test(f));
     expect(firstFile).toBeTruthy();
     expect(fs.readFileSync(path.join(backlogPath, 'drafts', firstFile!), 'utf-8')).toContain(
       'Pre-existing'
@@ -297,8 +297,8 @@ describe('lifecycle moves', () => {
 describe('draft lifecycle', () => {
   it('promotes a draft to a task', async () => {
     const draft = await createTaskHandler(deps(), { title: 'Idea', draft: true });
-    expect(draft.id).toBe('DRAFT-1');
-    const promoted = await promoteDraftHandler(deps(), { taskId: 'DRAFT-1' });
+    expect(draft.id).toBe('TASK-1'); // TASK-115: stable id from birth
+    const promoted = await promoteDraftHandler(deps(), { taskId: draft.id });
     expect(promoted.id).toMatch(/^TASK-\d+$/);
     expect(promoted.status).toBe('To Do');
   });
@@ -323,13 +323,13 @@ describe('draft lifecycle', () => {
       status: 'Done',
       category: 'Platform',
     });
-    expect(draft.id).toBe('DRAFT-1');
+    expect(draft.id).toBe('TASK-1');
     const file = fs.readFileSync(
-      path.join(backlogPath, 'drafts', 'draft-1 - Auth-subsystem.md'),
+      path.join(backlogPath, 'drafts', 'task-1 - Auth-subsystem.md'),
       'utf-8'
     );
     expect(file).toMatch(/^status:\s*Done/m); // NOT a synthetic 'Draft'
-    const promoted = await promoteDraftHandler(d, { taskId: 'DRAFT-1' });
+    const promoted = await promoteDraftHandler(d, { taskId: draft.id });
     expect(promoted.id).toMatch(/^TASK-\d+$/);
     expect(promoted.status).toBe('Done'); // preserved on promote
   });
@@ -338,10 +338,20 @@ describe('draft lifecycle', () => {
 describe('promoteDraftsHandler', () => {
   it('bulk-promotes and rewires an inbound dependency', async () => {
     const d = deps();
-    await createTaskHandler(d, { title: 'Base', draft: true }); // DRAFT-1
-    await createTaskHandler(d, { title: 'Uses', draft: true, dependencies: ['DRAFT-1'] }); // DRAFT-2 → dep DRAFT-1
-    const res = await promoteDraftsHandler(d, { taskIds: ['DRAFT-1', 'DRAFT-2'] });
+    const base = await createTaskHandler(d, { title: 'Base', draft: true }); // TASK-1 (draft)
+    await createTaskHandler(d, {
+      title: 'Uses',
+      draft: true,
+      dependencies: [base.id],
+    }); // TASK-2 (draft) → dep TASK-1
+
+    const res = await promoteDraftsHandler(d, { taskIds: [base.id, 'TASK-2'] });
     expect(res.promoted).toHaveLength(2);
+
+    // Assert the INVARIANT, not a literal id: whatever id Base ends up with after promotion,
+    // the inbound dependency must point at it. (Promotion still re-ids until TASK-116 makes it
+    // a pure move — at which point from === to and this assertion holds unchanged.)
+    const basePromotedId = res.promoted.find((p) => p.from === base.id)!.to;
     const uses = fs.readFileSync(
       path.join(
         backlogPath,
@@ -350,7 +360,7 @@ describe('promoteDraftsHandler', () => {
       ),
       'utf-8'
     );
-    expect(uses).toMatch(/- TASK-1\b/);
+    expect(uses).toMatch(new RegExp(`- ${basePromotedId}\\b`));
     expect(uses).not.toMatch(/DRAFT/);
   });
 });
@@ -358,9 +368,9 @@ describe('promoteDraftsHandler', () => {
 describe('promoteDraftHandler (single, rerouted through the bulk core)', () => {
   it('still returns the promoted task summary (contract unchanged)', async () => {
     const d = deps();
-    await createTaskHandler(d, { title: 'Solo', draft: true }); // DRAFT-1
-    const summary = await promoteDraftHandler(d, { taskId: 'DRAFT-1' });
-    expect(summary.id).toBe('TASK-1');
+    const draft = await createTaskHandler(d, { title: 'Solo', draft: true }); // TASK-1 (draft)
+    const summary = await promoteDraftHandler(d, { taskId: draft.id });
+    expect(summary.id).toMatch(/^TASK-\d+$/);
     expect(summary.status).toBe('To Do');
   });
 });
