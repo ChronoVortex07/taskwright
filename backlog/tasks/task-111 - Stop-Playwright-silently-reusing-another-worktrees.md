@@ -1,7 +1,7 @@
 ---
 id: TASK-111
 title: Stop Playwright silently reusing another worktree's Vite server (wrong dist/)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-12 16:35'
 updated_date: '2026-07-12 16:35'
@@ -15,6 +15,9 @@ references:
   - e2e/global-setup.ts
 priority: medium
 category: Polish
+claimed_by: '@agent/task-111-stop-playwright-silently-reusing-another-worktree-s-vite-server-wrong-dist'
+worktree: task-111-stop-playwright-silently-reusing-another-worktree-s-vite-server-wrong-dist
+claimed_at: '2026-07-13 05:55'
 ---
 
 ## Description
