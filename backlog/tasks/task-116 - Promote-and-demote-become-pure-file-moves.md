@@ -1,7 +1,7 @@
 ---
 id: TASK-116
 title: Promote and demote become pure file moves
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-12 16:42'
 updated_date: '2026-07-12 16:42'
@@ -15,6 +15,9 @@ references:
   - src/core/BacklogWriter.ts
 priority: high
 category: 'Core Board'
+claimed_by: '@agent/task-116-promote-and-demote-become-pure-file-moves'
+worktree: task-116-promote-and-demote-become-pure-file-moves
+claimed_at: '2026-07-13 07:02'
 ---
 
 ## Description
