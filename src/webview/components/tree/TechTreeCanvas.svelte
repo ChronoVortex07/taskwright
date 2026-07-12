@@ -353,19 +353,26 @@ import ContextMenu from './ContextMenu.svelte';
     }
   });
 
-  // Give the canvas keyboard focus once, on mount, so `/`, Ctrl/Cmd-F, and arrow/j-k node
+  // Give the canvas keyboard focus once per mount, so `/`, Ctrl/Cmd-F, and arrow/j-k node
   // navigation work immediately on a "cold" Tree tab (opened but never clicked). Without
   // this, onCanvasKeydown — attached directly to `.tree-viewport`, not `window` — never
   // receives a keydown whose target is `<body>` (nothing has focused the viewport yet),
   // and Tasks.svelte's own window-level `/`/Ctrl-F handler only focuses an
   // already-rendered find/search input, which doesn't exist until openFind() runs — so a
-  // first keypress on a cold tab silently did nothing (TASK-7 e2e finding). A one-time
-  // flag keeps this from re-stealing focus on every re-render.
+  // first keypress on a cold tab silently did nothing (TASK-7 e2e finding). The `focusedOnce`
+  // flag keeps this from re-stealing focus on every re-render within a single mount — it is
+  // NOT once-per-session: TechTreeCanvas renders inside `{:else if activeTab === 'tree'}` in
+  // Tasks.svelte, so it unmounts/remounts on every tab switch and this flag resets each time.
+  // Only claim focus if nothing else already wants it (e.g. the create-task form's title
+  // input, which can autofocus on an empty board before a late/concurrent `tasksUpdated`
+  // flips `hasLayout` and mounts `viewportEl`) — never steal focus out from under the user.
   let focusedOnce = false;
   $effect(() => {
     if (focusedOnce || !viewportEl) return;
     focusedOnce = true;
-    viewportEl.focus();
+    const active = document.activeElement;
+    if (active && active !== document.body && active !== document.documentElement) return;
+    viewportEl.focus({ preventScroll: true });
   });
 
   let persistTimer: ReturnType<typeof setTimeout> | undefined;

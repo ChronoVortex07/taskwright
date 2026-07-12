@@ -309,4 +309,62 @@ test.describe('Tree find bar', () => {
     await expect(page.getByTestId('tree-find-bar')).toBeVisible();
     await expect(page.getByTestId('tree-search-input')).toBeFocused();
   });
+
+  test('the mount-time focus effect does not steal focus from the create-task form on an empty board (Important regression)', async ({
+    page,
+  }) => {
+    // Reproduces the reviewer's failure scenario directly, without reusing setupTreeView
+    // (which seeds a populated board): start from an EMPTY board so `hasLayout` is false
+    // and TechTreeCanvas renders tree-empty-state (TechTreeCanvas.svelte:936) instead of
+    // `.tree-viewport` — the mount-time focus effect has nothing to focus yet.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await installVsCodeMock(page);
+    await page.goto('/tasks.html');
+    await page.waitForTimeout(100);
+    await postMessageToWebview(page, {
+      type: 'statusesUpdated',
+      statuses: ['To Do', 'In Progress', 'Done'],
+    });
+    await postMessageToWebview(page, { type: 'milestonesUpdated', milestones: [] });
+    await postMessageToWebview(page, { type: 'activeTabChanged', tab: 'tree' });
+    await page.waitForTimeout(150);
+    await expect(page.getByTestId('tree-empty-state')).toBeVisible();
+
+    // Open the create-task form with a bare `n` (Tasks.svelte's window-level keydown
+    // handler; CreateTaskForm is hosted at the Tasks.svelte root, a sibling of the tab
+    // branch, so it renders regardless of activeTab) and start typing a title.
+    // CreateTaskForm.svelte autofocuses cf-title exactly once, on its own mount effect —
+    // it will not re-grab focus later, so this test is only meaningful if TechTreeCanvas's
+    // effect is the one that could steal it back.
+    await page.keyboard.press('n');
+    const titleInput = page.getByTestId('cf-title');
+    await expect(titleInput).toBeVisible();
+    await expect(titleInput).toBeFocused();
+    // fill() (not pressSequentially) because the `n` keydown that opens the form and
+    // CreateTaskForm's own mount-time autofocus both land within the same physical
+    // keystroke — the browser's default "insert n" can land in the freshly-focused input
+    // and leak a stray leading "n" into a typed sequence. That leak is unrelated to the
+    // focus-stealing behavior under test, so set the value directly.
+    await titleInput.fill('New feature idea');
+
+    // Now the board's first real data lands late — the initial refresh landing after the
+    // user started typing, or a concurrent agent/worktree writing the first task (this is
+    // Taskwright's own core workflow). tasksUpdated + treeLayoutUpdated flip `hasLayout`
+    // true, `.tree-viewport` mounts for the first time, and the mount-time focus effect
+    // (TechTreeCanvas.svelte ~365) fires. Before the fix it called `viewportEl.focus()`
+    // unconditionally and yanked focus out of the title input; after the fix it checks
+    // `document.activeElement` first and backs off because the title input already has it.
+    await postMessageToWebview(page, { type: 'tasksUpdated', tasks: treeTasks() });
+    await postMessageToWebview(page, {
+      type: 'treeLayoutUpdated',
+      laneOrder,
+      bandOrder,
+      warnings: [],
+    });
+    await page.waitForTimeout(150);
+    await expect(page.getByTestId('tree-canvas')).toBeVisible();
+
+    await expect(titleInput).toBeFocused();
+    await expect(titleInput).toHaveValue('New feature idea');
+  });
 });
