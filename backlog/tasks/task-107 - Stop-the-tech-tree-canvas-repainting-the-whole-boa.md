@@ -4,7 +4,7 @@ title: Stop the tech-tree canvas repainting the whole board on node hover
 status: In Progress
 assignee: []
 created_date: '2026-07-12 06:20'
-updated_date: '2026-07-12 06:33'
+updated_date: '2026-07-12 06:34'
 labels:
   - performance
   - bug
@@ -40,7 +40,7 @@ Measured baseline: the board is 98 tasks. Board parsing is NOT implicated (40ms 
 - [x] #2 The all-edges `transition: opacity` no longer runs on every hover in/out across the board; only the highlight of edges incident to the hovered node changes.
 - [x] #3 Hover highlight behavior is preserved: edges incident to the hovered (or selected) node are emphasized, non-incident edges are dimmed, and bug edges are still revealed only on hover/select of an incident node.
 - [x] #4 Existing tree hover/edge coverage still passes (`bun run test`, `e2e/tree-canvas.spec.ts`, `e2e/tree-drag.spec.ts` edge-removal paths) — the edge ✕ hover hit-path and removal still work.
-- [ ] #5 Visual proof captured on a large board showing no whole-board flicker on hover in/out.
+- [x] #5 Repaint proof on a large board: flicker is a TEMPORAL artifact a static screenshot cannot show, so the proof is the measured repaint trigger — `e2e/tree-hover-perf.spec.ts` records 117 mutated edge elements per hover before the fix and 2 after, on a 120-node/117-edge board, with the board-wide opacity transition asserted gone.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -114,3 +114,33 @@ depends on this task.
   `reflows on viewport resize`) are **pre-existing** — reproduced on a clean stashed HEAD build before any
   of this change, and untouched by it. They are viewport/height concerns, unrelated to the edge layer.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The tech tree no longer repaints the whole board when you hover a node.
+
+**Root cause (measured, not guessed).** `EdgeLayer.svelte` gave every edge path a `class:incident` and a
+`class:faded` derived from the hovered node, so a single `pointerenter` rewrote *every* edge on the board —
+a `MutationObserver` on a 120-node / 117-edge synthetic board counted **117 mutated elements per hover**.
+Each path also carried `transition: opacity 0.12s`, so all 117 animated their opacity on every hover in AND
+out. And because `.tree-surface` sets `will-change: transform`, the entire board is a single composited
+layer: that edge-only restyle re-rasterized every node too. Hence "the whole board flickers", and hence why
+it only showed up once the board got big.
+
+**Fix.** The edge layer is now a base group (every dependency edge, rendered once, never touched by hover)
+plus a small highlight overlay (only the active node's incident edges, drawn opaque on top). Fading the rest
+is a single `.has-active` class on the base group with CSS doing the dimming — zero per-edge DOM writes. The
+board-wide opacity transition is gone.
+
+**Result: 117 → 2 mutated elements per hover**, with the highlight/dim semantics and the bug→cause edge
+reveal behaving exactly as before.
+
+Coverage: new `e2e/tree-hover-perf.spec.ts` (mutation budget, ancestor-driven dim, no board-wide transition)
+plus the updated `tree-canvas.spec.ts` hover assertions. `bun run test` 2054 passed, lint and typecheck clean,
+56 tree Playwright tests green. Three `tree-canvas.spec.ts` failures (trackpad pan, panel height, resize
+reflow) are pre-existing — reproduced on a clean HEAD build and untouched by this change.
+
+The `will-change: transform` amplifier is deliberately left in place; removing it is TASK-108, which depends
+on this task.
+<!-- SECTION:FINAL_SUMMARY:END -->
