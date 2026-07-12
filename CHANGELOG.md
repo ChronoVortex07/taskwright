@@ -4,6 +4,64 @@ All notable changes to Taskwright are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] — 2026-07-13
+
+Three field bugs, each traced to a root cause and reproduced before it was fixed: autonomous runs
+stalling on a worktree prompt, board sync refusing to enable without saying why, and the Tree tab
+rendering nothing.
+
+### Fixed
+
+- **`/orchestrate-board` no longer stalls on a worktree-entry approval it could never satisfy.**
+  Every run paused for permission and then failed with `Cannot enter worktree: … is the repository
+root, not an isolated worktree`. That string is not Taskwright's — it comes from Claude Code's own
+  `EnterWorktree` tool, whose documented trigger is "CLAUDE.md or memory instructions direct you to
+  work in a worktree", which is exactly what every Taskwright instruction surface said. It can never
+  open a Taskwright worktree: the harness manages its own `.claude/worktrees/`, while ours are plain
+  `git worktree add` directories under `.worktrees/`, and a cwd-pinned `Task` subagent (how
+  orchestrate-board fans out) may only switch within `.claude/worktrees/`. Allowlisting the
+  permission would not have helped — the prompt was not the bug, the tool call was. Both skills, the
+  AGENTS.md convention block and both dispatch templates now forbid the worktree-switch tool **by
+  name** and state the mechanism that works (`cd` / `git -C`); a contract test fails the build if any
+  surface loses it.
+
+  Same change closes a silent work-loss path behind it. `/execute-task` decided "am I in my
+  worktree?" by probing `git rev-parse --git-dir` from the shell — but after a `cd` that probe
+  reports the worktree while the MCP server is still rooted in the primary tree (it roots at launch
+  and cannot re-root). The mis-rooted `request_merge` that followed aborted, and the cancellation
+  contract listed that abort as a "worktree vanished ⇒ cancelled" signal, so a subagent reported
+  `{"status":"cancelled"}` — which orchestrate-board deliberately never retries. Rootedness now
+  follows from a fact the shell cannot lie about (did this session call `start_task`?), such a
+  session always closes with `request_merge { taskId, worktree }`, and the primary-tree abort carries
+  its own machine-readable code, **`wrong_root`** — a misuse, never a cancellation. (TASK-122)
+
+- **"Enable Board Sync" can no longer wedge a repo, and when it refuses it says why.** The git-auto
+  migration aborted permanently in some repos, naming a few task files and giving no reason.
+  Measured on the repro board: of 123 files, 118 were identical, 4 differed only by line endings, 1
+  by content. Three defects, all in verify-before-delete. (1) `verifyMove` returned bare paths and
+  the notification printed a count plus one filename — it now classifies every difference (`absent` |
+  `eol-only` | `content-drift`) and the abort lists every blocker with its reason behind a **Show
+  details** action, instead of falsely suggesting a re-run. (2) The permanent blocker was **EOL
+  normalization**: a repo with `.gitattributes: * text=auto` normalizes CRLF→LF into the blob on
+  `git add` — an in-tree attribute overrides the `core.autocrlf=false` flag the snapshot passes — so
+  a CRLF task file came back out of the board worktree as LF and failed byte-equality forever. That
+  is git's own declared policy applied to the file, not lost content: an EOL-only difference now
+  verifies, and the board becomes canonically LF. (3) A **drifted board worktree** was compared
+  stale: an existing worktree is reused without resetting it to the freshly-seeded ref tip, and a
+  failed attempt leaves one behind, so every retry re-compared against stale files and re-aborted on
+  whatever had been edited since. Drift is now union-merge folded forward (newer `updated_date` wins,
+  conflicts surfaced) and then moved. Both field shapes are covered by integration tests against real
+  git. (TASK-123)
+
+- **The Tree tab rendered nothing on boards that use the Backburner milestone.** Clicking Tree
+  mounted the view but drew zero nodes and threw one page error, `each_key_duplicate`. `bandOrder` is
+  built through a de-duplicating push for declared and discovered milestones, then the reserved
+  `Backburner` band was appended with a raw push that bypassed the dedupe — so a task carrying
+  `milestone: Backburner` explicitly made the band appear twice. The webview keys the band `{#each}`
+  by name, so a duplicate name is a duplicate key: Svelte throws and the entire canvas fails to
+  render. Backburner is now reserved up front (no declared or discovered milestone can inject it) and
+  appended exactly once, last — which the `backburnerIdx` computation depends on. (TASK-124)
+
 ## [1.8.0] — 2026-07-12
 
 The **tree find bar** release: the Tree tab gets an in-canvas find, and an empty-canvas left-click
@@ -62,11 +120,11 @@ no longer accidentally authors a task.
 
 - **`/` and Ctrl-F silently did nothing whenever focus was outside the canvas viewport.** The
   canvas's key handler is bound to `.tree-viewport`, not `window` — and the toolbar, the "Promote
-  all proposed" button and the in-flight panel are its *siblings* — so after zooming, fitting,
+  all proposed" button and the in-flight panel are its _siblings_ — so after zooming, fitting,
   promoting, dismissing a popover via its ✕ (which removes the focused element, dropping focus to
   `<body>`), or simply opening a never-clicked "cold" tab, the keystroke never traversed the
   viewport and the advertised shortcut did nothing until the user clicked the canvas. The
-  window-level handler in `Tasks.svelte` only *focused* an already-rendered input, which does not
+  window-level handler in `Tasks.svelte` only _focused_ an already-rendered input, which does not
   exist until the bar is open. Fixed by making that window-level handler actually **open** the tree
   find bar (via the `findRequestNonce` prop described above) whenever the Tree tab is active.
   The canvas still also mount-focuses its viewport once (backing off if something else already holds
@@ -78,7 +136,7 @@ no longer accidentally authors a task.
 
 - **Right-clicking inside the find input popped the canvas "create here" context menu** instead of
   the native text-editing menu (no copy/paste). The canvas `oncontextmenu` handler now bails on
-  `.tree-find-bar` *before* calling `preventDefault()`, mirroring its `onPointerDown` guard.
+  `.tree-find-bar` _before_ calling `preventDefault()`, mirroring its `onPointerDown` guard.
 
 - **The find bar could slide under the canvas toolbar** in a narrow panel (bar `z-index: 12`;
   toolbar and promote-all button `z-index: 20`). The bar — a transient, focused overlay — now sits
@@ -92,7 +150,7 @@ no longer accidentally authors a task.
   driving them via keyboard; fixed by adding the missing guard.
 
 - **A node with an active bug that was also a find match lost its red bug ring entirely.** In a
-  CSS `box-shadow` list the *first*-listed shadow paints on top, and `TreeNode.svelte`'s combined
+  CSS `box-shadow` list the _first_-listed shadow paints on top, and `TreeNode.svelte`'s combined
   `.has-active-bug.find-match` / `.has-active-bug.find-current` rules listed the larger-or-equal bug
   ring spread first — so the bug ring fully occluded the find ring underneath (and for
   `find-current`, alpha-blended into an almost-pure-blue smear). Fixed by reordering the shadows so
@@ -100,7 +158,7 @@ no longer accidentally authors a task.
   strictly larger, non-overlapping spread listed after it, rendering as two distinct concentric
   rings instead of one occluding the other. Re-verified with cropped, 2x-scaled screenshots in both
   dark and light themes (`docs/tree-find-bar-visual-proof.md`) — confirming this is a genuine CSS
-  layering fix, not a theme-contrast coincidence — and now *guarded* by an `e2e/tree-find.spec.ts`
+  layering fix, not a theme-contrast coincidence — and now _guarded_ by an `e2e/tree-find.spec.ts`
   test that reads the computed `box-shadow` of a node that is both `has-active-bug` and a find
   match/current match and asserts two distinct, non-nesting ring spreads with the smaller listed
   first, so a future edit to the shadow lists cannot silently re-occlude the bug ring.

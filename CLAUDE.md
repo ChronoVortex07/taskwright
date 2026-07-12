@@ -458,6 +458,41 @@ rebase_conflict`) so `/orchestrate-board` branches without parsing prose. **Dura
   Coverage: `src/test/unit/treeFind.test.ts`, `e2e/tree-find.spec.ts` (15 tests). Visual proof:
   `docs/tree-find-bar-visual-proof.md`.
 
+- **Field-bug fixes (1.8.1: TASK-122/123/124)** ✅: three independent defects, each reproduced before
+  it was fixed. **Worktree entry + mis-rooted close (122):** the `Cannot enter worktree` failure that
+  stalled every `/orchestrate-board` run came from Claude Code's own **`EnterWorktree`** tool, whose
+  documented trigger ("CLAUDE.md or memory instructions direct you to work in a worktree") is exactly
+  what every Taskwright instruction surface said. It can NEVER open a Taskwright worktree — the harness
+  manages its own `.claude/worktrees/`, ours are plain `git worktree add` dirs under `.worktrees/`, and
+  a cwd-pinned `Task` subagent may only switch within `.claude/worktrees/`. **Do not reintroduce a
+  worktree instruction that omits the prohibition**: both SKILL.md files, `TASKWRIGHT_AGENTS_CONVENTION`,
+  this repo's AGENTS.md and both dispatch templates forbid it by name and say `cd` / `git -C` instead;
+  `src/test/unit/worktreeEntryContract.test.ts` fails the build if a surface loses it. Behind it lay a
+  silent work-loss path: `/execute-task` probed `git rev-parse --git-dir` from the SHELL to decide
+  rootedness, but after a `cd` that probe reports the worktree while the MCP is still primary-rooted
+  (it roots at launch, and an in-session `cd` does not move it) — the bare `request_merge` that followed
+  aborted, and the cancellation contract read that abort as "worktree vanished ⇒ cancelled", which
+  `/orchestrate-board` never retries. Rootedness now follows from **did this session call `start_task`**
+  (a fact the shell cannot lie about) ⇒ always close with `request_merge { taskId, worktree }`; the
+  primary-tree abort carries the new `MergeAbortCode` **`wrong_root`** — a misuse, **never** a
+  cancellation. **git-auto migration (123):** `verifyMove` now returns classified failures
+  (`absent | eol-only | content-drift`) instead of bare paths, and the abort lists every blocker with a
+  reason. An **EOL-only difference verifies OK**: an in-tree `.gitattributes: * text=auto` overrides
+  `NO_EOL_CONVERT`'s config flags, so a CRLF task file normalizes to LF in the blob and comes back out
+  of the board worktree as LF — git's own policy, not lost content (the "byte-for-byte round-trip" claim
+  in `boardRef.ts` is false in such a repo). And a **drifted board worktree is folded, not aborted
+  against**: `ensureBoardWorktree` reuses an existing worktree without resetting it to the fresh ref tip,
+  and a failed attempt leaves one behind, so every retry compared live-vs-stale and re-aborted forever —
+  the new `moveBoardIntoWorktree` core union-merges the drift forward (`mergeBoards`, conflicts surfaced)
+  then moves; `foldPrimaryStrays` delegates to it. **Reserved Backburner band (124):** `Backburner` must
+  appear **exactly once, and LAST**, in `bandOrder` — `backburnerIdx` is `bandOrder.length - 1`, and the
+  webview keys the band `{#each}` **by name**, so a duplicate name is a duplicate key and Svelte throws
+  `each_key_duplicate`, rendering the ENTIRE tree canvas blank. A task may legitimately carry
+  `milestone: Backburner`, so the band is marked seen up front in `deriveTreeLayout` — routing the final
+  push through `pushBand()` would not be enough (a discovered "Backburner" sorts into the middle and
+  `backburnerIdx` would point at an unrelated band). Coverage:
+  `src/test/unit/{worktreeEntryContract,mcpMergeHandlers,boardHomeMigration,gitAutoIntegration,treeLayout}.test.ts`.
+
 ## Conventions
 
 - Use [Lucide icons](https://lucide.dev/) (inline SVG), not emojis, in webviews; support all themes.
