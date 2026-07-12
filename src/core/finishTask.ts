@@ -385,7 +385,14 @@ export type MergeAbortCode =
   | 'verify_failed'
   | 'dirty_worktree'
   | 'dirty_primary'
-  | 'rebase_conflict';
+  | 'rebase_conflict'
+  /**
+   * The call came from the primary tree with no `worktree` target — a misuse,
+   * not a cancellation. It is the shape a `start_task`-bootstrapped session
+   * lands in: the MCP server roots at launch and an in-session `cd` does not
+   * move it, so such a session must close with `request_merge { taskId, worktree }`.
+   */
+  | 'wrong_root';
 
 export type RequestMergeResult =
   | { status: 'merged'; taskId: string; branch: string }

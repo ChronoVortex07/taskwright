@@ -462,10 +462,16 @@ export async function requestMergeHandler(
   } else {
     // Default: the calling session must itself be inside its worktree.
     if (isPrimaryTree(facts.gitDir)) {
+      // TASK-122: a misuse, not a cancellation. A session that bootstrapped its
+      // own worktree with start_task is STILL rooted here (the server roots at
+      // launch; an in-session `cd` moves Bash, not the MCP), so it lands on this
+      // branch and must retry with an explicit `worktree` target. Callers used to
+      // read this abort as "worktree vanished ⇒ cancelled" and drop finished work.
       return {
         status: 'aborted',
+        code: 'wrong_root',
         reason:
-          'request_merge must be called from inside your .worktrees/<branch>, not the primary tree. cd into the worktree and try again (or pass a `worktree` target from a primary-rooted session).',
+          'request_merge was called from the primary tree with no `worktree` target. If you bootstrapped this task with start_task, close with request_merge { taskId, worktree } (the repo-root-relative path start_task returned) — an in-session cd does not re-root the MCP server. Otherwise call it from inside your .worktrees/<branch>.',
       };
     }
     if (!facts.branch) {

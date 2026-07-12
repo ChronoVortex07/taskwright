@@ -43,35 +43,37 @@ agent. The sub-skills it invokes (`superpowers:executing-plans`, `superpowers:su
    - Else (no active task and none named), **STOP and ask which task to work on** — do not guess from
      the file tree.
 
-2. **Get into the task's worktree (verify, or bootstrap).** The task runs inside its own
-   `.worktrees/<branch>`. The `taskwright` MCP server roots itself at the directory the session was
-   launched in and an in-session `cd` does **not** re-root it — so how you proceed depends on where
-   the MCP is rooted. Determine that with Bash:
+2. **Get into the task's worktree (dispatched, or bootstrap it).** The task runs inside its own
+   `.worktrees/<branch>`. Two facts decide everything here, and they are not the same fact:
+   - **The MCP root is fixed at launch.** The `taskwright` server roots itself at the directory the
+     session launched in and an in-session `cd` does **not** re-root it. So the question that matters
+     is not "where is my shell?" but **"did I have to bootstrap this worktree myself?"** — never probe
+     `git rev-parse` from the shell to answer it; after a `cd` that probe reports the worktree while
+     the MCP is still in the primary tree, and the mis-rooted close that follows aborts with
+     `wrong_root`.
+   - **A Taskwright worktree is a plain git worktree.** It is created by `git worktree add` under
+     `.worktrees/` and is **not** managed by your agent harness. **Never use a harness worktree-switch
+     tool** (Claude Code's `EnterWorktree`) to reach it: that tool only manages its own
+     `.claude/worktrees/`, so it prompts for approval and then fails — and from a cwd-pinned subagent
+     it can never succeed. Reach the worktree by launching in it, or with plain `cd` / `git -C`.
 
-   ```bash
-   # "linked" = a per-task worktree (--git-dir differs from the common dir); "primary" = the main checkout.
-   [ "$(git rev-parse --git-dir)" != "$(git rev-parse --git-common-dir)" ] && echo linked || echo primary
-   ```
+   Then take exactly one path:
 
-   - **`linked` — already worktree-rooted (the dispatched path, unchanged).** Confirm the working
-     directory is under `.worktrees/`. A fresh worktree has no `node_modules` (git-ignored) — if it is
-     absent, run `bun install` once (Bash) before you build or test. Proceed; you will close with a
-     bare `request_merge` (step 7).
+   - **Dispatched (the session was launched inside the worktree).** The dispatch prompt named
+     `.worktrees/<branch>` as your working directory. Confirm you are there, run `bun install` once if
+     `node_modules` is absent (it is git-ignored, so a fresh worktree has none), and proceed. You close
+     with a **bare `request_merge`** (step 7) — the MCP is rooted in the worktree.
 
-   - **`primary` — primary-rooted, so bootstrap the worktree yourself.** You already hold a task ID
-     from step 1. Call **`start_task { taskId }`**. It creates (or reuses) `.worktrees/<branch>`, seeds
-     the active task there, clears any stale cancellation marker, and returns
+   - **Not dispatched — bootstrap it yourself.** You already hold a task ID from step 1. Call
+     **`start_task { taskId }`**. It creates (or reuses) `.worktrees/<branch>`, seeds the active task
+     there, clears any stale cancellation marker, and returns
      `{ created, branch, worktree, worktreeAbs, relaunchHint }`. Keep `worktree` (repo-root-relative,
-     e.g. `.worktrees/task-7-add-login`) and `worktreeAbs`. Then pick ONE path:
-     - **Relaunch (preferred — full MCP isolation).** Surface `relaunchHint` to the user: open a new
-       session whose working directory is `worktreeAbs` and run `/execute-task` there, then **STOP this
-       session**. The relaunched session is worktree-rooted, so it takes the `linked` path above and
-       closes with a bare `request_merge`.
-     - **Single session (continue here).** You cannot re-root the MCP, but Bash / file / test work is
-       not bound to it: `cd` into `worktreeAbs` and run **all** git / file / test commands there. If
-       `node_modules` is absent, `bun install` once. Do the work, then close with the worktree-targeted
-       form **`request_merge { taskId, worktree }`** (step 7) — a bare `request_merge` would abort
-       because the MCP is still rooted in the primary tree.
+     e.g. `.worktrees/task-7-add-login`). `cd` into `worktreeAbs` (Bash) and run **all** git / file /
+     test commands there; `bun install` once if `node_modules` is absent. Because _you_ called
+     `start_task`, this session's MCP is rooted in the **primary** tree no matter where the shell now
+     is, so you close with **`request_merge { taskId, worktree }`** (step 7). Optionally you may
+     instead surface `relaunchHint` and stop, letting the human relaunch a session inside
+     `worktreeAbs` — but if you continue here, the `worktree` target is mandatory.
 
    - **Never** `git checkout`, `commit`, or `merge` in the repository root — it is shared with other
      agents and a managed pre-commit hook blocks it. All git / file / test commands run in the worktree.
@@ -108,13 +110,15 @@ agent. The sub-skills it invokes (`superpowers:executing-plans`, `superpowers:su
    steps — run the cancellation check (below). If cancelled, **stop; do not `request_merge`**.
 
 7. **Close.** When the work is committed and the worktree is clean, close through the merge queue:
-   - If you are **worktree-rooted** (dispatched, or relaunched into the worktree), call
-     `request_merge` from inside the worktree.
-   - If you bootstrapped in this same primary-rooted session, call **`request_merge { taskId, worktree }`**,
+   - If you were **dispatched** (the session launched inside the worktree), call `request_merge` from
+     inside the worktree.
+   - If **you** called `start_task` in this session, call **`request_merge { taskId, worktree }`**,
      passing the repo-root-relative `worktree` that `start_task` returned (e.g.
      `.worktrees/task-7-add-login`). The `worktree` target tells `request_merge` which linked worktree
-     to rebase/verify/merge — without it, `request_merge` aborts because the MCP is rooted in the
-     primary tree.
+     to rebase/verify/merge — without it the call aborts with **`wrong_root`**, because the MCP is
+     rooted in the primary tree however far the shell has `cd`'d. A `wrong_root` abort is a **misuse,
+     not a cancellation**: re-issue the same call _with_ the `worktree` target; never abandon the work
+     over it.
      Wait for it to return. It rebases onto the base branch, runs the verify commands, waits for its
      turn in the merge queue (and, in manual-review mode, for the human's approval on the board),
      fast-forward-merges (or opens a PR), marks the task **Done**, and removes your worktree. Do not
@@ -144,10 +148,13 @@ cancelled (both are first-class — neither is "primary"):
 - **Marker present** — `test -f .taskwright/cancelled` in your worktree succeeds. Detection is
   **presence-only**: never read or parse the file's contents.
 - **Worktree vanished** — any git / file / `request_merge` operation fails because the worktree or its
-  files are gone (ENOENT, "not a working tree", `request_merge { worktree }` aborting because the
-  target worktree is no longer listed, or — from the primary tree with no `worktree` target — the
-  primary-tree abort). On POSIX the marker is deleted along with the worktree, so this is the reliable
-  signal there; on Windows the marker may survive a busy removal.
+  files are gone (ENOENT, "not a working tree", or `request_merge { worktree }` aborting because the
+  target worktree is no longer listed). On POSIX the marker is deleted along with the worktree, so this
+  is the reliable signal there; on Windows the marker may survive a busy removal.
+
+A **`wrong_root`** abort is NOT cancellation — it means you called `request_merge` bare from a
+primary-rooted session. The worktree is fine and the work is intact: re-issue the call with the
+`worktree` target (step 7).
 
 On cancellation: **stop immediately, do NOT `request_merge`**, leave a short note via `edit_task` if
 the task is still reachable, and exit (release your working directory). Do **not** remove the worktree
@@ -156,8 +163,9 @@ yourself — the extension owns teardown.
 ## Rules of thumb
 
 - One session = one task; hold the task ID from step 1 and never re-derive it.
-- Get into the worktree before doing work: worktree-rooted ⇒ proceed; primary-rooted ⇒ `start_task`,
-  then relaunch into it or continue single-session and close with `request_merge { worktree }`.
+- Get into the worktree before doing work — with `cd` / `git -C`, **never** a harness worktree-switch
+  tool (`EnterWorktree`): dispatched ⇒ you are already there; otherwise ⇒ `start_task`, `cd` in, and
+  close with `request_merge { taskId, worktree }`.
 - Strategy precedence is plan > independent-subtasks > TDD.
 - Check for cancellation before `request_merge`, every time.
 - Close through the merge queue from the worktree; never commit/merge from the repo root.

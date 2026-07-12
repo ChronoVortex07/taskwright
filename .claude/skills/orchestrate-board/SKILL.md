@@ -45,6 +45,17 @@ plus local Bash/Read/Grep/Glob.
 - **Claims are advisory and are your anti-collision guard.** `next_ready_tasks` already excludes
   tasks a live session holds or that are active in the merge queue. Every worker still **claims before
   working**; a surrendered claim means another session took it — skip, do not do the work.
+- **A Taskwright worktree is a plain git worktree, not a harness one.** `start_task` creates it with
+  `git worktree add` under `.worktrees/`. **Never use a harness worktree-switch tool** (Claude Code's
+  `EnterWorktree`) to enter it — that tool manages its own `.claude/worktrees/`, so it stops the run
+  for an approval prompt and then fails; from a `Task` subagent, whose working directory is pinned at
+  launch, it can never succeed. Enter with plain `cd` / `git -C`. This is what makes an autonomous run
+  autonomous: nothing in this loop should ever pause for a worktree-entry approval.
+- **A subagent's MCP stays rooted in the primary tree.** `Task` subagents share this session's MCP
+  server, which roots at launch and does not follow a `cd`. So a subagent that bootstraps its own
+  worktree with `start_task` must close with **`request_merge { taskId, worktree }`** — a bare
+  `request_merge` aborts with `wrong_root` (a misuse, **not** a cancellation: never report it as one,
+  and never drop the work over it).
 
 ## Establish mode and budget (once, up front)
 
@@ -79,10 +90,11 @@ Repeat rounds until a stop condition fires:
 4. **Run the batch.**
    - **Parallel:** issue one `Task` subagent per batch task **in a single response** (concurrent),
      each with the subagent prompt below (substitute `{{taskId}}` / `{{title}}`). Await all results.
-   - **Sequential:** for the one task, do it inline — `start_task`, `cd` into its `worktreeAbs`,
-     `bun install` if `node_modules` is absent, then invoke `/execute-task` for that task ID (which
-     claims, does the work, and closes with `request_merge`). Do **not** commit/merge from the repo
-     root yourself.
+   - **Sequential:** for the one task, do it inline — `start_task`, `cd` into its `worktreeAbs` (plain
+     `cd`, never `EnterWorktree`), `bun install` if `node_modules` is absent, then invoke
+     `/execute-task` for that task ID (which claims, does the work, and closes with
+     `request_merge { taskId, worktree }` — you bootstrapped the worktree, so the target is required).
+     Do **not** commit/merge from the repo root yourself.
 
 5. **Reconcile results.** For each runner's returned status:
    - `done` → count it; its dependents may now be ready.
@@ -97,7 +109,9 @@ Repeat rounds until a stop condition fires:
      In Progress). Pending tasks count as **in flight** for the stop conditions, not blocked.
    - `surrendered` → another session held it; skip (not a failure).
    - `cancelled` → a human cancelled the dispatch; note it and do not retry (the extension already
-     tore the worktree down and released the claim).
+     tore the worktree down and released the claim). A `wrong_root` abort is **not** a cancellation —
+     a runner reporting one closed mis-rooted; tell it to re-close with
+     `request_merge { taskId, worktree }` rather than counting the task as lost.
    - `failed` (or a crash with no status) → **surface** the task ID and reason to the user, then call
      `release_task` for it defensively so it returns to the ready pool. **Do not auto-retry** unless
      the user opted into retries.
@@ -129,17 +143,24 @@ TASK: {{taskId}} — {{title}}
 Do this, in order:
 1. Bootstrap the worktree. Call the taskwright MCP tool `start_task` with { "taskId": "{{taskId}}" }.
    It returns { worktree, worktreeAbs, branch } and seeds this task as the worktree's active task.
-   `cd` into `worktreeAbs` (Bash). If `node_modules` is absent there, run `bun install` once.
+   `cd` into `worktreeAbs` (Bash) — with plain `cd`, NEVER with a harness worktree-switch tool such as
+   `EnterWorktree`: this is an ordinary git worktree under `.worktrees/`, that tool manages only its
+   own `.claude/worktrees/`, and from your pinned working directory it will prompt and then fail. Keep
+   the returned `worktree` value; you need it to close. If `node_modules` is absent there, run
+   `bun install` once.
 2. Claim it. Call `claim_task` with { "taskId": "{{taskId}}" }. If the result has
    `surrendered: true`, STOP immediately and report {"status":"surrendered","taskId":"{{taskId}}"}
    — another session already holds it; do NOT do the work.
 3. Execute. Invoke the `/execute-task` skill for {{taskId}}. It picks the right strategy (attached
    plan / independent subtasks / TDD), does the work in this worktree, records progress with
-   `edit_task`, and closes by calling `request_merge` from inside the worktree — which rebases, runs
-   the verify gate, waits its turn in the shared merge queue, fast-forward-merges, marks the task
-   Done, and removes the worktree. If a plan or spec gets authored while running the task,
-   `/execute-task` attaches it to the task with `attach_plan` so it lives on the board, not just in
-   the run's context.
+   `edit_task`, and closes with `request_merge { taskId, worktree }` — passing the `worktree` value
+   from step 1, because YOU bootstrapped this worktree and the MCP server is still rooted in the
+   primary tree (your `cd` moved the shell, not the server). `request_merge` rebases, runs the verify
+   gate, waits its turn in the shared merge queue, fast-forward-merges, marks the task Done, and
+   removes the worktree. A bare `request_merge` here aborts with `wrong_root`: that is a misuse, NOT a
+   cancellation — just re-issue it with the `worktree` target. If a plan or spec gets authored while
+   running the task, `/execute-task` attaches it with `attach_plan` so it lives on the board, not just
+   in the run's context.
 4. If `/execute-task` stops for cancellation (the worktree's `.taskwright/cancelled` marker is
    present, or the worktree vanished), do NOT `request_merge`; report
    {"status":"cancelled","taskId":"{{taskId}}"}.
@@ -164,6 +185,8 @@ of handing them to a subagent.
 - The ready set is dependency-independent; for the parallel batch use `next_ready_tasks { parallelSafe:
 true, limit: cap }` so co-dispatched tasks are also FILE-disjoint (avoid merge conflicts). Cap the
   fan-out (default 3), don't swarm. Any conflict that still slips through is the agent's to rebase away.
+- Enter worktrees with `cd`, never `EnterWorktree` — an autonomous run must never stop for a
+  worktree-entry approval, and that tool cannot open a `.worktrees/` dir anyway.
 - Claim before work; a surrendered claim means skip, never double-execute.
 - Let `request_merge` (inside `/execute-task`) serialize merges — never order merges yourself.
 - Failures: surface + `release_task` + move on; no auto-retry unless the user asks.

@@ -7,14 +7,22 @@ external CLI. At the start of a task session:
 
 1. `get_active_task` — load your assigned task and its full context.
 2. **Stay in your worktree.** Your task runs in `.worktrees/<branch>`. `cd` there
-   first and run all git/file/test commands inside it. Never `git checkout`,
-   `commit`, or `merge` in the repository root — it is shared with other agents,
-   and a managed `pre-commit` hook will block such commits. A fresh worktree has
-   no `node_modules` (git-ignored), so run `bun install` there once before you
-   build or test. The `taskwright` MCP server runs from the primary build (via
+   first and run all git/file/test commands inside it. It is a **plain git
+   worktree** (`git worktree add`), not a harness-managed one: **never** reach it
+   with your agent harness's worktree-switch tool (Claude Code's `EnterWorktree`),
+   which only manages its own `.claude/worktrees/` — it will prompt for approval
+   and then fail, and from a cwd-pinned subagent it can never succeed. Plain `cd`
+   / `git -C` is the mechanism. Never `git checkout`, `commit`, or `merge` in the
+   repository root — it is shared with other agents, and a managed `pre-commit`
+   hook will block such commits. A fresh worktree has no `node_modules`
+   (git-ignored), so run `bun install` there once before you build or test. The
+   `taskwright` MCP server runs from the primary build (via
    `scripts/taskwright-mcp.cjs`), so if your task edits the MCP server itself,
    those changes only take effect after the task is merged and the primary is
-   rebuilt.
+   rebuilt. **The MCP root is fixed at launch** — a `cd` moves your shell, not the
+   server — so if _you_ bootstrapped this worktree with `start_task`, you are
+   still MCP-rooted in the primary tree and must close with
+   `request_merge { taskId, worktree }` (see step 5).
 3. `claim_task` — mark it in progress (advisory; prevents cross-worktree collisions). The claim
    records a per-session identity derived from your worktree (`@agent/<branch>`): re-claiming your
    own task is an idempotent no-op, while a task live-claimed by a different session returns
@@ -33,6 +41,10 @@ external CLI. At the start of a task session:
    `pending` as an error, and never fall back to merging from the repo root. If verification is
    killed for time (abort code `verify_timeout`), raise `taskwright.mergeVerifyTimeoutMinutes` or
    pass `verifyTimeoutMinutes` per call — don't shrink the suite to fit the clock.
+   If you bootstrapped the worktree yourself with `start_task`, pass the `worktree` it returned:
+   `request_merge { taskId, worktree }`. A bare call from a primary-rooted session aborts with
+   `wrong_root` — a **misuse, not a cancellation**. Re-issue it with the target; never abandon
+   finished work over it.
 
 Generated task files stay byte-for-byte compatible with Backlog.md, so the board remains
 readable by the upstream tools if they are installed.

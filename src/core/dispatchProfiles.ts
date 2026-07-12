@@ -49,6 +49,8 @@ export const CLAUDE_DISPATCH_TEMPLATE = `You are a fresh Claude Code session ass
 
 Launch this session INSIDE your isolated worktree .worktrees/{{worktree}} — open that folder / start the session with it as the working directory. Do NOT start at the repository root and cd in: the taskwright MCP server roots itself at the directory the session launched in, and an in-session cd does not move it. A fresh worktree has no node_modules (it is git-ignored), so run \`bun install\` there once before you build or test. Do NOT git checkout, commit, or merge in the repository root — that tree is shared with other agents and committing there corrupts their branches.
 
+Your worktree is a plain git worktree Taskwright created under .worktrees/ — it is NOT a harness-managed one. Never use your harness's worktree-switch tool (Claude Code's \`EnterWorktree\`) to reach it: that tool only manages its own \`.claude/worktrees/\`, so it prompts for approval and then fails. Reach the worktree by launching in it, or with plain \`cd\` / \`git -C\`.
+
 Task {{id}}: {{title}}
 Status: {{status}} · Priority: {{priority}} · Labels: {{labels}}
 
@@ -74,6 +76,8 @@ Run the \`/execute-task\` skill. It loads your assignment (\`get_active_task\`),
 export const CODEX_DISPATCH_TEMPLATE = `You are a fresh Codex session assigned exactly one task. Work only on this task — do not touch unrelated code or other tasks.
 
 Launch this session INSIDE your isolated worktree .worktrees/{{worktree}} — open that folder / start the session with it as the working directory. Do NOT start at the repository root and cd in: the taskwright MCP server roots itself at the directory the session launched in, and an in-session cd does not move it. A fresh worktree has no node_modules (it is git-ignored), so run \`bun install\` there once before you build or test. Do NOT git checkout, commit, or merge in the repository root — that tree is shared with other agents and committing there corrupts their branches.
+
+Your worktree is a plain git worktree Taskwright created under .worktrees/ — it is NOT a harness-managed one. Never use a harness worktree-switch tool (\`EnterWorktree\` and the like, which manage their own private worktree directory) to reach it: it prompts for approval and then fails. Reach the worktree by launching in it, or with plain \`cd\` / \`git -C\`.
 
 Task {{id}}: {{title}}
 Status: {{status}} · Priority: {{priority}} · Labels: {{labels}}

@@ -156,7 +156,14 @@ describe('requestMergeHandler', () => {
       { taskId: 'TASK-7' }
     );
     expect(r.status).toBe('aborted');
-    if (r.status === 'aborted') expect(r.reason).toMatch(/worktree/i);
+    if (r.status === 'aborted') {
+      expect(r.reason).toMatch(/worktree/i);
+      // TASK-122: distinct from a cancellation. A session that bootstrapped its
+      // own worktree via start_task is still MCP-rooted in the primary tree, so
+      // a bare request_merge lands here — /execute-task used to read this abort
+      // as "the worktree vanished ⇒ cancelled" and drop the finished work.
+      expect(r.code).toBe('wrong_root');
+    }
   });
 
   it('auto-merge integrates the task end-to-end', async () => {
