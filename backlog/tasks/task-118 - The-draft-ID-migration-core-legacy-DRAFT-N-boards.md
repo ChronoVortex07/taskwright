@@ -1,10 +1,10 @@
 ---
 id: TASK-118
 title: The draft-ID migration core (legacy DRAFT-N boards)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-12 16:42'
-updated_date: '2026-07-12 23:29'
+updated_date: '2026-07-12 23:30'
 labels:
   - stable-task-ids
 milestone: Stable Task IDs
@@ -15,9 +15,6 @@ references:
   - docs/superpowers/plans/2026-07-12-stable-task-ids.md
 priority: high
 category: Core Board
-claimed_by: '@agent/task-118-the-draft-id-migration-core-legacy-draft-n-boards'
-worktree: task-118-the-draft-id-migration-core-legacy-draft-n-boards
-claimed_at: '2026-07-13 07:22'
 ---
 
 ## Description
