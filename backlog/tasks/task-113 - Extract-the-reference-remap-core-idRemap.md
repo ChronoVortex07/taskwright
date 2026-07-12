@@ -1,10 +1,10 @@
 ---
 id: TASK-113
 title: Extract the reference-remap core (idRemap)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-12 16:41'
-updated_date: '2026-07-12 21:39'
+updated_date: '2026-07-12 21:40'
 labels:
   - stable-task-ids
 milestone: Stable Task IDs
@@ -15,9 +15,6 @@ references:
   - src/core/promoteDrafts.ts
 priority: high
 category: Core Board
-claimed_by: '@agent/task-113-extract-the-reference-remap-core-idremap'
-worktree: task-113-extract-the-reference-remap-core-idremap
-claimed_at: '2026-07-13 05:29'
 ---
 
 ## Description
