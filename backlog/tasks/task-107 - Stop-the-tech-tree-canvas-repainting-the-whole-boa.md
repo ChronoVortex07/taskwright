@@ -1,7 +1,7 @@
 ---
 id: TASK-107
 title: Stop the tech-tree canvas repainting the whole board on node hover
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-12 06:20'
 updated_date: '2026-07-12 06:34'
@@ -13,9 +13,6 @@ milestone: Performance & Startup Cost
 dependencies: []
 priority: high
 category: Tree
-claimed_by: '@agent/task-107-stop-the-tech-tree-canvas-repainting-the-whole-board-on-node-hover'
-worktree: task-107-stop-the-tech-tree-canvas-repainting-the-whole-board-on-node-hover
-claimed_at: '2026-07-12 14:21'
 ---
 
 ## Description
