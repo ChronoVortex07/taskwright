@@ -662,6 +662,15 @@ export class BacklogWriter {
     if (updates.documentation !== undefined) {
       frontmatter.documentation = updates.documentation;
     }
+    // parent_task_id / subtasks round-trip through updateTask so the id-remap core (idRemap.ts)
+    // can repoint hierarchy references; both are already in FRONTMATTER_FIELD_ORDER and are
+    // omitted when empty.
+    if (updates.parentTaskId !== undefined) {
+      frontmatter.parent_task_id = updates.parentTaskId;
+    }
+    if (updates.subtasks !== undefined) {
+      frontmatter.subtasks = updates.subtasks;
+    }
     if (updates.type !== undefined) {
       frontmatter.type = updates.type;
     }

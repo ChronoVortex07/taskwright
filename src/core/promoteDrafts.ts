@@ -1,11 +1,12 @@
 /**
- * Bulk draft promotion with dependency-edge remap (P4, GAP-3). vscode-free.
+ * Bulk draft promotion with reference remap (P4, GAP-3). vscode-free.
  *
  * `writer.promoteDraft` re-ids DRAFT-N → TASK-N but rewrites only the moved file's
- * frontmatter — inbound `dependencies` / bug `caused_by` references to the old DRAFT id
- * are left dangling. This core promotes a set in dependency order (deps first, so
- * prerequisites get lower ids), then rewrites EVERY inbound reference across the live
- * board (tasks + remaining drafts, incl. the just-promoted tasks' own edges).
+ * frontmatter — inbound references to the old DRAFT id are left dangling. This core
+ * promotes a set in dependency order (deps first, so prerequisites get lower ids), then
+ * delegates to the shared `remapIds` core, which rewrites EVERY inbound reference kind
+ * across the live board (tasks + remaining drafts, incl. the just-promoted tasks' own
+ * edges): dependencies, bug `caused_by`, `parent_task_id`, `subtasks`, and `references[]`.
  *
  * Consumers (parity): MCP `promote_drafts` (bulk), MCP `promote_draft` (single id →
  * gains remap for free), and the canvas "Promote all proposed" webview message.
@@ -13,6 +14,7 @@
 import type { BacklogParser } from './BacklogParser';
 import type { BacklogWriter } from './BacklogWriter';
 import type { TreeFieldService } from './TreeFieldService';
+import { remapIds } from './idRemap';
 
 export interface PromoteDraftsDeps {
   parser: BacklogParser;
@@ -28,7 +30,7 @@ interface PromoteMapping {
 export interface PromoteDraftsResult {
   /** Old→new id pairs, in promotion (dep-first) order. */
   promoted: PromoteMapping[];
-  /** Ids of tasks/drafts whose dependencies or caused_by were rewired. */
+  /** Ids of tasks/drafts whose inbound references were rewired (see idRemap). */
   remapped: string[];
 }
 
@@ -93,36 +95,18 @@ export async function promoteDrafts(
     }
   }
 
-  // Remap inbound references across the live board. Reload AFTER promotion so promoted
-  // files (now in tasks/) and any remaining drafts are seen with current content.
-  const oldToNew = new Map(promoted.map((p) => [p.from.trim().toUpperCase(), p.to]));
-  const [tasks, remainingDrafts] = await Promise.all([
-    deps.parser.getTasks(),
-    deps.parser.getDrafts(),
-  ]);
-  const remapped: string[] = [];
-  for (const t of [...tasks, ...remainingDrafts]) {
-    let changed = false;
-    const nextDeps = t.dependencies.map((d) => {
-      const to = oldToNew.get(d.trim().toUpperCase());
-      if (to) {
-        changed = true;
-        return to;
-      }
-      return d;
-    });
-    if (changed) {
-      await deps.writer.updateTask(t.id, { dependencies: nextDeps }, deps.parser);
-      remapped.push(t.id);
-    }
-    if (t.type === 'bug' && t.causedBy) {
-      const to = oldToNew.get(t.causedBy.trim().toUpperCase());
-      if (to) {
-        await deps.treeFieldService.setCausedBy(t.id, to, deps.parser);
-        if (!changed) remapped.push(t.id);
-      }
-    }
-  }
+  // Remap inbound references across the live board. The reload happens inside remapIds, AFTER
+  // promotion, so promoted files (now in tasks/) and any remaining drafts are seen with current
+  // content.
+  //
+  // Only drafts whose id actually CHANGED need rewriting. A draft that promotes in place
+  // (from === to) has no stale inbound references, so its entry is dropped from the map.
+  const oldToNew = new Map(
+    promoted
+      .filter((p) => p.from.trim().toUpperCase() !== p.to.trim().toUpperCase())
+      .map((p) => [p.from.trim().toUpperCase(), p.to])
+  );
+  const remapped = await remapIds(deps, oldToNew);
 
   return { promoted, remapped };
 }
