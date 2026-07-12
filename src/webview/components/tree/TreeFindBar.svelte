@@ -76,7 +76,13 @@
     onkeydown={onKeydown}
   />
 
-  <span class="find-count" data-testid="tree-find-count" class:empty={hasQuery && matchCount === 0}>
+  <span
+    class="find-count"
+    data-testid="tree-find-count"
+    class:empty={hasQuery && matchCount === 0}
+    role="status"
+    aria-live="polite"
+  >
     {counter}
   </span>
 

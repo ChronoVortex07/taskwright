@@ -481,20 +481,31 @@
    * `box-shadow` replaces (never merges) across rules of equal specificity, so a node
    * that is both `.has-active-bug` and a find match would silently lose its bug ring to
    * the rules above. These higher-specificity (3-class) rules combine both rings
-   * explicitly, reusing `.has-active-bug`'s exact color/geometry alongside the matching
-   * find ring's own shadow list. Ordered so `.find-current` (the stronger find state)
-   * wins over `.find-match` when a node somehow carries both.
+   * explicitly, reusing `.has-active-bug`'s color alongside the matching find ring's own
+   * shadow list.
+   *
+   * PAINT ORDER (the non-obvious part): in a `box-shadow` list, the shadow listed FIRST
+   * paints ON TOP of the ones that follow. Every ring here shares the same 0,0 offset, so
+   * a shadow's spread is really "how far this ring's solid fill extends from the node's
+   * edge" — two shadows with the SAME spread occupy the identical band and just
+   * alpha-blend, and a shadow with a LARGER-OR-EQUAL spread listed first fully covers a
+   * smaller one listed after it (their footprints nest, edge-to-edge). Either combination
+   * silently destroys one of the two rings. To keep both rings visible as two distinct
+   * concentric bands: list the SMALLER spread FIRST (innermost, painted on top — this is
+   * the find ring) and give the bug ring a LARGER, non-overlapping spread listed after it,
+   * so the bug ring only shows in the band beyond the find ring's outer edge. `find-current`
+   * still reads as the stronger find state than `find-match` (thicker inner ring + glow).
    */
   .tree-node.has-active-bug.find-match {
     box-shadow:
-      0 0 0 3px color-mix(in srgb, var(--vscode-editorError-foreground, #f14c4c) 40%, transparent),
-      0 0 0 2px var(--vscode-editor-findMatchHighlightBorder, var(--vscode-focusBorder));
+      0 0 0 2px var(--vscode-editor-findMatchHighlightBorder, var(--vscode-focusBorder)),
+      0 0 0 5px color-mix(in srgb, var(--vscode-editorError-foreground, #f14c4c) 40%, transparent);
   }
 
   .tree-node.has-active-bug.find-current {
     box-shadow:
-      0 0 0 3px color-mix(in srgb, var(--vscode-editorError-foreground, #f14c4c) 40%, transparent),
       0 0 0 3px var(--vscode-focusBorder),
+      0 0 0 6px color-mix(in srgb, var(--vscode-editorError-foreground, #f14c4c) 40%, transparent),
       0 0 12px 2px var(--vscode-focusBorder);
   }
 

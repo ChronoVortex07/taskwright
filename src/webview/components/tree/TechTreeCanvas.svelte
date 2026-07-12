@@ -480,6 +480,12 @@ import ContextMenu from './ContextMenu.svelte';
   function onPointerDown(e: PointerEvent) {
     const target = e.target as HTMLElement;
     if (target.closest('.tree-toolbar') || target.closest('.tree-popover')) return;
+    // Without this guard a pointerdown on the find bar's input/buttons fell through to
+    // case (c) below (empty viewport), which captured the pointer onto viewportEl and
+    // silently swallowed the button's own click — the buttons rendered and looked
+    // clickable but a real mouse click never reached their onclick handlers (found while
+    // adding e2e coverage that actually clicks them, TASK-9 item 3).
+    if (target.closest('.tree-find-bar')) return;
     if (target.closest('.tree-band-header')) return; // let the milestone popover open
     if (target.closest('.tree-edge-remove')) return; // edge ✕ handles its own click (Task 6)
 

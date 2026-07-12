@@ -11,6 +11,10 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './e2e',
+  // Fails fast with a clear message if dist/webview/* is missing/stale (a partial
+  // `bun run build` is otherwise indistinguishable from a real regression — see the
+  // comment in e2e/global-setup.ts).
+  globalSetup: require.resolve('./e2e/global-setup.ts'),
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

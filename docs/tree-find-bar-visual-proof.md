@@ -38,9 +38,11 @@ docs/images/dark/tree-find-current-vs-match.png
 
 After Enter, 2 / 3 — the current ring moved from TASK-1 to TASK-4, exactly the spatial (band, then lane) order the plan specifies. TASK-1 and TASK-2 both correctly demote to the plain thin match ring. The current-vs-plain-match distinction itself remains clear and legible for TASK-1/TASK-2 throughout.
 
-### Defect check: the has-active-bug + find-current ring overlap
+### Defect check: the has-active-bug + find-current ring overlap — FIXED
 
-Cropped, 2x-scaled views of TASK-4's ring in the two states above — this is the known cosmetic issue flagged in the brief (`TreeNode.svelte`'s `.has-active-bug.find-current` rule stacks a 3px bug ring and a 3px focus ring at the identical offset/spread).
+Cropped, 2x-scaled views of TASK-4's ring in the two states above. This was a real cosmetic defect flagged in the original brief and confirmed by the screenshots below (kept for the before/after record — see the git history of this file for the pre-fix crops): `TreeNode.svelte`'s `.has-active-bug.find-match` / `.has-active-bug.find-current` rules stacked the bug ring and the find ring at the same-or-nesting `box-shadow` spread with the bug ring listed first, and in a `box-shadow` list the FIRST shadow paints on top — so the larger bug ring fully occluded (or, for `find-current`, alpha-blended into an almost-pure-blue with) the smaller find ring underneath.
+
+**Fix:** the two rules were rewritten so the smaller spread (the find ring) is listed first (innermost, painted on top) and the bug ring uses a strictly larger, non-overlapping spread listed after it — so the bug ring only paints in the band beyond the find ring's outer edge, rendering as two distinct concentric rings instead of one occluding the other. Colors/CSS variables are unchanged (`--vscode-editorError-foreground` / `#f14c4c` fallback for the bug ring, `--vscode-focusBorder` and `--vscode-editor-findMatchHighlightBorder` for the find rings); still `box-shadow`, so the node's box and canvas layout are untouched.
 
 ```bash {image}
 docs/images/dark/tree-find-bug-ring-match-crop.png
@@ -48,7 +50,7 @@ docs/images/dark/tree-find-bug-ring-match-crop.png
 
 ![d1317d44-2026-07-12](d1317d44-2026-07-12.png)
 
-TASK-4 as a plain match (not current): the bug ring and match ring are both 40%-opacity-ish and clearly distinguishable as a blended pink/rose tone — readable as "this card is unusual" even if you can't immediately parse it as "bug + match".
+TASK-4 as a plain match (not current): an inner blue find ring and a clearly separate outer red bug band — two distinct concentric rings, not a blend.
 
 ```bash {image}
 docs/images/dark/tree-find-bug-ring-current-crop.png
@@ -56,7 +58,7 @@ docs/images/dark/tree-find-bug-ring-current-crop.png
 
 ![cb7b0cea-2026-07-12](cb7b0cea-2026-07-12.png)
 
-TASK-4 as the CURRENT match: the ring reads as **almost pure blue** — the red bug signal is essentially gone, alpha-blended away by the stronger, brighter find-current glow (`0 0 12px 2px` blur layered on top). Side-by-side with the plain-match crop above, this confirms the defect: a bug node loses its bug ring the moment it becomes the current find target. **This is a real, visible legibility defect**, not a hypothetical — see the verdict at the end of this doc.
+TASK-4 as the CURRENT match: the inner blue ring is now thicker and glowing (the stronger find-current treatment), and the outer red bug band remains fully visible as its own distinct ring beyond it — the red bug signal is **no longer lost**. Confirms the fix: a bug node keeps its bug ring, clearly separated from the find ring, in both the plain-match and current-match states.
 
 ```bash {image}
 docs/images/dark/tree-find-zero-results.png
@@ -86,9 +88,9 @@ docs/images/light/tree-find-current-vs-match.png
 
 2 / 3 after Enter — current ring correctly moved to TASK-4, same spatial order as dark. TASK-1/TASK-2 demote to plain match rings cleanly.
 
-### Defect check (light theme)
+### Defect check (light theme) — FIXED
 
-Same TASK-4 crop pair as dark, to confirm the ring-overlap defect is not a dark-theme-only artifact.
+Same TASK-4 crop pair as dark, re-captured after the fix, to confirm the ring-overlap fix is not a dark-theme-only improvement.
 
 ```bash {image}
 docs/images/light/tree-find-bug-ring-match-crop.png
@@ -96,7 +98,7 @@ docs/images/light/tree-find-bug-ring-match-crop.png
 
 ![1436449f-2026-07-12](1436449f-2026-07-12.png)
 
-Plain match + bug: a visible purple/violet blend, distinguishable from a plain blue match ring.
+Plain match + bug: a clearly separate inner blue find ring and outer red/pink bug band — two distinct rings.
 
 ```bash {image}
 docs/images/light/tree-find-bug-ring-current-crop.png
@@ -104,7 +106,7 @@ docs/images/light/tree-find-bug-ring-current-crop.png
 
 ![7d25982f-2026-07-12](7d25982f-2026-07-12.png)
 
-Current match + bug: same defect as dark — the ring reads as solid blue, the red bug signal essentially lost. Confirms the defect is theme-independent (it's a CSS layering order issue, not a color-contrast issue).
+Current match + bug: the inner blue ring is thicker/glowing (current-match treatment), and the outer red bug band stays fully visible and distinct — same fix confirmed on light as on dark, so this is a genuine CSS layering fix, not a theme-contrast coincidence.
 
 ```bash {image}
 docs/images/light/tree-find-zero-results.png
@@ -120,6 +122,8 @@ docs/images/light/tree-find-zero-results.png
 
 **Current-match ring vs plain match ring:** clearly distinguishable — the current ring is thicker (3px vs 2px) and carries an added 12px blur glow the plain match ring lacks. This holds in both themes and was the easiest of the three claims to verify.
 
-**Defect confirmed, as flagged in the brief:** `TreeNode.svelte`'s `.tree-node.has-active-bug.find-current` rule stacks the 3px bug ring and the 3px find-current ring at the identical box-shadow offset/spread (plus an added 12px blur glow), and empirically the composite reads as **almost pure focus-border blue** — the red bug tint that IS clearly visible on the same node's plain-match state (crops above) is essentially washed out once the current-match glow is layered on. In practice the red bug signal all but disappears the moment that node becomes the current find target, in both dark and light. It is NOT a dealbreaker for this feature (a bug node is still unambiguously `.find-match`/`.find-current`-styled — you can find it — it just silently sheds its "this node has an active bug" cue while it's the cycle target), but it is a real, screenshotted legibility regression for that one narrow intersection, not a hypothetical. Recommend a follow-up: give `.has-active-bug.find-current` a distinct combined treatment (e.g. offset rings at different spreads, like the `.has-active-bug.find-match` rule already does with 3px+2px) instead of two same-spread shadows.
+**Defect confirmed and FIXED:** `TreeNode.svelte`'s `.tree-node.has-active-bug.find-match` and `.tree-node.has-active-bug.find-current` rules stacked the bug ring and the find ring at same-or-nesting box-shadow spreads with the (equal-or-larger) bug ring listed first — and since the first shadow in a `box-shadow` list paints on top, the bug ring fully occluded (or, for `find-current`, alpha-blended into an almost-pure blue with) the find ring underneath. The red bug tint that was clearly visible on the plain-match state was essentially washed out on the current-match state, in both dark and light — a real, screenshotted legibility regression, not a hypothetical.
 
-No other legibility issues observed. Not fixed here per instructions — reported with screenshots as evidence for a follow-up task.
+**Fix applied:** the two combined-state rules were reordered so the smaller (find) ring is listed first — innermost, painted on top — and the bug ring uses a strictly larger, non-overlapping spread listed after it, so it only paints in the band beyond the find ring's edge. This renders as two clearly distinct concentric rings instead of one occluding the other, confirmed by the re-captured crops above in both themes and both find states (plain-match and current-match). Colors, CSS variables, and `box-shadow`-only geometry (no reflow) are unchanged.
+
+No other legibility issues observed.

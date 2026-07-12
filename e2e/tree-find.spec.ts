@@ -295,6 +295,37 @@ test.describe('Tree find bar', () => {
     await expect(page.getByTestId('tree-search-input')).toBeFocused();
   });
 
+  test('the next/prev/close buttons work the same as their keyboard equivalents', async ({
+    page,
+  }) => {
+    // Same button testids exercised by TreeFindBar.svelte:85 (prev), :96 (next), :107
+    // (close). Prior coverage only drove these via Enter/Shift-Enter/Escape — click them
+    // directly here so a regression in the button's onclick wiring (as opposed to the
+    // shared stepFind/closeFind logic) would actually be caught.
+    await openFind(page, 'login');
+    await expect(page.getByTestId('tree-find-count')).toHaveText('1 / 2');
+    await expect(page.getByTestId('tree-node-TASK-1')).toHaveClass(/find-current/);
+
+    // Click "next" advances the current match and updates the counter.
+    await page.getByTestId('tree-find-next').click();
+    await expect(page.getByTestId('tree-find-count')).toHaveText('2 / 2');
+    await expect(page.getByTestId('tree-node-TASK-2')).toHaveClass(/find-current/);
+    await expect(page.getByTestId('tree-node-TASK-1')).not.toHaveClass(/find-current/);
+
+    // Click "prev" moves back to the previous match.
+    await page.getByTestId('tree-find-prev').click();
+    await expect(page.getByTestId('tree-find-count')).toHaveText('1 / 2');
+    await expect(page.getByTestId('tree-node-TASK-1')).toHaveClass(/find-current/);
+    await expect(page.getByTestId('tree-node-TASK-2')).not.toHaveClass(/find-current/);
+
+    // Click "close" hides the bar and clears the match/dim treatment, same as Escape.
+    await page.getByTestId('tree-find-close').click();
+    await expect(page.getByTestId('tree-find-bar')).not.toBeVisible();
+    await expect(page.getByTestId('tree-node-TASK-1')).not.toHaveClass(/find-match/);
+    await expect(page.getByTestId('tree-node-TASK-1')).not.toHaveClass(/find-current/);
+    await expect(page.getByTestId('tree-node-TASK-3')).not.toHaveClass(/nav-dimmed/);
+  });
+
   test('Ctrl+F opens the find bar on a cold tab that was never clicked (focus-mount fix)', async ({
     page,
   }) => {
