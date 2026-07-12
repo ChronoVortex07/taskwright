@@ -1,10 +1,10 @@
 ---
 id: TASK-114
 title: Global next-ID scan and a shared allocation lock
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-12 16:41'
-updated_date: '2026-07-12 21:53'
+updated_date: '2026-07-12 21:54'
 labels:
   - stable-task-ids
 milestone: Stable Task IDs
@@ -14,9 +14,6 @@ references:
   - src/core/BacklogWriter.ts
 priority: high
 category: Core Board
-claimed_by: '@agent/task-114-global-next-id-scan-and-a-shared-allocation-lock'
-worktree: task-114-global-next-id-scan-and-a-shared-allocation-lock
-claimed_at: '2026-07-13 05:41'
 ---
 
 ## Description
