@@ -118,25 +118,82 @@ This deletes the last `DRAFT-` prefix branch. No frontmatter marker is introduce
 would create a second source of truth for draftness alongside the folder, which is the
 exact ambiguity P6/D2 removed.
 
-### Legacy compatibility
+### Automatic migration of legacy boards
 
-Boards containing existing `DRAFT-N` files keep working, read and write:
+A board carrying `DRAFT-N` files must converge on the new format **by itself**. Leaving
+legacy drafts to limp along on a compatibility path would strand exactly the boards the
+feature exists to help: the draft IDs would stay unstable, and the confusion this design
+sets out to kill would persist until each draft happened to be promoted.
 
-- The parser never inspected the ID prefix. Its ID regex is generic
-  (`/^([a-zA-Z]+-\d+(?:\.\d+)*)/i`, `BacklogParser.ts:556`) and frontmatter `id` wins over
-  the filename. `DRAFT-3` parses today and continues to.
-- `promoteDraft` keeps its re-ID path as a **fallback**, fired only when the draft's ID is
-  not already in the task namespace (i.e. it does not carry the configured `task_prefix`).
-  A legacy `DRAFT-3` promotes to a fresh `TASK-M` with the remap pass, exactly as today. A
-  stable-ID `TASK-112` draft moves in place.
-- `getNextTaskId` scanning `drafts/` matches on the task prefix, so a stray `draft-3 -
-  X.md` filename simply contributes nothing to the max — it cannot collide with the task
-  counter.
+**Detection.** A task file is *legacy* when it lives in `drafts/` (or in `archive/`, having
+been archived while a draft) and its ID does not carry the configured `task_prefix`. This
+is a pure predicate over already-parsed tasks — no filesystem probing, no `DRAFT-` string
+match, so a board with a custom `task_prefix` classifies correctly.
 
-**No migration is required for this repo.** The live board has zero drafts and zero
-`DRAFT-*` files (highest ID is TASK-110). Legacy `DRAFT-N` files exist only in test
-fixtures (`src/test/e2e/fixtures/test-workspace/backlog/drafts/`,
-`.../archive/tasks/`), which become the compat test cases. No migration command ships.
+**Shared remap core — `src/core/idRemap.ts`.** Extracted from `promoteDrafts`' remap pass
+and used by both it and the migration. Given a board and a map of `oldId → newId`, it
+rewrites every inbound reference:
+
+| Field | Rewritten today by `promoteDrafts`? |
+| --- | --- |
+| `dependencies` | yes |
+| bug `caused_by` | yes |
+| `parent_task_id` | **no — silently dangles** |
+| `subtasks` | **no — silently dangles** |
+| `references[]` | **no — silently dangles** |
+
+Extracting the core closes those three gaps for promote as well; they are the same bug,
+and the migration would reintroduce them if it rolled its own pass.
+
+**Migration core — `src/core/draftIdMigration.ts`.** Pure planner + executor, mirroring the
+shape of `boardHomeMigration.ts`:
+
+- `planDraftIdMigration(tasks, drafts, config)` → a typed plan: for each legacy draft, the
+  fresh `TASK-M` it will take, the file rename, and the resulting `oldId → newId` map. Pure
+  and unit-testable, with no writes.
+- `runDraftIdMigration(deps)` → executes the plan: allocate each new ID through the same
+  shared-lock `allocateAndWrite` path a normal create uses (so a concurrent create cannot
+  collide), rename `drafts/draft-3 - X.md` → `drafts/task-112 - X.md`, rewrite frontmatter
+  `id`, then run **one** `idRemap` pass across the whole board. Drafts are migrated in
+  dependency-first topological order (reusing `promoteDrafts`' `topoOrder`), so the new IDs
+  come out in a sensible sequence.
+- A legacy **archived** draft (a `draft-N` file sitting in `archive/tasks/`, where today's
+  `archiveTask` puts it) is additionally relocated to `archive/drafts/`, so the new
+  folder-routed restore finds it.
+- **Idempotent**: a board with no legacy drafts performs zero writes and returns
+  `{ migrated: 0 }`. Re-running is free.
+
+**Where it runs.** Both entry points call the identical core, so an agent-only session and
+a UI session converge the same way (the parity rule this codebase already holds to):
+
+1. **Extension activation**, inside the `deferredBootstrap` runner
+   (`src/core/deferredBootstrap.ts`). It must not go inline in `activate()` — TASK-109
+   moved every git/fs burst out of the activation path and that must not regress. Like the
+   rest of that runner, a failure logs and degrades; it never rejects into activation.
+2. **MCP server startup**, after the board root resolves — so a dispatched, headless, or
+   agent-only session on an unmigrated board still migrates.
+
+Both take the existing cross-process board lock, so an extension host and an MCP server
+starting simultaneously cannot double-migrate.
+
+**Visibility.** The migration rewrites git-tracked board files, so it is automatic but not
+silent: it reports `Migrated N drafts to stable task IDs` with the full `DRAFT-3 → TASK-112`
+mapping logged. `boardDoctor` also gains a `legacy-draft-ids` finding with the migration as
+its declared repair — a visible safety net if an automatic pass ever fails or is skipped,
+matching the existing doctor pattern.
+
+**Residual compatibility.** After migration a board has no legacy drafts, but an external
+tool (the upstream Backlog.md CLI) could still write one. So `promoteDraft` **keeps** its
+re-ID fallback as defense-in-depth, fired only when a draft's ID lacks the task prefix, and
+the parser continues to read `DRAFT-N` files unchanged — its ID regex is already generic
+(`/^([a-zA-Z]+-\d+(?:\.\d+)*)/i`, `BacklogParser.ts:556`) and frontmatter `id` wins over the
+filename. Likewise `getNextTaskId` matches on the task prefix when it scans `drafts/`, so a
+stray `draft-3 - X.md` contributes nothing to the max and cannot collide with the counter.
+
+This repo's own board is already clean — zero drafts, zero `DRAFT-*` files, highest ID
+TASK-110 — so migration is a no-op here. It is exercised against the legacy fixtures
+(`src/test/e2e/fixtures/test-workspace/backlog/drafts/draft-4 - ...md` and the archived
+`draft-3` file), which are preserved for exactly that purpose.
 
 ### Documentation and agent-facing surfaces
 
@@ -189,6 +246,32 @@ the TASK-48 bug re-armed).
 **Unit — `promoteDrafts`:** a batch of stable-ID drafts promotes with **no** reference
 rewriting and all `dependencies` / `causedBy` edges intact; a batch of legacy drafts still
 remaps.
+
+**Unit — `idRemap`:** rewrites `dependencies`, `caused_by`, `parent_task_id`, `subtasks`,
+and `references[]` for a given `oldId → newId` map; leaves unrelated IDs untouched; does
+not partially rewrite an ID that merely shares a prefix (`TASK-1` must not match inside
+`TASK-11`).
+
+**Unit — `draftIdMigration`:**
+
+- `planDraftIdMigration` on a board with no legacy drafts yields an empty plan
+- a legacy `DRAFT-3` is planned onto a fresh `TASK-M` above the current max, with the file
+  rename and the `oldId → newId` map
+- a board with a custom `task_prefix` classifies its own drafts as **non**-legacy
+- drafts are planned in dependency-first order
+- `runDraftIdMigration` renames the file, rewrites frontmatter `id`, and remaps every
+  inbound `dependencies` / `caused_by` / `parent_task_id` / `subtasks` / `references[]`
+  reference on the board
+- a legacy archived draft in `archive/tasks/` is relocated to `archive/drafts/`
+- **idempotence**: running it twice performs zero writes the second time
+- a migration failure leaves the board readable and surfaces a `legacy-draft-ids` doctor
+  finding rather than a half-migrated board
+
+**Integration — the whole point of the feature:** create a draft, reference it by ID from a
+second task's `dependencies` and from its description prose, promote it, and assert the
+dependency still resolves and the prose reference is still correct. Then, separately, load
+the **legacy fixture** board, let activation migrate it, and assert the same invariants hold
+afterwards — no dangling references, drafts carry `TASK-N`, and a re-run is a no-op.
 
 **Integration:** create a draft, reference it by ID from a second task's `dependencies`
 and from its description prose, promote it, and assert the dependency still resolves and
