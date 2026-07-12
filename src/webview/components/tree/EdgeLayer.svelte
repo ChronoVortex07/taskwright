@@ -76,10 +76,26 @@
   function incident(e: Edge, id: string | null): boolean {
     return id !== null && (e.from === id || e.to === id);
   }
-  function visible(e: Edge): boolean {
-    if (e.kind !== 'bug') return true;
-    return incident(e, hoveredId) || incident(e, selectedId);
-  }
+
+  /**
+   * Dependency edges are the permanent layer: they render once and are NEVER
+   * rewritten on hover. Bug→cause edges are not here — they exist only while
+   * incident to the active node, so they live in the highlight overlay below.
+   */
+  const baseEdges = $derived(edges.filter((e) => e.kind !== 'bug'));
+
+  /**
+   * The hover highlight is an OVERLAY of just the active node's incident edges,
+   * drawn on top of the dimmed base layer — O(degree) elements, not O(edges).
+   *
+   * The naive shape of this (a `class:incident` / `class:faded` on every path,
+   * derived from `activeId`) made a single pointerenter rewrite EVERY edge in
+   * the board — 117 attribute writes on a 120-node board — and, because
+   * `.tree-surface` is one big composited layer, that repainted the whole canvas
+   * on every hover in and out. The dim is now a single class on the base group
+   * (`.has-active`), so fading the rest costs zero per-edge DOM writes.
+   */
+  const incidentEdges = $derived(edges.filter((e) => incident(e, activeId)));
 
   let hoveredEdge = $state<string | null>(null);
 </script>
@@ -101,55 +117,84 @@
     </marker>
   </defs>
 
-  {#each edges as e (e.id)}
-    {#if visible(e)}
+  <!--
+    Base layer: every dependency edge, rendered once. Nothing in here reads the
+    hover/selection state, so a pointerenter cannot rewrite it. `.has-active` is
+    the ONE attribute write a hover costs — CSS fades the non-highlighted edges
+    from it (see `.tree-edges.has-active .tree-edge` below).
+  -->
+  <g
+    class="tree-edges"
+    class:has-active={activeId !== null}
+    data-testid="tree-edge-group"
+  >
+    {#each baseEdges as e (e.id)}
       <path
         class="tree-edge tree-edge-{e.kind}"
-        class:incident={activeId !== null && incident(e, activeId)}
-        class:faded={activeId !== null && !incident(e, activeId)}
         class:nav-faded={fadedIds.has(e.from) || fadedIds.has(e.to)}
         data-testid="tree-edge-{e.from}-{e.to}"
         d={e.d}
-        marker-end={e.kind === 'bug'
-          ? undefined
-          : e.kind === 'blocking'
-            ? 'url(#tw-arrow-blocking)'
-            : 'url(#tw-arrow)'}
+        marker-end={e.kind === 'blocking' ? 'url(#tw-arrow-blocking)' : 'url(#tw-arrow)'}
       />
-      {#if e.kind !== 'bug'}
-        <!-- m3: enter/leave live on the GROUP (hit-path + ✕ together), so moving the
-             pointer from the hit-stroke onto the ✕ never fires a leave (pointerenter/
-             pointerleave treat descendants as inside) and the ✕ can't unmount mid-hover. -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <g
-          class="tree-edge-interactive"
-          onpointerenter={() => (hoveredEdge = e.id)}
-          onpointerleave={() => (hoveredEdge = null)}
-        >
-          <path class="tree-edge-hit" data-testid="tree-edge-hit-{e.from}-{e.to}" d={e.d} />
-          {#if hoveredEdge === e.id}
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <g
-              class="tree-edge-remove"
-              data-testid="tree-edge-remove-{e.from}-{e.to}"
-              transform="translate({e.mid.x} {e.mid.y})"
-              role="button"
-              tabindex="-1"
-              aria-label="Remove dependency"
-              onpointerdown={(ev) => ev.stopPropagation()}
-              onclick={(ev) => {
-                ev.stopPropagation();
-                onRemoveDependency?.(e.to, e.from);
-              }}
-            >
-              <circle r="9" class="tree-edge-remove-bg" />
-              <path d="M -3 -3 L 3 3 M 3 -3 L -3 3" class="tree-edge-remove-x" />
-            </g>
-          {/if}
-        </g>
-      {/if}
-    {/if}
-  {/each}
+      <!-- m3: enter/leave live on the GROUP (hit-path + ✕ together), so moving the
+           pointer from the hit-stroke onto the ✕ never fires a leave (pointerenter/
+           pointerleave treat descendants as inside) and the ✕ can't unmount mid-hover. -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <g
+        class="tree-edge-interactive"
+        onpointerenter={() => (hoveredEdge = e.id)}
+        onpointerleave={() => (hoveredEdge = null)}
+      >
+        <path class="tree-edge-hit" data-testid="tree-edge-hit-{e.from}-{e.to}" d={e.d} />
+        {#if hoveredEdge === e.id}
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <g
+            class="tree-edge-remove"
+            data-testid="tree-edge-remove-{e.from}-{e.to}"
+            transform="translate({e.mid.x} {e.mid.y})"
+            role="button"
+            tabindex="-1"
+            aria-label="Remove dependency"
+            onpointerdown={(ev) => ev.stopPropagation()}
+            onclick={(ev) => {
+              ev.stopPropagation();
+              onRemoveDependency?.(e.to, e.from);
+            }}
+          >
+            <circle r="9" class="tree-edge-remove-bg" />
+            <path d="M -3 -3 L 3 3 M 3 -3 L -3 3" class="tree-edge-remove-x" />
+          </g>
+        {/if}
+      </g>
+    {/each}
+  </g>
+
+  <!--
+    Highlight overlay: only the active node's incident edges, drawn opaque over
+    the dimmed base. A bug→cause edge has no base path (it is only ever shown
+    while incident), so the overlay IS its one incarnation — hence it keeps the
+    canonical `tree-edge-{from}-{to}` test id, while a dependency edge's overlay
+    stroke is the `-hl-` twin of a base path that already owns that id.
+  -->
+  {#if activeId !== null}
+    <g class="tree-edges-highlight" data-testid="tree-edge-highlight">
+      {#each incidentEdges as e (e.id)}
+        <path
+          class="tree-edge incident tree-edge-{e.kind}"
+          class:nav-faded={fadedIds.has(e.from) || fadedIds.has(e.to)}
+          data-testid={e.kind === 'bug'
+            ? `tree-edge-${e.from}-${e.to}`
+            : `tree-edge-hl-${e.from}-${e.to}`}
+          d={e.d}
+          marker-end={e.kind === 'bug'
+            ? undefined
+            : e.kind === 'blocking'
+              ? 'url(#tw-arrow-blocking)'
+              : 'url(#tw-arrow)'}
+        />
+      {/each}
+    </g>
+  {/if}
 </svg>
 
 <style>
@@ -181,10 +226,12 @@
     stroke-width: 2;
     stroke-linecap: round;
   }
+  /* No `transition` here: it would animate the opacity of EVERY edge on every
+     hover in and out, which on a large board is a sustained repaint of the whole
+     canvas — the flicker TASK-107 fixes. The dim is an instant state change. */
   .tree-edge {
     fill: none;
     stroke-width: 1.5;
-    transition: opacity 0.12s ease;
   }
   .tree-edge-satisfied {
     stroke: var(--vscode-charts-lines, var(--vscode-editorIndentGuide-activeBackground, #888));
@@ -198,12 +245,15 @@
     stroke-dasharray: 2 4;
     opacity: 0.8;
   }
+  /* Fading the non-highlighted edges: ONE class on the group, zero per-edge DOM
+     writes. The incident edges are re-drawn opaque by the highlight overlay on
+     top, so dimming the base copies underneath is invisible. */
+  .tree-edges.has-active .tree-edge {
+    opacity: 0.15;
+  }
   .tree-edge.incident {
     stroke-width: 2.5;
     opacity: 1;
-  }
-  .tree-edge.faded {
-    opacity: 0.15;
   }
   .tree-edge.nav-faded {
     opacity: 0.1;

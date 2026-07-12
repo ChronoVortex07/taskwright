@@ -145,8 +145,22 @@ test.describe('Tech tree canvas', () => {
 
   test('hovering a node highlights incident edges and fades the rest', async ({ page }) => {
     await page.locator('[data-testid="tree-node-TASK-2"]').hover();
-    await expect(page.locator('[data-testid="tree-edge-TASK-1-TASK-2"]')).toHaveClass(/incident/);
-    await expect(page.locator('[data-testid="tree-edge-TASK-2-TASK-3"]')).toHaveClass(/incident/);
+
+    // TASK-107: the incident edges are re-drawn opaque by the highlight overlay
+    // (`-hl-`), and the rest are faded by ONE class on the base group rather than
+    // a `.faded` written to every path.
+    await expect(page.locator('[data-testid="tree-edge-hl-TASK-1-TASK-2"]')).toHaveClass(
+      /incident/
+    );
+    await expect(page.locator('[data-testid="tree-edge-hl-TASK-2-TASK-3"]')).toHaveClass(
+      /incident/
+    );
+    await expect(page.locator('[data-testid="tree-edge-group"]')).toHaveClass(/has-active/);
+
+    // A non-incident edge is dimmed, and dimming cost no per-path write.
+    const other = page.locator('[data-testid="tree-edge-TASK-2-TASK-3"]');
+    const opacity = await other.evaluate((el) => getComputedStyle(el).opacity);
+    expect(Number(opacity)).toBeLessThan(0.5);
   });
 
   test('plain wheel (no modifier) zooms centered on cursor instead of panning', async ({
