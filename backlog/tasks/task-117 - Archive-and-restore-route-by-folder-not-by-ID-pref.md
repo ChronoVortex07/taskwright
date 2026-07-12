@@ -1,7 +1,7 @@
 ---
 id: TASK-117
 title: 'Archive and restore route by folder, not by ID prefix'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-12 16:42'
 updated_date: '2026-07-12 16:42'
@@ -16,6 +16,9 @@ references:
   - src/core/BacklogParser.ts
 priority: high
 category: 'Core Board'
+claimed_by: '@agent/task-117-archive-and-restore-route-by-folder-not-by-id-prefix'
+worktree: task-117-archive-and-restore-route-by-folder-not-by-id-prefix
+claimed_at: '2026-07-13 07:11'
 ---
 
 ## Description
