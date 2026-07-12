@@ -1,10 +1,10 @@
 ---
 id: TASK-115
 title: 'createDraft mints a task ID (TASK-N, not DRAFT-N)'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-12 16:41'
-updated_date: '2026-07-12 23:00'
+updated_date: '2026-07-12 23:01'
 labels:
   - stable-task-ids
 milestone: Stable Task IDs
@@ -14,9 +14,6 @@ references:
   - .taskwright/docs/HANDOFF.md
 priority: high
 category: Core Board
-claimed_by: '@agent/task-115-createdraft-mints-a-task-id-task-n-not-draft-n'
-worktree: task-115-createdraft-mints-a-task-id-task-n-not-draft-n
-claimed_at: '2026-07-13 06:49'
 ---
 
 ## Description
