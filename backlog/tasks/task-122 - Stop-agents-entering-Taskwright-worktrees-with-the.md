@@ -4,7 +4,7 @@ title: >-
   Stop agents entering Taskwright worktrees with the harness worktree tool; fix
   mis-rooted request_merge close
 type: bug
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-12 16:47'
 updated_date: '2026-07-12 16:47'
@@ -14,6 +14,9 @@ labels:
 dependencies: []
 priority: high
 category: 'Agent skills'
+claimed_by: '@agent/task-122-stop-agents-entering-taskwright-worktrees-with-the-harness-worktree-tool-fix-mis-rooted-request-merge-close'
+worktree: task-122-stop-agents-entering-taskwright-worktrees-with-the-harness-worktree-tool-fix-mis-rooted-request-merge-close
+claimed_at: '2026-07-13 00:48'
 ---
 
 ## Description
