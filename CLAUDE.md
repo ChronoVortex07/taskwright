@@ -185,8 +185,10 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   (`DragLayer.svelte`, world coords); a valid target glows green, a self/dupe/cycle red
   (client-side `wouldCreateCycle` imported from `src/core/treeGate.ts`); drop over a node posts
   `addDependency`, drop on empty canvas opens the create form pre-linked (reuses P3a
-  `createTask.linkTo`); a plain empty-canvas **click** opens the form with the clicked cell's
-  lane/band inferred (click-in-place). **Drag-to-reslot** — vertical → `category` (`reslotTask`),
+  `createTask.linkTo`); a **right-click** on empty canvas opens a context menu whose create action
+  infers the clicked cell's lane/band (create-in-place). A plain **left-click** on empty canvas
+  only dismisses popovers and focuses the canvas — it deliberately does not create (clicking to
+  focus the panel must not author a task). **Drag-to-reslot** — vertical → `category` (`reslotTask`),
   horizontal → `milestone` (`reslotTask`), in-cell → `ordinal` (`reorderTasks` + `ordinalUtils`);
   bugs are reorder-only (never `reslotTask`). **Edge removal** — a ✕ on the edge hover hit-path or a popover prereq
   chip posts `removeDependency`. One pointer-event gesture machine in `TechTreeCanvas.svelte`

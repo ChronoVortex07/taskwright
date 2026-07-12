@@ -214,12 +214,12 @@ test.describe('Tree authoring — create form', () => {
     expect((await getPostedMessages(page)).some((m) => m.type === 'setViewMode')).toBe(false);
   });
 
-  test('clicking empty canvas opens the create form (click-in-place)', async ({ page }) => {
-    // A single click on empty viewport space (no node) opens the full form.
-    const viewport = page.locator('[data-testid="tree-viewport"]');
-    const box = (await viewport.boundingBox())!;
-    // Click the centre-right area, well away from the single node (top-centre of surface).
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height - 60);
+  test('right-clicking empty canvas opens the create form (create-in-place)', async ({ page }) => {
+    // A right-click on empty viewport space (no node) opens the context menu, whose
+    // create item opens the full form (Task 6: left-click no longer creates).
+    await rightClickEmptyCanvas(page);
+    await expect(page.locator('[data-testid="context-menu"]')).toBeVisible();
+    await page.locator('[data-testid="ctx-create-here"]').click();
     await expect(page.locator('[data-testid="create-form"]')).toBeVisible();
   });
 
@@ -275,14 +275,15 @@ test.describe('Tree authoring — create form', () => {
     await expect(page.locator('[data-testid="context-menu"]')).toHaveCount(0);
   });
 
-  test('left-click on empty canvas still opens the create form after adding right-click menu', async ({
+  test('left-click on empty canvas neither creates nor opens the context menu (Task 6)', async ({
     page,
   }) => {
-    // Supplements, does not replace: existing left-click-in-place must still work.
+    // Left-click-in-place was retired: a plain click on empty canvas only dismisses/
+    // focuses. The context menu (right-click) remains the sole create-in-place trigger.
     const viewport = page.locator('[data-testid="tree-viewport"]');
     const box = (await viewport.boundingBox())!;
     await page.mouse.click(box.x + box.width / 2, box.y + box.height - 60);
-    await expect(page.locator('[data-testid="create-form"]')).toBeVisible();
+    await expect(page.locator('[data-testid="create-form"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="context-menu"]')).toHaveCount(0);
   });
 });

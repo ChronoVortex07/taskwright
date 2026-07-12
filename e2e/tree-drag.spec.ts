@@ -422,4 +422,12 @@ test.describe('Tree drag — connect / reslot / edge removal', () => {
       linkTo: { taskId: 'TASK-1', direction: 'unlocks' },
     });
   });
+
+  // --- plain click no longer creates (Task 6) --------------------------------
+
+  test('a plain left-click on empty canvas does not open the create form', async ({ page }) => {
+    const vp = (await page.locator('[data-testid="tree-viewport"]').boundingBox())!;
+    await page.mouse.click(vp.x + vp.width - 20, vp.y + vp.height - 20);
+    await expect(page.locator('[data-testid="create-form"]')).not.toBeVisible();
+  });
 });

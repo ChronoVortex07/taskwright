@@ -490,7 +490,7 @@ import ContextMenu from './ContextMenu.svelte';
       return;
     }
 
-    // (c) empty viewport — pan on drag, click-in-place create on click.
+    // (c) empty viewport — pan on drag; a plain click only dismisses/focuses (Task 6).
     closePopover();
     closeMilestone();
     pending = { kind: 'pan', startX: e.clientX, startY: e.clientY, tx: vp.tx, ty: vp.ty };
@@ -563,11 +563,15 @@ import ContextMenu from './ContextMenu.svelte';
       if (panning) {
         panning = false;
         persistNow();
-      } else {
-        // Click-in-place create (empty canvas): infer lane/band; Misc / Backburner defaults.
-        const world = worldAt(e);
-        const cell = cellAt(geometry, world.x, world.y);
-        onCreateInPlace?.({ mode: 'full', category: cell.lane, milestone: cell.band });
+      }
+      // A plain left-click on empty canvas only dismisses/focuses — it deliberately does
+      // NOT open the create form. Creating on click made it impossible to click the panel
+      // to focus it without creating a task. Right-click (onContextMenu) is the create
+      // path; it already infers lane/band from the click point via cellAt.
+      else {
+        closePopover();
+        closeMilestone();
+        contextMenu = null;
       }
       finishDrag();
       return;
