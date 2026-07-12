@@ -85,11 +85,10 @@ import { ensureBoardWorktree } from './core/boardWorktree';
 import {
   gatherMigrationFacts,
   planMigrationSteps,
-  verifyMove,
-  readBoardDirFileMap,
-  executeVerifiedMove,
+  moveBoardIntoWorktree,
   cleanMaterializedMarker,
   foldPrimaryStrays,
+  type MoveFailure,
 } from './core/boardHomeMigration';
 import { autoCommitBoard, runBoardAutoSync, BoardSyncScheduler } from './core/autoSync';
 import type { MergeConflict } from './core/boardMerge';
@@ -460,6 +459,41 @@ async function enableGitMode(repoRoot: string): Promise<SyncMode | undefined> {
 }
 
 /**
+ * Surface a blocked migration with the REASON per file, not just the count and
+ * one name (TASK-123). The old message named a task and stopped there, which
+ * left the user with nothing to act on — and "re-run to retry" was false comfort
+ * when the failure is deterministic. Every blocker is listed, with what to do.
+ */
+async function showMigrationBlockers(blocking: MoveFailure[]): Promise<void> {
+  const explain: Record<MoveFailure['reason'], string> = {
+    absent: 'missing from the board worktree',
+    'content-drift': 'differs from the board copy and could not be merged',
+    'eol-only': 'line endings only', // never blocking; listed for completeness
+  };
+  const lines = blocking.map((f) => `${f.path} — ${explain[f.reason]}`);
+  const detail = [
+    'Taskwright git-auto migration aborted BEFORE anything was removed. The board is intact in backlog/.',
+    '',
+    `${blocking.length} board file(s) could not be verified in the board worktree (.taskwright/board):`,
+    ...lines.map((l) => `  • ${l}`),
+    '',
+    'A "content-drift" file was edited while the migration ran (end other agent sessions and re-run).',
+    'An "absent" file never reached the board worktree — check that .taskwright/board is a healthy',
+    'worktree of the taskwright-board branch (Taskwright: Board Doctor can repair it).',
+  ].join('\n');
+
+  const pick = await vscode.window.showErrorMessage(
+    `Taskwright git-auto migration aborted: ${blocking.length} board file(s) failed verification (e.g. ${blocking[0]?.path} — ${blocking[0] ? explain[blocking[0].reason] : ''}). Nothing was removed.`,
+    'Show details'
+  );
+  if (pick === 'Show details') {
+    const channel = vscode.window.createOutputChannel('Taskwright');
+    channel.appendLine(detail);
+    channel.show(true);
+  }
+}
+
+/**
  * Migrate to the git-auto board home (TASK-91, spec §5.2). Ordering is the
  * safety argument: hygiene → safety snapshot → worktree → verify → per-file
  * move → marker cleanup → remote fold → mode flip (the commit point) → reload.
@@ -516,19 +550,16 @@ async function migrateToGitAuto(repoRoot: string): Promise<boolean> {
     const ensured = await ensureBoardWorktree({ primaryRoot, ref, remote });
 
     if (facts.hasStateDirs) {
-      // Verify before delete — every primary file byte-identical in the worktree.
-      const verification = verifyMove(
-        readBoardDirFileMap(primaryRoot),
-        readBoardDirFileMap(ensured.path),
-        new Set()
-      );
-      if (!verification.ok) {
-        void vscode.window.showErrorMessage(
-          `Taskwright git-auto migration aborted before anything was removed: ${verification.missing.length} board file(s) failed verification (e.g. ${verification.missing[0]}). The board is untouched in backlog/; re-run "Enable Board Sync" to retry.`
-        );
+      // Verify before delete — but heal drift rather than wedging on it, and
+      // never abort without saying WHY (TASK-123).
+      const move = await moveBoardIntoWorktree({ primaryRoot, boardWorktree: ensured.path });
+      if (!move.ok) {
+        void showMigrationBlockers(move.blocking);
         return false;
       }
-      const move = await executeVerifiedMove({ primaryRoot, boardWorktree: ensured.path });
+      if (move.conflicts.length > 0) {
+        void vscode.window.showWarningMessage(formatConflictMessage('pulled', move.conflicts));
+      }
       if (move.lockedLeftBehind.length > 0) {
         void vscode.window.showWarningMessage(
           `Taskwright: ${move.lockedLeftBehind.length} board file(s) were locked and left in backlog/ (e.g. ${move.lockedLeftBehind[0]}). They will be folded into the board automatically at the next activation.`

@@ -11,9 +11,7 @@ import { autoCommitBoard, runBoardAutoSync } from '../../core/autoSync';
 import {
   gatherMigrationFacts,
   planMigrationSteps,
-  verifyMove,
-  readBoardDirFileMap,
-  executeVerifiedMove,
+  moveBoardIntoWorktree,
   cleanMaterializedMarker,
   foldPrimaryStrays,
 } from '../../core/boardHomeMigration';
@@ -100,13 +98,11 @@ async function migrateCores(repo: TempRepo): Promise<void> {
   }
   const ensured = await ensureBoardWorktree({ primaryRoot: repo.root, ref: REF, remote: REMOTE });
   if (steps.includes('verified-move')) {
-    const verification = verifyMove(
-      readBoardDirFileMap(repo.root),
-      readBoardDirFileMap(ensured.path),
-      new Set()
-    );
-    expect(verification.ok).toBe(true);
-    await executeVerifiedMove({ primaryRoot: repo.root, boardWorktree: ensured.path });
+    const move = await moveBoardIntoWorktree({
+      primaryRoot: repo.root,
+      boardWorktree: ensured.path,
+    });
+    expect(move.ok).toBe(true);
   }
   if (steps.includes('clean-marker')) cleanMaterializedMarker(repo.root);
 }
@@ -387,5 +383,66 @@ describe('git-auto engine (integration)', () => {
       .split('\n')
       .filter((l) => l.includes('backlog/') || l.includes('.taskwright/'));
     expect(boardEntries).toEqual([]);
+  }, 30_000);
+});
+
+/**
+ * TASK-123 — the two shapes that permanently wedged "Enable Board Sync" in the
+ * field (repro repo: asterra-game). Both are exercised against REAL git, because
+ * both are caused by git behaviour a hand-rolled fixture cannot fake.
+ */
+describe('git-auto migration is not wedged by EOL normalization or a drifted worktree', () => {
+  it('migrates a repo whose .gitattributes normalizes CRLF task files (text=auto)', async () => {
+    const repo = await repoWithBoard();
+    // The asterra-game shape: an in-tree text=auto attribute (which OVERRIDES
+    // NO_EOL_CONVERT's core.autocrlf=false) plus a task file whose on-disk bytes
+    // are CRLF. `git add` normalizes the blob to LF, the board worktree checks it
+    // out as LF, and the old byte-equality verify failed on it forever.
+    repo.writeFile('.gitattributes', '* text=auto\n');
+    await repo.git(['add', '.gitattributes']);
+    await repo.git(['commit', '-q', '-m', 'normalize text files']);
+    await repo.git(['config', 'core.autocrlf', 'true']);
+    repo.writeFile(
+      'backlog/tasks/task-2 - CRLF.md',
+      TASK_1('Body with CRLF.').replace(/\n/g, '\r\n')
+    );
+
+    await migrateCores(repo); // asserts move.ok — this used to be false
+
+    const boardWorktree = boardWorktreePathFor(repo.root);
+    // The task lives in the board worktree, and its primary copy is gone.
+    expect(fs.existsSync(path.join(boardWorktree, 'backlog', 'tasks', 'task-2 - CRLF.md'))).toBe(
+      true
+    );
+    expect(fs.existsSync(path.join(repo.root, 'backlog', 'tasks', 'task-2 - CRLF.md'))).toBe(false);
+    // Content survives — only the line endings were normalized, by git's own policy.
+    expect(
+      fs.readFileSync(path.join(boardWorktree, 'backlog', 'tasks', 'task-2 - CRLF.md'), 'utf-8')
+    ).toContain('Body with CRLF.');
+  }, 30_000);
+
+  it('heals a stale board worktree left by a failed attempt instead of aborting again', async () => {
+    const repo = await repoWithBoard();
+    await migrateCores(repo); // first migration: board worktree now exists
+    const boardWorktree = boardWorktreePathFor(repo.root);
+
+    // Simulate the wedged state: a board file reappears in the primary (a stale
+    // pre-reload writer, or an aborted attempt), NEWER than the board's copy.
+    repo.writeFile('backlog/tasks/task-1 - First.md', TASK_1('Edited later.', '2026-07-12 10:00'));
+
+    const facts = await gatherMigrationFacts(repo.root, REF);
+    expect(facts.hasStateDirs).toBe(true);
+    expect(facts.boardWorktreeOk).toBe(true); // the drift shape: worktree ok AND state dirs
+
+    const move = await moveBoardIntoWorktree({ primaryRoot: repo.root, boardWorktree });
+
+    expect(move.ok).toBe(true); // was: false, forever
+    expect(move.folded).toBe(true);
+    expect(
+      fs.readFileSync(path.join(boardWorktree, 'backlog', 'tasks', 'task-1 - First.md'), 'utf-8')
+    ).toContain('Edited later.');
+    expect(fs.existsSync(path.join(repo.root, 'backlog', 'tasks', 'task-1 - First.md'))).toBe(
+      false
+    );
   }, 30_000);
 });

@@ -52,21 +52,72 @@ export function planMigrationSteps(facts: MigrationFacts): MigrationStep[] {
   return steps;
 }
 
+/** Why a primary board file did not verify against the board worktree copy. */
+export type MoveFailureReason =
+  /** No counterpart in the board worktree at all. */
+  | 'absent'
+  /** Same content, different line endings — see {@link verifyMove}. */
+  | 'eol-only'
+  /** Genuinely different bytes: the board copy is stale, or diverged. */
+  | 'content-drift';
+
+export interface MoveFailure {
+  path: string;
+  reason: MoveFailureReason;
+}
+
+export interface MoveVerification {
+  /** True when nothing BLOCKS the move (eol-only differences do not). */
+  ok: boolean;
+  /** Differences that block: `absent` | `content-drift`. */
+  blocking: MoveFailure[];
+  /** Verified-but-noteworthy: git's own EOL policy rewrote these. */
+  eolOnly: MoveFailure[];
+}
+
+const normalizeEol = (s: string): string => s.replace(/\r\n/g, '\n');
+
 /**
- * Verify-before-delete (spec §5.2 step 4): every primary board file must be
- * byte-identical in the board worktree, or listed in the fold's surfaced
- * conflict paths (the merge deliberately chose the other side). Pure.
+ * Verify-before-delete (spec §5.2 step 4): classify every primary board file
+ * against its board-worktree copy, so an abort can say WHY, not just which
+ * (TASK-123 — the old version returned bare paths and the notification printed
+ * one of them with no reason, which is undebuggable).
+ *
+ * An **EOL-only** difference verifies OK. A repo with `.gitattributes: * text=auto`
+ * normalizes CRLF→LF into the blob on `git add` — in-tree attributes override
+ * `NO_EOL_CONVERT`'s config flags, which can only silence `core.autocrlf` — so a
+ * CRLF task file on disk comes back out of the board worktree as LF. That is the
+ * repo's own declared policy applied to the file, not lost content; treating it
+ * as a failure made migration permanently impossible in such a repo. The board
+ * (LF) becomes canonical and the primary copy is safe to delete. Pure.
  */
 export function verifyMove(
   primary: BoardFileMap,
   board: BoardFileMap,
   conflictPaths: ReadonlySet<string>
-): { ok: boolean; missing: string[] } {
-  const missing: string[] = [];
+): MoveVerification {
+  const blocking: MoveFailure[] = [];
+  const eolOnly: MoveFailure[] = [];
   for (const [rel, content] of Object.entries(primary)) {
-    if (board[rel] !== content && !conflictPaths.has(rel)) missing.push(rel);
+    if (conflictPaths.has(rel)) continue; // the merge deliberately chose the other side
+    const other = board[rel];
+    if (other === content) continue;
+    if (other === undefined) blocking.push({ path: rel, reason: 'absent' });
+    else if (normalizeEol(other) === normalizeEol(content))
+      eolOnly.push({ path: rel, reason: 'eol-only' });
+    else blocking.push({ path: rel, reason: 'content-drift' });
   }
-  return { ok: missing.length === 0, missing: missing.sort() };
+  const byPath = (a: MoveFailure, b: MoveFailure): number => a.path.localeCompare(b.path);
+  return {
+    ok: blocking.length === 0,
+    blocking: blocking.sort(byPath),
+    eolOnly: eolOnly.sort(byPath),
+  };
+}
+
+/** True when the two contents differ only by line endings (or not at all). */
+function sameModuloEol(a: string | undefined, b: string): boolean {
+  return a !== undefined && normalizeEol(a) === normalizeEol(b);
 }
 
 function walkFiles(dir: string): string[] {
@@ -151,7 +202,10 @@ export async function executeVerifiedMove(opts: {
 
   const result: VerifiedMoveResult = { moved: 0, lockedLeftBehind: [], notInBoard: [] };
   for (const [rel, content] of Object.entries(primaryMap)) {
-    if (boardMap[rel] !== content && !conflictPaths.has(rel)) {
+    // Verified = identical bytes, identical-modulo-EOL (git's own text=auto
+    // normalization — see verifyMove), or covered by a surfaced conflict.
+    const verified = sameModuloEol(boardMap[rel], content) || conflictPaths.has(rel);
+    if (!verified) {
       result.notInBoard.push(rel);
       continue;
     }
@@ -199,6 +253,85 @@ function collectDirs(dir: string): string[] {
   return out;
 }
 
+export interface MoveBoardResult extends MoveVerification {
+  /** Files deleted from the primary after verification. */
+  moved: number;
+  /** True when drift forced a union-merge fold before the move. */
+  folded: boolean;
+  /** Conflicts the fold surfaced (both sides edited; newer `updated_date` won). */
+  conflicts: MergeConflict[];
+  /** Files a locked delete left behind (Windows) — reported, never fatal. */
+  lockedLeftBehind: string[];
+}
+
+/**
+ * Move the primary's board state into the board worktree, healing drift instead
+ * of wedging on it (TASK-123 AC#3).
+ *
+ * The naive "compare, and abort if anything differs" is a trap: `ensureBoardWorktree`
+ * REUSES an existing board worktree without resetting its working tree to the
+ * freshly-seeded ref tip, and a failed migration leaves such a worktree behind.
+ * So every retry compared the live board against stale working files — any task
+ * edited since (e.g. one an agent claimed mid-migration) failed forever, and the
+ * repo could never be migrated again. When drift is found we now union-merge it
+ * forward (the same `mergeBoards` the sync engine uses: newer `updated_date` wins,
+ * conflicts surfaced, never silently dropped), commit, and move.
+ *
+ * Ordering is still the safety argument: nothing is deleted from the primary
+ * until its bytes are verified present in the board worktree.
+ */
+export async function moveBoardIntoWorktree(opts: {
+  primaryRoot: string;
+  boardWorktree: string;
+  /** Commit the board worktree after a fold. Defaults to the real autoCommit. */
+  commit?: (boardWorktree: string) => Promise<unknown>;
+}): Promise<MoveBoardResult> {
+  const commit = opts.commit ?? autoCommitBoard;
+  const primaryMap = readBoardDirFileMap(opts.primaryRoot);
+  let boardMap = readBoardDirFileMap(opts.boardWorktree);
+
+  let verification = verifyMove(primaryMap, boardMap, new Set());
+  let conflicts: MergeConflict[] = [];
+  let folded = false;
+
+  if (!verification.ok) {
+    // Drift: fold the primary's state forward. Only the files that actually
+    // differ beyond EOL are offered as "theirs" — an EOL-only difference is
+    // already verified, and feeding it to the merge would surface a phantom
+    // conflict on a file whose content is identical.
+    const strays: BoardFileMap = {};
+    for (const [rel, content] of Object.entries(primaryMap)) {
+      if (!sameModuloEol(boardMap[rel], content)) strays[rel] = content;
+    }
+    const merged = mergeBoards(undefined, boardMap, strays);
+    conflicts = merged.conflicts;
+    for (const [rel, content] of Object.entries(merged.merged)) {
+      const abs = path.join(opts.boardWorktree, ...rel.split('/'));
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, content);
+    }
+    await commit(opts.boardWorktree);
+    folded = true;
+
+    boardMap = readBoardDirFileMap(opts.boardWorktree);
+    verification = verifyMove(primaryMap, boardMap, new Set(conflicts.map((c) => c.path)));
+  }
+
+  const move = await executeVerifiedMove({
+    primaryRoot: opts.primaryRoot,
+    boardWorktree: opts.boardWorktree,
+    conflictPaths: new Set(conflicts.map((c) => c.path)),
+  });
+
+  return {
+    ...verification,
+    moved: move.moved,
+    folded,
+    conflicts,
+    lockedLeftBehind: move.lockedLeftBehind,
+  };
+}
+
 /** `<primary>/.taskwright/board.materialized` — delete the v1 CAS leftover. */
 export function cleanMaterializedMarker(primaryRoot: string): void {
   fs.rmSync(path.join(primaryRoot, '.taskwright', 'board.materialized'), { force: true });
@@ -216,19 +349,9 @@ export async function foldPrimaryStrays(
 ): Promise<{ folded: number; conflicts: MergeConflict[] } | null> {
   const primaryMap = readBoardDirFileMap(primaryRoot);
   if (Object.keys(primaryMap).length === 0) return null;
-  const boardWorktree = boardWorktreePathFor(primaryRoot);
-  const boardMap = readBoardDirFileMap(boardWorktree);
-  const { merged, conflicts } = mergeBoards(undefined, boardMap, primaryMap);
-  for (const [rel, content] of Object.entries(merged)) {
-    const abs = path.join(boardWorktree, ...rel.split('/'));
-    fs.mkdirSync(path.dirname(abs), { recursive: true });
-    fs.writeFileSync(abs, content);
-  }
-  await autoCommitBoard(boardWorktree);
-  await executeVerifiedMove({
+  const result = await moveBoardIntoWorktree({
     primaryRoot,
-    boardWorktree,
-    conflictPaths: new Set(conflicts.map((c) => c.path)),
+    boardWorktree: boardWorktreePathFor(primaryRoot),
   });
-  return { folded: Object.keys(primaryMap).length, conflicts };
+  return { folded: Object.keys(primaryMap).length, conflicts: result.conflicts };
 }
