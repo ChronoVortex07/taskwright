@@ -353,6 +353,21 @@ import ContextMenu from './ContextMenu.svelte';
     }
   });
 
+  // Give the canvas keyboard focus once, on mount, so `/`, Ctrl/Cmd-F, and arrow/j-k node
+  // navigation work immediately on a "cold" Tree tab (opened but never clicked). Without
+  // this, onCanvasKeydown — attached directly to `.tree-viewport`, not `window` — never
+  // receives a keydown whose target is `<body>` (nothing has focused the viewport yet),
+  // and Tasks.svelte's own window-level `/`/Ctrl-F handler only focuses an
+  // already-rendered find/search input, which doesn't exist until openFind() runs — so a
+  // first keypress on a cold tab silently did nothing (TASK-7 e2e finding). A one-time
+  // flag keeps this from re-stealing focus on every re-render.
+  let focusedOnce = false;
+  $effect(() => {
+    if (focusedOnce || !viewportEl) return;
+    focusedOnce = true;
+    viewportEl.focus();
+  });
+
   let persistTimer: ReturnType<typeof setTimeout> | undefined;
   function persistNow() {
     const prev = (vscode.getState() as Record<string, unknown> | undefined) ?? {};
