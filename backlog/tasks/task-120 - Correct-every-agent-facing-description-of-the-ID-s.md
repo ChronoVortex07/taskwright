@@ -17,7 +17,7 @@ references:
   - CLAUDE.md
   - AGENTS.md
 priority: medium
-category: 'Docs &amp; Branding'
+category: 'Docs & Branding'
 ---
 
 ## Description
