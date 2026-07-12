@@ -70,6 +70,38 @@ describe('deriveTreeLayout — lanes and bands', () => {
     expect(layout.get('TASK-3')!.band).toBe('Later');
     expect(layout.get('TASK-4')!.band).toBe(BACKBURNER_BAND);
   });
+
+  // TASK-124. Backburner is a RESERVED band: it is appended last, for tasks with
+  // no milestone. A task may nevertheless carry `milestone: Backburner`
+  // explicitly, and the raw final push used to emit the band a SECOND time. The
+  // webview keys the band {#each} by name, so the duplicate key made Svelte throw
+  // `each_key_duplicate` and the entire tree canvas rendered nothing.
+  it('emits Backburner exactly once, and last, when a task explicitly uses it', () => {
+    const { layout, bandOrder } = deriveTreeLayout(
+      [
+        task({ id: 'TASK-1', milestone: 'v1.0' }),
+        task({ id: 'TASK-2', milestone: BACKBURNER_BAND }), // explicit reserved band
+        task({ id: 'TASK-3' }), // implicit -> Backburner
+      ],
+      opts({ milestoneOrder: ['v1.0'] })
+    );
+    expect(bandOrder.filter((b) => b === BACKBURNER_BAND)).toHaveLength(1);
+    expect(bandOrder).toEqual(['v1.0', BACKBURNER_BAND]);
+    expect(bandOrder[bandOrder.length - 1]).toBe(BACKBURNER_BAND);
+    expect(layout.get('TASK-2')!.band).toBe(BACKBURNER_BAND);
+    expect(layout.get('TASK-3')!.band).toBe(BACKBURNER_BAND);
+    // Same band ⇒ same column: an explicit Backburner task must not land in a
+    // phantom band of its own.
+    expect(layout.get('TASK-2')!.depth).toBe(layout.get('TASK-3')!.depth);
+  });
+
+  it('does not duplicate Backburner when it is a declared milestone (any casing)', () => {
+    const { bandOrder } = deriveTreeLayout([task({ id: 'TASK-1', milestone: 'backburner' })], {
+      ...opts({ milestoneOrder: ['v1.0', 'BACKBURNER'] }),
+    });
+    expect(bandOrder.filter((b) => b.toLowerCase() === 'backburner')).toHaveLength(1);
+    expect(bandOrder[bandOrder.length - 1]).toBe(BACKBURNER_BAND);
+  });
 });
 
 describe('deriveTreeLayout — depth and cross-band warnings', () => {

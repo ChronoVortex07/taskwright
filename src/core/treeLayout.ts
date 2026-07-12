@@ -48,8 +48,16 @@ export function deriveTreeLayout(tasks: Task[], opts: DeriveLayoutOptions): Deri
   const byId = new Map<string, Task>(tasks.map((t) => [t.id.trim().toUpperCase(), t]));
 
   // --- Band order: declared milestones, then discovered (sorted), then Backburner ---
+  // Backburner is RESERVED: it is the home of every milestone-less task and must
+  // appear exactly once, LAST (backburnerIdx below is bandOrder.length - 1). A
+  // task may still carry `milestone: Backburner` explicitly, and a config may
+  // declare it — so it is marked seen up front, which keeps it out of the
+  // declared/discovered sets. Without that, it was appended a second time, and
+  // because the webview keys the band {#each} by name a duplicate name is a
+  // duplicate key: Svelte throws `each_key_duplicate` and the whole tree canvas
+  // renders nothing (TASK-124).
   const bandOrder: string[] = [];
-  const seenBand = new Set<string>();
+  const seenBand = new Set<string>([BACKBURNER_BAND.toLowerCase()]);
   const pushBand = (value: string) => {
     const v = value.trim();
     if (v && !seenBand.has(v.toLowerCase())) {
