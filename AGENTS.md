@@ -498,8 +498,15 @@ Use the `agent-browser` skill and CLI for visual exploratory testing of webview 
 
 ```bash
 bun run build                # Build webview bundles first
-bun run vite &               # Start fixture dev server on port 5173
+bun run vite &               # Start fixture dev server — note the port it prints
 ```
+
+**Port is per-checkout.** The primary checkout serves on **5173**; a linked `.worktrees/<branch>`
+derives its own stable port from its path (`scripts/lib/fixtureServer.ts`). That is deliberate: with
+a fixed port, Playwright's `reuseExistingServer` silently consumed a fixture server running in a
+*different* worktree and ran the whole suite against **that tree's `dist/webview/`** (TASK-111). Use
+the URL vite prints (substitute it for `5173` below); `TASKWRIGHT_FIXTURE_PORT=<port>` pins it, and
+`e2e/global-setup.ts` aborts loudly if the server on our port turns out to serve another tree.
 
 **Basic workflow:**
 

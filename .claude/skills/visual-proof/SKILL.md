@@ -28,6 +28,8 @@ Heuristic: if the proof answers "what does this _look_ like?", fixtures are enou
 
 Fast path (~seconds per screenshot). The fixture server hosts compiled webview bundles at `http://localhost:5173` with VS Code mocked and theme CSS pre-loaded. **Limitation:** the mock only captures `postMessage`; actions requiring the extension host (opening a file in the editor, writing to disk) won't complete. Use CDP for those.
 
+> **Port:** 5173 is the **primary checkout's** port. A linked `.worktrees/<branch>` derives its own stable port (`scripts/lib/fixtureServer.ts`) so worktrees can't consume each other's server — and a Playwright run can't silently test another tree's `dist/` (TASK-111). Use the URL vite prints on startup, and substitute it for `5173` in the table below. `TASKWRIGHT_FIXTURE_PORT=<port>` pins it if you need a fixed one.
+
 ### Pages served
 
 | URL                                         | Webview                    | Inject to render                   |
@@ -83,11 +85,11 @@ Copy real task shapes from `src/test/e2e/fixtures/test-workspace/backlog/tasks/`
 ```bash
 # terminal 1: build + serve
 bun run build
-bun run webview:serve &   # port 5173, strictPort: true
+bun run webview:serve &   # strictPort — see the port note below
 SERVE_PID=$!
 
 # terminal 2 (same shell is fine): drive the browser
-agent-browser open http://localhost:5173/tasks.html
+agent-browser open http://localhost:5173/tasks.html   # use the port vite printed
 agent-browser eval "window.postMessage({ type: 'statusesUpdated', statuses: ['Draft','To Do','In Progress','Done'] }, '*')"
 agent-browser eval "window.postMessage({ type: 'tasksUpdated', tasks: [/* ... */] }, '*')"
 agent-browser screenshot tmp/screenshots/kanban-dark.png
