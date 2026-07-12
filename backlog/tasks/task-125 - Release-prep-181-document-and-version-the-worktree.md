@@ -3,10 +3,10 @@ id: TASK-125
 title: >-
   Release prep 1.8.1: document and version the worktree-entry, board-sync and
   tree-band fixes
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-12 17:34'
-updated_date: '2026-07-12 17:38'
+updated_date: '2026-07-12 17:39'
 labels: []
 dependencies:
   - TASK-122
@@ -14,9 +14,6 @@ dependencies:
   - TASK-124
 priority: medium
 category: Docs & Branding
-claimed_by: '@agent/task-125-release-prep-1-8-1-document-and-version-the-worktree-entry-board-sync-and-tree-band-fixes'
-worktree: task-125-release-prep-1-8-1-document-and-version-the-worktree-entry-board-sync-and-tree-band-fixes
-claimed_at: '2026-07-13 01:34'
 ---
 
 ## Description
