@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick, untrack } from 'svelte';
+  import { tick } from 'svelte';
   import type { Task, TaskIdDisplayMode } from '../../lib/types';
   import { vscode } from '../../stores/vscode.svelte';
   import {
@@ -29,6 +29,7 @@
 import ContextMenu from './ContextMenu.svelte';
   import TreeFindBar from './TreeFindBar.svelte';
   import { findMatches, cycleIndex } from '../../lib/treeFind';
+  import { onCommandNonce } from '../../lib/commandNonce.svelte';
 
   interface Props {
     tasks: Task[];
@@ -231,16 +232,23 @@ import ContextMenu from './ContextMenu.svelte';
       });
   });
 
+  // --- Host→canvas commands. ALL of them go through onCommandNonce (see
+  // src/webview/lib/commandNonce.svelte.ts): it seeds its guard from the prop's MOUNT-TIME
+  // value, so a nonce bumped during a PRIOR mount cannot replay the command when this canvas
+  // is re-created on a tab switch. Never hand-roll a `let lastFooNonce = 0` guard here again —
+  // that is the bug that shipped on the find bar in 1.8.0 (commit fb63630), and
+  // src/test/unit/commandNonce.test.ts fails the build if one comes back.
+
   // Jump to a band when the navigator asks (nonce lets the same band re-trigger).
-  let lastJumpNonce = 0;
-  $effect(() => {
-    if (jumpNonce === lastJumpNonce) return;
-    lastJumpNonce = jumpNonce;
-    const b = geometry.bands.find((bnd) => bnd.name === jumpBand);
-    if (b && viewportEl) {
-      setViewport({ scale: vp.scale, tx: -b.x * vp.scale + 40, ty: vp.ty });
+  onCommandNonce(
+    () => jumpNonce,
+    () => {
+      const b = geometry.bands.find((bnd) => bnd.name === jumpBand);
+      if (b && viewportEl) {
+        setViewport({ scale: vp.scale, tx: -b.x * vp.scale + 40, ty: vp.ty });
+      }
     }
-  });
+  );
 
   /** Center the viewport on a node. Shared by the navigator jump and the find cycle. */
   function centerOn(taskId: string) {
@@ -254,51 +262,43 @@ import ContextMenu from './ContextMenu.svelte';
   }
 
   // Jump to a specific task node when the navigator asks (nonce lets retrigger).
-  let lastJumpTaskNonce = 0;
-  $effect(() => {
-    if (jumpTaskNonce === lastJumpTaskNonce) return;
-    lastJumpTaskNonce = jumpTaskNonce;
-    centerOn(jumpTaskId);
-  });
+  onCommandNonce(
+    () => jumpTaskNonce,
+    () => centerOn(jumpTaskId)
+  );
 
   // Minimap drag-to-pan: center the viewport on the normalized (x,y) world point.
-  let lastMinimapPanNonce = 0;
-  $effect(() => {
-    if (minimapPanNonce === lastMinimapPanNonce) return;
-    lastMinimapPanNonce = minimapPanNonce;
-    if (!viewportEl || geometry.width <= 0 || geometry.height <= 0) return;
-    const worldX = minimapPanX * geometry.width;
-    const worldY = minimapPanY * geometry.height;
-    setViewport({
-      scale: vp.scale,
-      tx: viewportEl.clientWidth / 2 - worldX * vp.scale,
-      ty: viewportEl.clientHeight / 2 - worldY * vp.scale,
-    });
-  });
+  onCommandNonce(
+    () => minimapPanNonce,
+    () => {
+      if (!viewportEl || geometry.width <= 0 || geometry.height <= 0) return;
+      const worldX = minimapPanX * geometry.width;
+      const worldY = minimapPanY * geometry.height;
+      setViewport({
+        scale: vp.scale,
+        tx: viewportEl.clientWidth / 2 - worldX * vp.scale,
+        ty: viewportEl.clientHeight / 2 - worldY * vp.scale,
+      });
+    }
+  );
 
   // Host-requested find (`/` or Ctrl/Cmd-F handled at the window level in Tasks.svelte,
   // where the keystroke lands however the user last focused something — a toolbar button,
   // the promote-all button, <body>). Nonce lets a repeat request re-trigger.
   //
+  // This is the nonce whose stale-replay bug shipped in 1.8.0 (fb63630): a `/` press followed
+  // by Escape, a tab switch away and back, silently reopened the find bar and stole keyboard
+  // focus. The mount-time seeding that fixed it now lives inside onCommandNonce and covers
+  // every command prop above, so it cannot be reintroduced here by hand.
+  //
   // REACTIVE GRAPH: this effect reads ONLY `findRequestNonce` (a prop) and writes `findOpen`.
   // It reads neither findResults/findMatchIds/dimmedIds nor any derived, so it adds no edge
   // to the find/dim derived graph — the "findResults may depend only on the primitive dim
-  // sources" invariant documented below is untouched.
-  // Seeded from the prop's MOUNT-TIME value, NOT 0: findRequestNonce lives in Tasks.svelte
-  // and persists for the whole webview session, while this canvas is destroyed and
-  // re-created on every tab switch (see the {:else if activeTab === 'tree'} block in
-  // Tasks.svelte). Seeding from 0 would make a stale nonce from a PRIOR mount (e.g. after
-  // opening find with `/` and pressing Escape, then switching tabs and back) look like a
-  // fresh bump on remount, silently reopening the find bar and stealing keyboard focus with
-  // no keystroke from the user. Do not "normalize" this back to 0. `untrack` makes the
-  // one-time, non-reactive read explicit (and silences Svelte's `state_referenced_locally`
-  // warning, which would otherwise fire on every build for this deliberately-once read).
-  let lastFindRequestNonce = untrack(() => findRequestNonce);
-  $effect(() => {
-    if (findRequestNonce === lastFindRequestNonce) return;
-    lastFindRequestNonce = findRequestNonce;
-    void openFind();
-  });
+  // sources" invariant documented above is untouched.
+  onCommandNonce(
+    () => findRequestNonce,
+    () => void openFind()
+  );
 
   // Feed the navigator minimap with the current normalized viewport rect (debounced).
   let minimapTimer: ReturnType<typeof setTimeout> | undefined;
