@@ -1,7 +1,7 @@
 ---
 id: TASK-110
 title: Release 1.7.0 — document the m-11 performance wave
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-12 06:55'
 updated_date: '2026-07-12 06:56'
@@ -15,6 +15,9 @@ dependencies:
   - TASK-109
 priority: medium
 category: 'Docs & Branding'
+claimed_by: '@agent/task-110-release-1-7-0-document-the-m-11-performance-wave'
+worktree: task-110-release-1-7-0-document-the-m-11-performance-wave
+claimed_at: '2026-07-12 14:56'
 ---
 
 ## Description
