@@ -76,6 +76,7 @@ import {
   DEFAULT_SYNC_CONFIG,
   type SyncMode,
 } from './core/syncConfig';
+import { createDeferredRunner } from './core/deferredBootstrap';
 import { applyBoardIgnore, boardTrackedPaths } from './core/boardMigration';
 import { resolvePrimaryWorktreeRoot, boardWorktreePathFor } from './core/boardRoot';
 import { snapshotBoardToRef, refTip, materializeRefToWorktree } from './core/boardRef';
@@ -793,17 +794,19 @@ export async function activate(context: vscode.ExtensionContext) {
     tasksHosts.forEach((host) => host.setWorkspaceRoot(workspaceRootPath));
   }
 
-  if (workspaceRootPath) {
-    syncWorktreeGuard(workspaceRootPath, context.extensionUri);
-    syncPostCheckoutWarn(workspaceRootPath, context.extensionUri);
-    syncBoardHooks(workspaceRootPath);
+  // Repo/git housekeeping (TASK-109). None of this is needed to render the board,
+  // but all of it spawns git subprocesses — so it runs off the window-open critical
+  // path via the deferred runner below, not inline in activate().
+  async function runRepoHousekeeping(root: string): Promise<void> {
+    syncWorktreeGuard(root, context.extensionUri);
+    syncPostCheckoutWarn(root, context.extensionUri);
+    syncBoardHooks(root);
     // Publish the merge config, then run the verify-command doctor over the
     // published result — flags verify commands that provably cannot run in this
-    // repo (misconfigured merge gate) at activation instead of mid-merge.
-    void syncMergeConfig(workspaceRootPath).then(() =>
-      runVerifyDoctorCheck(workspaceRootPath, { quietWhenOk: true })
-    );
-    void publishSyncConfig(workspaceRootPath);
+    // repo (misconfigured merge gate) before a merge rather than mid-merge.
+    await syncMergeConfig(root);
+    await runVerifyDoctorCheck(root, { quietWhenOk: true });
+    await publishSyncConfig(root);
   }
 
   context.subscriptions.push(
@@ -855,7 +858,8 @@ export async function activate(context: vscode.ExtensionContext) {
     boardSyncStatusBarItem.tooltip = tooltip;
     boardSyncStatusBarItem.show();
   }
-  void refreshBoardSyncStatusBar();
+  // Called by the deferred startup bootstrap (TASK-109) — it resolves the git
+  // common dir, so it is not run inline during activation.
 
   // ── git-auto engine (TASK-91) ─────────────────────────────────────────────
   // Event-driven only: activation, write-debounce (FileWatcher), the manual
@@ -899,7 +903,7 @@ export async function activate(context: vscode.ExtensionContext) {
     }
   }
 
-  void (async () => {
+  async function bootstrapGitAuto(): Promise<void> {
     if (!workspaceRootPath) return;
     const commonDir = await resolveCommonDir(workspaceRootPath);
     const syncCfg = commonDir
@@ -944,7 +948,26 @@ export async function activate(context: vscode.ExtensionContext) {
     } catch (err) {
       console.warn('[Taskwright] git-auto activation bootstrap failed:', err);
     }
-  })();
+  }
+
+  /**
+   * Everything git-flavoured that activation used to fire inline (TASK-109).
+   *
+   * It runs once, ~2s after activation — off the window-open critical path — or
+   * sooner if something that genuinely depends on it pulls it forward (opening the
+   * board, or a sync command). Ordering inside is preserved: repo housekeeping and
+   * the status bar first, then the git-auto bootstrap (ensure-worktree → fold-strays
+   * → first sync), which is what the git-auto engine expects.
+   */
+  const startupBootstrap = createDeferredRunner(async () => {
+    if (workspaceRootPath) {
+      await runRepoHousekeeping(workspaceRootPath);
+    }
+    await refreshBoardSyncStatusBar();
+    await bootstrapGitAuto();
+  });
+  context.subscriptions.push({ dispose: () => startupBootstrap.dispose() });
+  startupBootstrap.schedule();
 
   /** Never-silent conflict surfacing, shared by push and pull: lists ids, offers to open one. */
   async function showConflictNotification(
@@ -2003,10 +2026,17 @@ export async function activate(context: vscode.ExtensionContext) {
   );
   if (parser) {
     const activationParser = parser;
-    void runBoardDoctorFlow(
-      { parser: activationParser, writer, refresh: refreshAllViews },
-      { interactive: false }
-    ).catch((error) => console.error('Taskwright board doctor (activation) failed:', error));
+    // Silent-when-clean health check. It parses the board and stats .taskwright/
+    // and .worktrees/, so like the rest of the startup work it is deferred off the
+    // window-open critical path (TASK-109) rather than run inline.
+    const doctorCheck = createDeferredRunner(() =>
+      runBoardDoctorFlow(
+        { parser: activationParser, writer, refresh: refreshAllViews },
+        { interactive: false }
+      )
+    );
+    context.subscriptions.push({ dispose: () => doctorCheck.dispose() });
+    doctorCheck.schedule();
   }
 
   // Register set/clear active-task commands. The active task is Taskwright's
