@@ -446,6 +446,49 @@ export class BacklogWriter {
   }
 
   /**
+   * The next free task number, WITHOUT claiming it. The draft-id migration (TASK-118) plans a
+   * whole batch of renames off one scan, so it needs to peek the counter rather than allocate.
+   *
+   * Unlike `createTask`/`createDraft` this takes no lock: the caller assigns ids sequentially
+   * from here and writes them itself. It is therefore only safe when nothing else is minting
+   * ids concurrently — which is the migration's contract (it runs under the board lock).
+   */
+  peekNextTaskId(backlogPath: string, prefix: string = 'task'): number {
+    return this.getNextTaskId(backlogPath, prefix);
+  }
+
+  /**
+   * Rename a task file and rewrite its frontmatter `id` IN PLACE, without moving it between
+   * folders. The draft-id migration uses this to re-id a legacy `DRAFT-N` draft while it STAYS a
+   * draft — a re-id is not a promotion, and only the human decides what gets promoted.
+   *
+   * Every other frontmatter field is preserved verbatim (status included — a Done draft stays
+   * Done), and CRLF/LF is round-tripped, so the file remains byte-compatible with Backlog.md.
+   */
+  async reidTaskFile(
+    fromPath: string,
+    toPath: string,
+    newId: string,
+    parser: BacklogParser
+  ): Promise<void> {
+    if (path.resolve(fromPath) !== path.resolve(toPath)) {
+      fs.mkdirSync(path.dirname(toPath), { recursive: true });
+      fs.renameSync(fromPath, toPath);
+      parser.invalidateTaskCache(fromPath);
+    }
+
+    const rawContent = fs.readFileSync(toPath, 'utf-8');
+    const hasCRLF = detectCRLF(rawContent);
+    const content = normalizeToLF(rawContent);
+    const { frontmatter, body } = this.extractFrontmatter(content);
+    frontmatter.id = newId;
+    frontmatter.updated_date = nowTimestamp();
+    const updatedContent = restoreLineEndings(this.reconstructFile(frontmatter, body), hasCRLF);
+    atomicWriteFileSync(toPath, updatedContent);
+    parser.invalidateTaskCache(toPath);
+  }
+
+  /**
    * Permanently delete a task file from disk
    */
   async deleteTask(taskId: string, parser: BacklogParser): Promise<void> {
