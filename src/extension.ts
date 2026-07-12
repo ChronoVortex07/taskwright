@@ -7,6 +7,11 @@ import { TaskPreviewViewProvider } from './providers/TaskPreviewViewProvider';
 import { TreeNavigatorProvider } from './providers/TreeNavigatorProvider';
 import { BacklogParser } from './core/BacklogParser';
 import { BacklogWriter } from './core/BacklogWriter';
+import { TreeFieldService } from './core/TreeFieldService';
+import {
+  runDraftIdMigrationLocked,
+  formatMigrationMessage,
+} from './core/draftIdMigration';
 import { FileWatcher } from './core/FileWatcher';
 import { BacklogCli } from './core/BacklogCli';
 import { createDebouncedHandler } from './core/debounce';
@@ -982,13 +987,45 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   /**
+   * Converge a legacy DRAFT-N board onto stable task ids (TASK-119).
+   *
+   * Idempotent — a board whose drafts already carry task ids performs ZERO writes, so this is
+   * safe to run on every activation. Cross-process safe: an extension host and an MCP server
+   * routinely start at the same moment against one board, and `peekNextTaskId` is lock-free, so
+   * the shared `.locks/` mutex inside `runDraftIdMigrationLocked` is what stops the two from
+   * planning the same id and double-renaming the same file.
+   *
+   * NON-FATAL BY CONSTRUCTION: it runs inside the deferred bootstrap (never inline — TASK-109
+   * moved every fs/git burst off the activation path) and swallows its own failures. The
+   * deferred runner never rejects into `activate()`, and a failure here must not break the
+   * window: it logs, and the board doctor's `legacy-draft-ids` finding remains as the visible,
+   * repairable safety net.
+   */
+  async function migrateDraftIds(): Promise<void> {
+    if (!parser) return;
+    try {
+      const result = await runDraftIdMigrationLocked(
+        { parser, writer: new BacklogWriter(), treeFieldService: new TreeFieldService() },
+        parser.getBacklogPath()
+      );
+      if (result.migrated === 0) return; // silent when there was nothing to do
+      parser.invalidateTaskCache();
+      tasksHosts.forEach((host) => host.refresh());
+      void vscode.window.showInformationMessage(formatMigrationMessage(result.mapping));
+    } catch (err) {
+      console.warn('[Taskwright] draft-id migration failed:', err);
+    }
+  }
+
+  /**
    * Everything git-flavoured that activation used to fire inline (TASK-109).
    *
    * It runs once, ~2s after activation — off the window-open critical path — or
    * sooner if something that genuinely depends on it pulls it forward (opening the
    * board, or a sync command). Ordering inside is preserved: repo housekeeping and
    * the status bar first, then the git-auto bootstrap (ensure-worktree → fold-strays
-   * → first sync), which is what the git-auto engine expects.
+   * → first sync), which is what the git-auto engine expects — the draft-id migration
+   * is APPENDED last, so it runs against the board home git-auto just resolved.
    */
   const startupBootstrap = createDeferredRunner(async () => {
     if (workspaceRootPath) {
@@ -996,6 +1033,7 @@ export async function activate(context: vscode.ExtensionContext) {
     }
     await refreshBoardSyncStatusBar();
     await bootstrapGitAuto();
+    await migrateDraftIds();
   });
   context.subscriptions.push({ dispose: () => startupBootstrap.dispose() });
   startupBootstrap.schedule();

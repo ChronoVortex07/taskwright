@@ -18,7 +18,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { BacklogParser } from './BacklogParser';
-import { normalizeToLF } from './BacklogWriter';
+import { normalizeToLF, idHasPrefix } from './BacklogWriter';
 import { dispatchBranchName } from './dispatchPrompt';
 import { readActiveTask } from './activeTask';
 import { splitFrontmatter } from './frontmatterEdit';
@@ -37,7 +37,8 @@ export type DoctorFindingType =
   | 'dangling-continuation'
   | 'board-worktree-missing'
   | 'board-strays-in-primary'
-  | 'board-mode-mismatch';
+  | 'board-mode-mismatch'
+  | 'legacy-draft-ids';
 
 /** The one-click repair a finding calls for; the caller confirms + executes. */
 export type DoctorRepair =
@@ -50,7 +51,8 @@ export type DoctorRepair =
   | 'strip-continuations'
   | 'repair-board-worktree'
   | 'fold-primary-strays'
-  | 'restore-board-to-primary';
+  | 'restore-board-to-primary'
+  | 'migrate-draft-ids';
 
 export interface DoctorFinding {
   type: DoctorFindingType;
@@ -104,6 +106,10 @@ export interface BoardDoctorInput {
   primaryStateDirs?: string[];
   /** off/git: the primary `backlog/tasks` directory exists. */
   primaryTasksPresent?: boolean;
+  /** Board drafts (the `drafts/` folder). Check 11 only runs when provided. */
+  drafts?: DoctorTask[];
+  /** The board's configured `task_prefix`; an id lacking it is a legacy draft id. */
+  taskPrefix?: string;
 }
 
 /** Facts gathered from the filesystem for {@link diagnoseBoard}. */
@@ -369,6 +375,27 @@ export function diagnoseBoard(input: BoardDoctorInput): DoctorFinding[] {
     });
   }
 
+  // 11. Legacy DRAFT-N draft ids (TASK-119). Such an id CHANGES when the draft is
+  // promoted, dangling every reference written against it — the instability stable
+  // ids removed. The automatic migration (activation + MCP startup) normally
+  // converges this; a finding here is the visible safety net for when it could not
+  // run — a read-only board, a peer process holding the lock through the whole
+  // window, or a failure that logged and degraded rather than blocking activation.
+  //
+  // Legacy = "lacks the board's configured task_prefix", never a literal 'DRAFT-'
+  // match, so a `task_prefix: STORY` board does not see its own STORY-4 as legacy.
+  if (input.drafts && input.taskPrefix) {
+    const legacy = input.drafts.filter((d) => !idHasPrefix(d.id, input.taskPrefix!));
+    if (legacy.length > 0) {
+      findings.push({
+        type: 'legacy-draft-ids',
+        repair: 'migrate-draft-ids',
+        detail: legacy.map((d) => d.id).join(', '),
+        message: `${legacy.length} draft(s) still use unstable ${legacy[0].id.split('-')[0]}-N ids, which change on promotion: ${legacy.map((d) => d.id).join(', ')}`,
+      });
+    }
+  }
+
   return findings;
 }
 
@@ -483,6 +510,9 @@ export async function runBoardDoctor(
     tasks: doctorTasks,
     statuses,
     categories: config.categories ?? [],
+    // Check 11 needs the drafts and the prefix that decides whether their ids are legacy.
+    drafts: drafts.map((d) => ({ id: d.id, title: d.title, status: d.status })),
+    taskPrefix: config.task_prefix || 'TASK',
     extraKnownTaskIds: [...drafts, ...completed].map((t) => t.id),
     ...gatherDoctorFacts(repoRoot),
     ...(opts.syncMode

@@ -25,6 +25,9 @@ import {
   planDraftIdMigration,
   isLegacyDraftBoard,
   runDraftIdMigration,
+  runDraftIdMigrationLocked,
+  formatMigrationMessage,
+  DRAFT_ID_MIGRATION_LOCK,
 } from '../../core/draftIdMigration';
 
 // ---------------------------------------------------------------------------
@@ -461,4 +464,191 @@ describe('runDraftIdMigration', () => {
     expect(mapping[0].to).toBe('TASK-001');
     expect((await deps.parser.getTask('TASK-001'))!.folder).toBe('drafts');
   });
+});
+
+// ---------------------------------------------------------------------------
+// The LOCKED entry point (TASK-119) — the one both auto-run call sites use.
+//
+// `peekNextTaskId` is lock-free by design, so an unguarded migration is a live
+// clobber race: an extension host and an MCP server can start SIMULTANEOUSLY, both
+// scan the same `nextId`, and both re-id the same legacy draft onto it. These tests
+// do not assume the guard works — they run two migrations concurrently against ONE
+// board and assert a single coherent outcome.
+// ---------------------------------------------------------------------------
+
+/** A second, independent dep set: a different process's caches over the same board. */
+function freshDeps(): IdRemapDeps {
+  return {
+    parser: new BacklogParser(backlogPath),
+    writer: new BacklogWriter(),
+    treeFieldService: new TreeFieldService(),
+  };
+}
+
+const heldLockPath = (): string =>
+  path.join(backlogPath, '.locks', DRAFT_ID_MIGRATION_LOCK);
+
+describe('runDraftIdMigrationLocked (cross-process single-flight)', () => {
+  it('CONCURRENCY: two simultaneous migrations converge the board exactly once', async () => {
+    seed('drafts', 'draft-3 - Legacy.md', 'DRAFT-3', 'Legacy');
+    seed(
+      'tasks',
+      'task-9 - Dependent.md',
+      'TASK-9',
+      'Dependent',
+      ['DRAFT-3'],
+      `parent_task_id: DRAFT-3\n${listBlock('subtasks', ['DRAFT-3'])}${listBlock('references', ['DRAFT-3'])}`
+    );
+
+    // Two dep sets = two processes racing the same physical board.
+    const [a, b] = await Promise.all([
+      runDraftIdMigrationLocked(freshDeps(), backlogPath),
+      runDraftIdMigrationLocked(freshDeps(), backlogPath),
+    ]);
+
+    // Exactly ONE of the two did the work. The loser either waited and found a
+    // converged board (migrated 0) or was locked out — never a second re-id.
+    const winners = [a, b].filter((r) => r.migrated > 0);
+    expect(winners).toHaveLength(1);
+    expect(winners[0].migrated).toBe(1);
+    expect(winners[0].mapping[0].from).toBe('DRAFT-3');
+    const newId = winners[0].mapping[0].to;
+
+    // NO DOUBLE-RENAME: drafts/ holds exactly one file — the migrated draft.
+    expect(fs.readdirSync(path.join(backlogPath, 'drafts'))).toHaveLength(1);
+    expect(fs.existsSync(path.join(backlogPath, 'drafts', 'draft-3 - Legacy.md'))).toBe(false);
+
+    // NO ID COLLISION: the minted id did not land on the live task.
+    expect(newId).not.toBe('TASK-9');
+    expect(fs.readdirSync(path.join(backlogPath, 'tasks'))).toEqual(['task-9 - Dependent.md']);
+
+    // NO LOST REFERENCE: every inbound edge points at the one new id, and the
+    // migrated draft is still a draft (a migration never promotes).
+    const verifier = new BacklogParser(backlogPath);
+    const t9 = (await verifier.getTask('TASK-9'))!;
+    expect(t9.dependencies).toEqual([newId]);
+    expect(t9.parentTaskId).toBe(newId);
+    expect(t9.subtasks).toEqual([newId]);
+    expect(t9.references).toEqual([newId]);
+    expect((await verifier.getTask(newId))!.folder).toBe('drafts');
+    expect(await verifier.getTask('DRAFT-3')).toBeUndefined();
+  });
+
+  it('CONCURRENCY: two simultaneous migrations of MANY legacy drafts mint distinct ids', async () => {
+    seed('drafts', 'draft-1 - A.md', 'DRAFT-1', 'A');
+    seed('drafts', 'draft-2 - B.md', 'DRAFT-2', 'B');
+    seed('drafts', 'draft-3 - C.md', 'DRAFT-3', 'C');
+
+    const [a, b] = await Promise.all([
+      runDraftIdMigrationLocked(freshDeps(), backlogPath),
+      runDraftIdMigrationLocked(freshDeps(), backlogPath),
+    ]);
+
+    const winners = [a, b].filter((r) => r.migrated > 0);
+    expect(winners).toHaveLength(1);
+    expect(winners[0].migrated).toBe(3);
+
+    // Three drafts in, three distinct stable ids out — no id reused, none lost.
+    const files = fs.readdirSync(path.join(backlogPath, 'drafts')).sort();
+    expect(files).toHaveLength(3);
+    const verifier = new BacklogParser(backlogPath);
+    const ids = (await verifier.getDrafts()).map((d) => d.id);
+    expect(new Set(ids).size).toBe(3);
+    expect(ids.every((id) => /^TASK-\d+$/.test(id))).toBe(true);
+  });
+
+  it('skips (zero writes) while another process holds the lock', async () => {
+    seed('drafts', 'draft-3 - Legacy.md', 'DRAFT-3', 'Legacy');
+    fs.mkdirSync(path.dirname(heldLockPath()), { recursive: true });
+    fs.mkdirSync(heldLockPath()); // stand in for a mid-migration peer process
+    const before = snapshotBoard();
+
+    const result = await runDraftIdMigrationLocked(deps, backlogPath, { waitMs: 60 });
+
+    expect(result.skipped).toBe('locked');
+    expect(result.migrated).toBe(0);
+    expectNoWrites(before);
+  });
+
+  it('waits for a busy peer and then converges — a held lock is not a permanent skip', async () => {
+    seed('drafts', 'draft-3 - Legacy.md', 'DRAFT-3', 'Legacy');
+    fs.mkdirSync(path.dirname(heldLockPath()), { recursive: true });
+    fs.mkdirSync(heldLockPath());
+    setTimeout(() => fs.rmdirSync(heldLockPath()), 40);
+
+    const result = await runDraftIdMigrationLocked(deps, backlogPath, { waitMs: 5_000 });
+
+    expect(result.skipped).toBeUndefined();
+    expect(result.migrated).toBe(1);
+  });
+
+  it('releases the lock when the migration throws — a crash must not wedge the board', async () => {
+    seed('drafts', 'draft-3 - Legacy.md', 'DRAFT-3', 'Legacy');
+    vi.spyOn(deps.writer, 'reidTaskFile').mockRejectedValueOnce(new Error('boom'));
+
+    await expect(runDraftIdMigrationLocked(deps, backlogPath)).rejects.toThrow('boom');
+
+    expect(fs.existsSync(heldLockPath())).toBe(false);
+    // And the next attempt is not locked out.
+    const retry = await runDraftIdMigrationLocked(freshDeps(), backlogPath);
+    expect(retry.migrated).toBe(1);
+  });
+
+  it('is silent and lock-free on a clean board — no lock dir left behind', async () => {
+    seed('drafts', 'task-4 - Stable.md', 'TASK-4', 'Stable');
+    const before = snapshotBoard();
+
+    const result = await runDraftIdMigrationLocked(deps, backlogPath);
+
+    expect(result).toEqual({ migrated: 0, mapping: [] });
+    expect(fs.existsSync(heldLockPath())).toBe(false);
+    expectNoWrites(before);
+  });
+});
+
+describe('formatMigrationMessage', () => {
+  it('names the ids so a reader can find their renamed draft', () => {
+    const msg = formatMigrationMessage([{ from: 'DRAFT-3', to: 'TASK-111' }]);
+
+    expect(msg).toContain('DRAFT-3 → TASK-111');
+    expect(msg).toContain('1 draft');
+  });
+
+  it('says NOTHING when nothing migrated', () => {
+    expect(formatMigrationMessage([])).toBe('');
+  });
+
+  it('truncates a large migration so the notification stays readable', () => {
+    const mapping = Array.from({ length: 9 }, (_, i) => ({
+      from: `DRAFT-${i + 1}`,
+      to: `TASK-${100 + i}`,
+    }));
+
+    const msg = formatMigrationMessage(mapping, 6);
+
+    expect(msg).toContain('9 drafts');
+    expect(msg).toContain('(+3 more)');
+    expect(msg).not.toContain('DRAFT-9');
+  });
+});
+
+/**
+ * The auto-run call sites must go through the LOCKED entry point. `runDraftIdMigration` is
+ * lock-free by design (a pure, directly-testable core), so a call site that reaches for it
+ * directly re-arms the concurrent-start race the lock exists to close — and would do so silently,
+ * since the unguarded path is green on any single-process test. A source contract is the only
+ * thing that fails the build when someone "simplifies" the import.
+ */
+describe('auto-run call sites use the locked entry point', () => {
+  const sourceOf = (rel: string) =>
+    fs.readFileSync(path.join(__dirname, '..', '..', ...rel.split('/')), 'utf8');
+
+  it.each([['mcp/server.ts'], ['providers/doctorActions.ts']])(
+    '%s calls runDraftIdMigrationLocked, never the lock-free core',
+    (rel) => {
+      const source = sourceOf(rel);
+      expect(source).toContain('runDraftIdMigrationLocked');
+      expect(source).not.toMatch(/\brunDraftIdMigration\s*\(/);
+    }
+  );
 });

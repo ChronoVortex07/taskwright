@@ -44,3 +44,41 @@ describe('activation events', () => {
     expect(ids).toContain('taskwright.kanban');
   });
 });
+
+/**
+ * TASK-119 AC6. The draft-id migration reads every board folder and rewrites files, so running it
+ * inline in `activate()` would re-add exactly the fs burst TASK-109 removed. It must stay inside
+ * the deferred bootstrap, which by contract runs ~2s later and never rejects into activation.
+ *
+ * This is a SOURCE contract (the same shape as `worktreeEntryContract`): the wiring lives in
+ * vscode-coupled `extension.ts`, so the invariant is asserted on the text rather than by booting an
+ * extension host. If someone later hoists the call out of the runner, this fails the build.
+ */
+describe('draft-id migration stays off the activation critical path (TASK-119)', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, '..', '..', 'extension.ts'),
+    'utf8'
+  );
+
+  /** The body of the `startupBootstrap = createDeferredRunner(async () => { ... });` callback. */
+  function deferredBootstrapBody(): string {
+    const start = source.indexOf('const startupBootstrap = createDeferredRunner(async () => {');
+    expect(start).toBeGreaterThan(-1);
+    const end = source.indexOf('\n  });', start);
+    expect(end).toBeGreaterThan(start);
+    return source.slice(start, end);
+  }
+
+  it('invokes the migration exactly once, from inside the deferred bootstrap', () => {
+    const callSites = source.match(/^\s*await migrateDraftIds\(\);/gm) ?? [];
+    expect(callSites).toHaveLength(1);
+    expect(deferredBootstrapBody()).toContain('await migrateDraftIds();');
+  });
+
+  it('runs the migration through the LOCKED entry point, never the lock-free core', () => {
+    // `peekNextTaskId` is lock-free, so an unguarded call here races a concurrently
+    // starting MCP server onto the same id. Only the locked wrapper is safe.
+    expect(source).toContain('runDraftIdMigrationLocked');
+    expect(source).not.toMatch(/\brunDraftIdMigration\s*\(/);
+  });
+});

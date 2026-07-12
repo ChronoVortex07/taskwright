@@ -22,6 +22,10 @@ import {
   stripDanglingContinuations,
   type DoctorFinding,
 } from '../core/boardDoctor';
+import {
+  runDraftIdMigrationLocked,
+  formatMigrationMessage,
+} from '../core/draftIdMigration';
 import { releaseTaskClaim } from './claimActions';
 import { ensureBoardWorktree } from '../core/boardWorktree';
 import { foldPrimaryStrays } from '../core/boardHomeMigration';
@@ -77,6 +81,8 @@ export function repairLabel(finding: DoctorFinding): string {
       return 'Fold the stray files into the board';
     case 'restore-board-to-primary':
       return 'Restore the board into backlog/';
+    case 'migrate-draft-ids':
+      return 'Migrate the drafts to stable task IDs';
   }
 }
 
@@ -172,6 +178,26 @@ async function applyRepair(deps: DoctorFlowDeps, finding: DoctorFinding): Promis
         backlogDir: 'backlog',
       });
       parser.invalidateTaskCache();
+      return true;
+    }
+    case 'migrate-draft-ids': {
+      // The SAME locked core the automatic passes run, so a manual repair and the
+      // activation/MCP runs cannot diverge — and a repair fired while a peer process
+      // is mid-migration contends for the lock instead of racing it.
+      const result = await runDraftIdMigrationLocked(
+        { parser, writer, treeFieldService: new TreeFieldService() },
+        parser.getBacklogPath()
+      );
+      parser.invalidateTaskCache();
+      if (result.skipped === 'locked') {
+        void vscode.window.showWarningMessage(
+          'Another Taskwright process is migrating the board right now — nothing was changed. Run the doctor again in a moment.'
+        );
+        return false;
+      }
+      if (result.migrated > 0) {
+        void vscode.window.showInformationMessage(formatMigrationMessage(result.mapping));
+      }
       return true;
     }
   }

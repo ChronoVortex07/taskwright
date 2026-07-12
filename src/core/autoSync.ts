@@ -89,9 +89,18 @@ export async function autoCommitBoard(
 /**
  * Cross-process single-flight: an atomic `mkdir` lock with stale-steal.
  * Returns a release fn, or null when another process holds a fresh lock.
+ *
+ * `lockName` selects the namespace. The board-sync engine owns the default; the
+ * draft-id migration (TASK-119) passes its own name so it is not skipped behind a
+ * slow network push, and a sync is not skipped behind a migration — they guard
+ * different things and must not share a mutex.
  */
-export function acquireSyncLock(lockDir: string, staleMs = 60_000): (() => void) | null {
-  const lockPath = path.join(lockDir, 'board-sync.lock');
+export function acquireSyncLock(
+  lockDir: string,
+  staleMs = 60_000,
+  lockName = 'board-sync.lock'
+): (() => void) | null {
+  const lockPath = path.join(lockDir, lockName);
   const tryAcquire = (): (() => void) | null => {
     try {
       fs.mkdirSync(lockPath);

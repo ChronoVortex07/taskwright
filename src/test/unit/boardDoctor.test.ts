@@ -312,6 +312,42 @@ describe('diagnoseBoard', () => {
   });
 });
 
+describe('diagnoseBoard — legacy draft ids (TASK-119)', () => {
+  it('flags legacy DRAFT-N drafts with a migrate repair, naming them', () => {
+    const findings = diagnoseBoard(
+      makeInput({
+        taskPrefix: 'TASK',
+        drafts: [makeTask({ id: 'DRAFT-3' }), makeTask({ id: 'TASK-9' })],
+      })
+    );
+
+    const finding = findings.find((f) => f.type === 'legacy-draft-ids');
+    expect(finding).toBeDefined();
+    expect(finding!.repair).toBe('migrate-draft-ids');
+    expect(finding!.detail).toBe('DRAFT-3');
+  });
+
+  it('is silent on a board whose drafts already carry stable ids', () => {
+    const findings = diagnoseBoard(
+      makeInput({ taskPrefix: 'TASK', drafts: [makeTask({ id: 'TASK-9' })] })
+    );
+
+    expect(findings.find((f) => f.type === 'legacy-draft-ids')).toBeUndefined();
+  });
+
+  it("does not flag a custom-prefix board's own drafts", () => {
+    const findings = diagnoseBoard(
+      makeInput({ taskPrefix: 'STORY', drafts: [makeTask({ id: 'STORY-4' })] })
+    );
+
+    expect(findings.find((f) => f.type === 'legacy-draft-ids')).toBeUndefined();
+  });
+
+  it('stays silent when the caller supplied no drafts (facts unknown, never guess)', () => {
+    expect(diagnoseBoard(makeInput({ taskPrefix: 'TASK' }))).toEqual([]);
+  });
+});
+
 describe('findDanglingContinuations / stripDanglingContinuations', () => {
   const corrupted = [
     '---',

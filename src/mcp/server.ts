@@ -20,6 +20,7 @@ import { ClaimService } from '../core/ClaimService';
 import { PlanService } from '../core/PlanService';
 import { TreeFieldService } from '../core/TreeFieldService';
 import { resolveWorkspaceBacklogRoot } from '../core/boardRoot';
+import { runDraftIdMigrationLocked } from '../core/draftIdMigration';
 import type { MergeProgress } from '../core/finishTask';
 import {
   getActiveTask,
@@ -108,6 +109,31 @@ async function main(): Promise<void> {
     planService: new PlanService(),
     treeFieldService: new TreeFieldService(),
   };
+
+  // Converge a legacy DRAFT-N board onto stable task ids (TASK-119), so an agent-only or
+  // headless session converges exactly the way a UI session does — an MCP server may well be
+  // the only Taskwright process this board ever sees.
+  //
+  // Idempotent (a converged board performs ZERO writes) and cross-process safe: this and an
+  // extension host routinely start at the same instant against the SAME physical board, and
+  // `peekNextTaskId` is lock-free, so the shared `.locks/` mutex is what prevents both from
+  // planning the same id and double-renaming the same draft file.
+  //
+  // Never fatal: a failure here must not stop the server from serving tools — the board doctor's
+  // `legacy-draft-ids` finding is the visible safety net. Logs go to STDERR: stdout is the
+  // JSON-RPC channel (console.log is already rerouted above, but be explicit).
+  try {
+    const migration = await runDraftIdMigrationLocked(deps, backlogPath);
+    if (migration.migrated > 0) {
+      deps.parser.invalidateTaskCache();
+      const pairs = migration.mapping.map((m) => `${m.from} → ${m.to}`).join(', ');
+      console.error(
+        `[taskwright] Migrated ${migration.migrated} draft(s) to stable task ids: ${pairs}`
+      );
+    }
+  } catch (error) {
+    console.error('[taskwright] draft-id migration failed:', error);
+  }
 
   const server = new McpServer(
     { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },

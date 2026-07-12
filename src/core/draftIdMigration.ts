@@ -26,6 +26,7 @@ import type { Task, BacklogConfig } from './types';
 import type { IdRemapDeps } from './idRemap';
 import { remapIds } from './idRemap';
 import { idHasPrefix, isArchivedDraftPath } from './BacklogWriter';
+import { acquireSyncLock } from './autoSync';
 
 export interface DraftIdMigrationPlan {
   /** Legacy drafts to re-id in place: `drafts/draft-3 - X.md` → `drafts/task-111 - X.md`. */
@@ -177,4 +178,102 @@ export async function runDraftIdMigration(
     migrated: plan.renames.length,
     mapping: plan.renames.map((r) => ({ from: r.oldId, to: r.newId })),
   };
+}
+
+/** The migration's lock namespace inside the board's existing `.locks/` dir. */
+export const DRAFT_ID_MIGRATION_LOCK = 'draft-id-migration.lock';
+
+/**
+ * The user-facing text for a completed migration. It NAMES the ids (`DRAFT-3 → TASK-111`) rather
+ * than reporting a bare count: a draft's id just changed under the user, and any reference they
+ * wrote by hand — in a spec, a commit message, a chat — needs the new one. Truncated past `max` so
+ * a large migration still yields a readable notification. Empty mapping ⇒ empty string: the caller
+ * says NOTHING when nothing migrated.
+ */
+export function formatMigrationMessage(
+  mapping: Array<{ from: string; to: string }>,
+  max = 6
+): string {
+  if (mapping.length === 0) return '';
+  const shown = mapping.slice(0, max).map((m) => `${m.from} → ${m.to}`);
+  const rest = mapping.length - shown.length;
+  const list = rest > 0 ? `${shown.join(', ')} (+${rest} more)` : shown.join(', ');
+  return `Taskwright migrated ${mapping.length} draft${mapping.length === 1 ? '' : 's'} to stable task IDs — a draft's ID no longer changes when it is promoted: ${list}`;
+}
+
+export interface DraftIdMigrationResult {
+  migrated: number;
+  mapping: Array<{ from: string; to: string }>;
+  /** Set when a peer process held the lock for the whole wait window. */
+  skipped?: 'locked';
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Take the board's migration lock, waiting up to `waitMs` for a peer to finish. Returns the release
+ * fn, or null if the window expired while another process still held it.
+ */
+async function acquireMigrationLock(
+  locksDir: string,
+  opts: { waitMs: number; pollMs: number; staleMs: number }
+): Promise<(() => void) | null> {
+  const deadline = Date.now() + opts.waitMs;
+  for (;;) {
+    fs.mkdirSync(locksDir, { recursive: true });
+    const release = acquireSyncLock(locksDir, opts.staleMs, DRAFT_ID_MIGRATION_LOCK);
+    if (release) return release;
+    if (Date.now() >= deadline) return null;
+    await sleep(opts.pollMs);
+  }
+}
+
+/**
+ * Run the migration under a cross-process lock. **This is the entry point every automatic
+ * caller must use** — extension activation, MCP server startup, and the board-doctor repair
+ * (TASK-119). `runDraftIdMigration` itself is deliberately lock-free so it stays a pure,
+ * directly-testable core; calling it unguarded from a real process is the bug this prevents.
+ *
+ * WHY THE LOCK IS LOAD-BEARING: `peekNextTaskId` is lock-free by design (TASK-118), and an
+ * extension host and an MCP server routinely start SIMULTANEOUSLY against one board. Unguarded,
+ * both scan the same `nextId`, both plan `DRAFT-3 → TASK-111`, and the second re-ids a file the
+ * first already moved — a lost draft, a colliding id, or a dangling reference. The critical
+ * section therefore spans plan AND execute: a lock around the writes alone would still let two
+ * processes plan against the same stale `nextId`.
+ *
+ * The lock lives in the board's own `backlog/.locks/` (already the id-allocator's transient lock
+ * home — excluded from `BOARD_SUBDIRS`, never committed). Keying it on `backlogPath` is what makes
+ * it work across processes: every process resolves the ONE physical board to the same path, so two
+ * of them always contend for the same lock, from any worktree.
+ *
+ * Contention is a bounded WAIT, not an instant skip: the loser waits for the winner, then runs an
+ * idempotent second pass that finds a converged board and reports `migrated: 0` honestly. Only if
+ * the window expires does it return `skipped: 'locked'` — the board still converges, on the next
+ * activation or from the doctor's `legacy-draft-ids` finding. It never blocks a board write.
+ *
+ * Throws only what the migration throws; the lock is always released (`finally`), so a crashed
+ * migration cannot wedge the board — a stale lock is additionally stolen after `staleMs`.
+ */
+export async function runDraftIdMigrationLocked(
+  deps: IdRemapDeps,
+  backlogPath: string,
+  opts: { waitMs?: number; staleMs?: number; pollMs?: number } = {}
+): Promise<DraftIdMigrationResult> {
+  const locksDir = path.join(backlogPath, '.locks');
+  const release = await acquireMigrationLock(locksDir, {
+    waitMs: opts.waitMs ?? 15_000,
+    pollMs: opts.pollMs ?? 25,
+    staleMs: opts.staleMs ?? 60_000,
+  });
+  if (!release) return { migrated: 0, mapping: [], skipped: 'locked' };
+
+  try {
+    // A peer may have migrated while we waited; our caches predate that. Re-read from disk so the
+    // second pass plans against the CONVERGED board (and correctly finds nothing to do) rather
+    // than replaying a stale plan.
+    deps.parser.invalidateTaskCache();
+    return await runDraftIdMigration(deps, backlogPath);
+  } finally {
+    release();
+  }
 }
