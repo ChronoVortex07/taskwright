@@ -1,10 +1,10 @@
 ---
 id: TASK-112
 title: Normalize stale-nonce replay in the tree canvas host→canvas command props
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-12 16:36'
-updated_date: '2026-07-12 22:45'
+updated_date: '2026-07-12 22:46'
 labels:
   - tech-debt
   - webview
@@ -16,9 +16,6 @@ references:
   - e2e/tree-find.spec.ts
 priority: medium
 category: Tree
-claimed_by: '@agent/task-112-normalize-stale-nonce-replay-in-the-tree-canvas-host-canvas-command-props'
-worktree: task-112-normalize-stale-nonce-replay-in-the-tree-canvas-host-canvas-command-props
-claimed_at: '2026-07-13 06:12'
 ---
 
 ## Description
