@@ -1,10 +1,10 @@
 ---
 id: TASK-119
 title: 'Run the draft-ID migration automatically (activation, MCP startup, doctor)'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-12 16:42'
-updated_date: '2026-07-12 23:46'
+updated_date: '2026-07-12 23:47'
 labels:
   - stable-task-ids
 milestone: Stable Task IDs
@@ -17,9 +17,6 @@ references:
   - src/core/boardDoctor.ts
 priority: high
 category: Core Board
-claimed_by: '@agent/task-119-run-the-draft-id-migration-automatically-activation-mcp-startup-doctor'
-worktree: task-119-run-the-draft-id-migration-automatically-activation-mcp-startup-doctor
-claimed_at: '2026-07-13 07:31'
 ---
 
 ## Description
