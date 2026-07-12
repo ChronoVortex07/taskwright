@@ -4,7 +4,7 @@ title: Stop the tech-tree canvas repainting the whole board on node hover
 status: In Progress
 assignee: []
 created_date: '2026-07-12 06:20'
-updated_date: '2026-07-12 06:20'
+updated_date: '2026-07-12 06:33'
 labels:
   - performance
   - bug
@@ -36,10 +36,10 @@ Measured baseline: the board is 98 tasks. Board parsing is NOT implicated (40ms 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Hovering a node performs O(1) DOM writes on the edge layer, not one class update per edge — verified by a test that counts mutations/attribute writes on hover with a large (100+ node) synthetic board.
-- [ ] #2 The all-edges `transition: opacity` no longer runs on every hover in/out across the board; only the highlight of edges incident to the hovered node changes.
-- [ ] #3 Hover highlight behavior is preserved: edges incident to the hovered (or selected) node are emphasized, non-incident edges are dimmed, and bug edges are still revealed only on hover/select of an incident node.
-- [ ] #4 Existing tree hover/edge coverage still passes (`bun run test`, `e2e/tree-canvas.spec.ts`, `e2e/tree-drag.spec.ts` edge-removal paths) — the edge ✕ hover hit-path and removal still work.
+- [x] #1 Hovering a node performs O(1) DOM writes on the edge layer, not one class update per edge — verified by a test that counts mutations/attribute writes on hover with a large (100+ node) synthetic board.
+- [x] #2 The all-edges `transition: opacity` no longer runs on every hover in/out across the board; only the highlight of edges incident to the hovered node changes.
+- [x] #3 Hover highlight behavior is preserved: edges incident to the hovered (or selected) node are emphasized, non-incident edges are dimmed, and bug edges are still revealed only on hover/select of an incident node.
+- [x] #4 Existing tree hover/edge coverage still passes (`bun run test`, `e2e/tree-canvas.spec.ts`, `e2e/tree-drag.spec.ts` edge-removal paths) — the edge ✕ hover hit-path and removal still work.
 - [ ] #5 Visual proof captured on a large board showing no whole-board flicker on hover in/out.
 <!-- AC:END -->
 
@@ -63,3 +63,54 @@ Measured baseline: the board is 98 tasks. Board parsing is NOT implicated (40ms 
 
 Note: the `will-change: transform` layer promotion on `.tree-surface` is the amplifier here but is fixed in its own task (the zoom-blur one), which depends on this one. Do not remove it here.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Measured, not assumed
+
+A new Playwright spec (`e2e/tree-hover-perf.spec.ts`) builds a 120-node / 117-edge synthetic board and
+counts, with a `MutationObserver` on the edge-layer subtree, the distinct elements Svelte mutates during
+one `pointerenter`:
+
+| | elements mutated per hover |
+|---|---|
+| before | **117** (one per edge — every single one) |
+| after | **2** |
+
+That 117 was the bug, exactly as diagnosed: `class:incident` / `class:faded` on every `<path>` both read
+`activeId`, so one pointer enter (and one leave) rewrote the whole edge set. Because `.tree-surface` carries
+`will-change: transform` — promoting the entire board into ONE composited layer — that per-edge restyle
+re-rasterized the whole canvas, nodes included. Plus `.tree-edge` had `transition: opacity 0.12s`, so all 117
+paths *animated* their opacity on each hover in and out: a sustained whole-board repaint, i.e. the flicker.
+
+## Shape of the fix
+
+The edge layer is now two layers:
+
+- **Base group** (`.tree-edges`, `data-testid="tree-edge-group"`) — every dependency edge, rendered once.
+  Nothing inside reads hover/selection state, so a hover *cannot* rewrite it. The dim is a single
+  `.has-active` class on the group; CSS (`.tree-edges.has-active .tree-edge { opacity: .15 }`) fades the
+  rest with **zero per-edge DOM writes**.
+- **Highlight overlay** (`.tree-edges-highlight`) — only the active node's incident edges, drawn opaque on
+  top of the dimmed base. O(degree), not O(edges).
+
+A bug→cause edge has no base path (it only ever exists while incident), so the overlay *is* its single
+incarnation and it keeps the canonical `tree-edge-{from}-{to}` test id; a dependency edge's overlay stroke
+is the `-hl-` twin of a base path that already owns that id. The board-wide `transition: opacity` is gone —
+the dim is now an instant state change.
+
+## Notes for TASK-108
+
+The `will-change: transform` on `.tree-surface` is the *amplifier* here (it is what turns an edge-only
+restyle into a whole-board repaint) and is deliberately left in place — removing it is TASK-108, which
+depends on this task.
+
+## Verification
+
+- `bun run test` — 2054 passed / 142 files. `bun run lint`, `bun run typecheck` — clean.
+- Tree Playwright suites (canvas + hover-perf + drag + popover): **56 passed**.
+- 3 failures in `tree-canvas.spec.ts` (`trackpad two-finger scroll`, `fills available panel height`,
+  `reflows on viewport resize`) are **pre-existing** — reproduced on a clean stashed HEAD build before any
+  of this change, and untouched by it. They are viewport/height concerns, unrelated to the edge layer.
+<!-- SECTION:NOTES:END -->
