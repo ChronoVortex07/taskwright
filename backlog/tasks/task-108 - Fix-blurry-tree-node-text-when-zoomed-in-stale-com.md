@@ -1,7 +1,7 @@
 ---
 id: TASK-108
 title: Fix blurry tree node text when zoomed in (stale composited raster)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-12 06:20'
 updated_date: '2026-07-12 06:20'
@@ -14,6 +14,9 @@ dependencies:
   - TASK-107
 priority: medium
 category: Tree
+claimed_by: '@agent/task-108-fix-blurry-tree-node-text-when-zoomed-in-stale-composited-raster'
+worktree: task-108-fix-blurry-tree-node-text-when-zoomed-in-stale-composited-raster
+claimed_at: '2026-07-12 14:35'
 ---
 
 ## Description
