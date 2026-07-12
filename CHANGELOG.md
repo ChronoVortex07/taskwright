@@ -39,7 +39,14 @@ no longer accidentally authors a task.
   > reappearing — see the comments at `TechTreeCanvas.svelte` around `navFilterDimmedIds`/
   > `findResults`.
 
-  Coverage: `src/test/unit/treeFind.test.ts` (pure core), `e2e/tree-find.spec.ts` (15 tests,
+  `/` and Ctrl/Cmd-F are handled at the **window** level (`Tasks.svelte`), so they open the bar
+  from wherever focus happens to be — the canvas, a zoom button, `<body>` after a popover closed —
+  by bumping a `findRequestNonce` prop the canvas answers with its own `openFind()` (the same
+  host→canvas nonce convention the navigator jumps use). The canvas's own `.tree-viewport` key
+  handler still routes to that one idempotent opener, so the two layers cannot fight. On the List
+  tab, `/` keeps focusing that view's search box.
+
+  Coverage: `src/test/unit/treeFind.test.ts` (pure core), `e2e/tree-find.spec.ts` (19 tests,
   including a regression for each bug fixed below). Visual proof:
   `docs/tree-find-bar-visual-proof.md`.
 
@@ -53,13 +60,29 @@ no longer accidentally authors a task.
 
 ### Fixed
 
-- **On a "cold" Tree tab, the first `/` or Ctrl-F did nothing.** The canvas's key handler is bound
-  to `.tree-viewport`, not `window`, so a keydown targeting `<body>` — which is where focus sits
-  before the user has clicked anything in the canvas — never reached it. Fixed with a mount-time
-  focus of the viewport (once per mount), which backs off if something else already holds focus so
-  it can't steal focus from, e.g., the create-task form's title input if a late/concurrent
-  `tasksUpdated` flips the canvas from empty-state to laid-out while that form is open (caught in
-  review; regression test added in `e2e/tree-find.spec.ts` driving that exact race).
+- **`/` and Ctrl-F silently did nothing whenever focus was outside the canvas viewport.** The
+  canvas's key handler is bound to `.tree-viewport`, not `window` — and the toolbar, the "Promote
+  all proposed" button and the in-flight panel are its *siblings* — so after zooming, fitting,
+  promoting, dismissing a popover via its ✕ (which removes the focused element, dropping focus to
+  `<body>`), or simply opening a never-clicked "cold" tab, the keystroke never traversed the
+  viewport and the advertised shortcut did nothing until the user clicked the canvas. The
+  window-level handler in `Tasks.svelte` only *focused* an already-rendered input, which does not
+  exist until the bar is open. Fixed by making that window-level handler actually **open** the tree
+  find bar (via the `findRequestNonce` prop described above) whenever the Tree tab is active.
+  The canvas still also mount-focuses its viewport once (backing off if something else already holds
+  focus, so it can't steal focus from, e.g., the create-task form's title input if a late/concurrent
+  `tasksUpdated` flips the canvas from empty-state to laid-out while that form is open) — but that
+  is now belt-and-braces for find and load-bearing only for the arrow/j-k node-nav keys.
+  Ctrl/Cmd-F now also sits **behind** the create-form modal guard, so it can no longer pull focus to
+  a search box behind an open modal.
+
+- **Right-clicking inside the find input popped the canvas "create here" context menu** instead of
+  the native text-editing menu (no copy/paste). The canvas `oncontextmenu` handler now bails on
+  `.tree-find-bar` *before* calling `preventDefault()`, mirroring its `onPointerDown` guard.
+
+- **The find bar could slide under the canvas toolbar** in a narrow panel (bar `z-index: 12`;
+  toolbar and promote-all button `z-index: 20`). The bar — a transient, focused overlay — now sits
+  above them.
 
 - **The find bar's prev/next/close buttons were visually present but silently unclickable by
   mouse.** `TechTreeCanvas`'s `onPointerDown` had no guard for `.tree-find-bar` (only
@@ -77,7 +100,10 @@ no longer accidentally authors a task.
   strictly larger, non-overlapping spread listed after it, rendering as two distinct concentric
   rings instead of one occluding the other. Re-verified with cropped, 2x-scaled screenshots in both
   dark and light themes (`docs/tree-find-bar-visual-proof.md`) — confirming this is a genuine CSS
-  layering fix, not a theme-contrast coincidence.
+  layering fix, not a theme-contrast coincidence — and now *guarded* by an `e2e/tree-find.spec.ts`
+  test that reads the computed `box-shadow` of a node that is both `has-active-bug` and a find
+  match/current match and asserts two distinct, non-nesting ring spreads with the smaller listed
+  first, so a future edit to the shadow lists cannot silently re-occlude the bug ring.
 
 - **A half-built `dist/webview/` silently broke three unrelated `tree-canvas` tests.**
   `dist/webview/styles.css` is emitted only by `build:css`, not `compile:webview` — running the

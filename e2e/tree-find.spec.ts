@@ -80,7 +80,49 @@ function treeTasks(): Task[] {
       milestone: 'v2',
       layout: { lane: 'Features', band: 'v2', depth: 0, subRow: 0 },
     }),
+    // Ring-layering probe (see the box-shadow test below). Neither of these matches "login",
+    // so every other test's counts/cycle order are untouched; they match "crash" — TASK-5
+    // (lane Features, above) before TASK-4 (lane Misc) in reading order, so a "crash" query
+    // leaves TASK-4 a plain match first and Enter promotes it to the current match.
+    base({
+      id: 'TASK-5',
+      title: 'Crash log viewer',
+      category: 'Features',
+      milestone: 'v2',
+      layout: { lane: 'Features', band: 'v2', depth: 1, subRow: 0 },
+    }),
+    base({
+      id: 'TASK-4',
+      title: 'Crash on save',
+      // An active bug on this node → TreeNode's `.has-active-bug` red ring.
+      activeBugIds: ['TASK-7'],
+      category: 'Misc',
+      milestone: 'v2',
+      layout: { lane: 'Misc', band: 'v2', depth: 1, subRow: 0 },
+    }),
   ];
+}
+
+/** Parsed `box-shadow` layer: computed style order is `<color> <x> <y> <blur> <spread>`. */
+type Shadow = { color: string; blur: number; spread: number };
+
+/** Read a node's computed box-shadow and split it into its layers, in paint order. */
+async function ringsOf(page: Page, taskId: string): Promise<Shadow[]> {
+  const raw = await page
+    .getByTestId(`tree-node-${taskId}`)
+    .evaluate((el) => getComputedStyle(el).boxShadow);
+  if (!raw || raw === 'none') return [];
+  // Split on commas that are not inside an rgb()/rgba()/color() function.
+  return raw
+    .split(/,(?![^(]*\))/)
+    .map((layer) => layer.trim())
+    .map((layer) => {
+      const color = (layer.match(/^(rgba?\([^)]*\)|#[0-9a-f]+|[a-z]+)/i) ?? [''])[0];
+      const px = layer.match(/-?[\d.]+px/g) ?? [];
+      // x, y, blur, spread — blur/spread default to 0 when omitted.
+      const n = (i: number) => parseFloat(px[i] ?? '0');
+      return { color, blur: n(2), spread: n(3) };
+    });
 }
 
 async function setupTreeView(page: Page) {
@@ -339,6 +381,94 @@ test.describe('Tree find bar', () => {
     await page.keyboard.press('Control+f');
     await expect(page.getByTestId('tree-find-bar')).toBeVisible();
     await expect(page.getByTestId('tree-search-input')).toBeFocused();
+  });
+
+  // --- The keystroke must reach find from ANYWHERE on the board, not just the viewport ---
+
+  test('/ opens the find bar after a toolbar button took focus (Critical regression)', async ({
+    page,
+  }) => {
+    // onCanvasKeydown is bound to `.tree-viewport`; the toolbar is its SIBLING. Clicking a
+    // toolbar button focuses that <button>, so the next keydown bubbles button → .tree-toolbar
+    // → .tree-canvas → window and never traverses .tree-viewport. Find therefore cannot rely
+    // on the canvas handler alone: Tasks.svelte's window-level handler bumps findRequestNonce,
+    // which the canvas answers with openFind().
+    await page.getByTestId('tree-zoom-in').click();
+    await expect(page.getByTestId('tree-zoom-in')).toBeFocused();
+
+    await page.keyboard.press('/');
+    await expect(page.getByTestId('tree-find-bar')).toBeVisible();
+    await expect(page.getByTestId('tree-search-input')).toBeFocused();
+  });
+
+  test('Ctrl+F opens the find bar after a toolbar button took focus (Critical regression)', async ({
+    page,
+  }) => {
+    await page.getByTestId('tree-zoom-fit').click();
+    await expect(page.getByTestId('tree-zoom-fit')).toBeFocused();
+
+    await page.keyboard.press('Control+f');
+    await expect(page.getByTestId('tree-find-bar')).toBeVisible();
+    await expect(page.getByTestId('tree-search-input')).toBeFocused();
+  });
+
+  test('/ opens the find bar after a popover was dismissed via its ✕ (Critical regression)', async ({
+    page,
+  }) => {
+    // Closing the popover REMOVES the focused ✕ button from the DOM, so document.activeElement
+    // falls back to <body> — again outside .tree-viewport.
+    await page.getByTestId('tree-node-TASK-1').click();
+    await expect(page.getByTestId('tree-popover')).toBeVisible();
+    await page.getByTestId('tp-close').click();
+    await expect(page.getByTestId('tree-popover')).not.toBeVisible();
+
+    await page.keyboard.press('/');
+    await expect(page.getByTestId('tree-find-bar')).toBeVisible();
+    await expect(page.getByTestId('tree-search-input')).toBeFocused();
+  });
+
+  // --- Ring layering (the has-active-bug + find ring occlusion fix) ---
+
+  test('a bug node keeps a distinct bug ring beyond the find ring (occlusion regression)', async ({
+    page,
+  }) => {
+    // The fix this guards: in a box-shadow list the FIRST layer paints on TOP, so listing the
+    // bug ring first (or at a nesting spread) silently destroys the find ring — and vice
+    // versa. Previously proven only by committed screenshots; assert the computed style so an
+    // edit to TreeNode.svelte's shadow lists cannot re-occlude a ring with zero test signal.
+    const node = page.getByTestId('tree-node-TASK-4');
+
+    // Baseline: with no find open, the node's only ring is the bug ring — capture its color.
+    const bugOnly = await ringsOf(page, 'TASK-4');
+    expect(bugOnly).toHaveLength(1);
+    expect(bugOnly[0].spread).toBe(3);
+    const bugColor = bugOnly[0].color;
+
+    // "crash" matches TASK-5 (first, reading order) and TASK-4 → TASK-4 is a plain match.
+    await openFind(page, 'crash');
+    await expect(page.getByTestId('tree-find-count')).toHaveText('1 / 2');
+    await expect(node).toHaveClass(/find-match/);
+    await expect(node).not.toHaveClass(/find-current/);
+
+    let rings = (await ringsOf(page, 'TASK-4')).filter((s) => s.blur === 0);
+    expect(rings).toHaveLength(2);
+    // Two DISTINCT, non-nesting spreads, smaller (the find ring) listed FIRST so it paints on
+    // top and the bug ring shows in the band beyond it.
+    expect(rings.map((r) => r.spread)).toEqual([2, 5]);
+    expect(rings[0].color).not.toBe(rings[1].color);
+    expect(rings[1].color).toBe(bugColor); // the bug ring survived, outermost
+
+    // Enter promotes TASK-4 to the CURRENT match — the same must hold for that heavier state.
+    await page.keyboard.press('Enter');
+    await expect(node).toHaveClass(/find-current/);
+
+    rings = (await ringsOf(page, 'TASK-4')).filter((s) => s.blur === 0);
+    expect(rings).toHaveLength(2);
+    expect(rings.map((r) => r.spread)).toEqual([3, 6]);
+    expect(rings[0].color).not.toBe(rings[1].color);
+    expect(rings[1].color).toBe(bugColor);
+    // …and the find-current glow (a blurred layer) is still there, painted behind both rings.
+    expect((await ringsOf(page, 'TASK-4')).some((s) => s.blur > 0)).toBe(true);
   });
 
   test('the mount-time focus effect does not steal focus from the create-task form on an empty board (Important regression)', async ({

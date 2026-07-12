@@ -26,7 +26,7 @@ b6c5a8b Fix focus-stealing in the tree find-bar mount effect (review finding)
 docs/images/dark/tree-find-multi-hit.png
 ```
 
-![3516f4ff-2026-07-12](3516f4ff-2026-07-12.png)
+![tree-find-multi-hit](images/dark/tree-find-multi-hit.png)
 
 Query `login` open, 1 / 3. TASK-1 (title match) is the current target — a bright, glowing blue ring, clearly heavier than TASK-2's plain thin blue match ring. TASK-3, TASK-5, and TASK-9 (non-matches) are dimmed to near-invisibility. TASK-4 shows a visibly distinct pink/magenta ring — the bug ring (red) and the match ring (blue) blending, still readable as "different from a plain match" at this state.
 
@@ -34,7 +34,7 @@ Query `login` open, 1 / 3. TASK-1 (title match) is the current target — a brig
 docs/images/dark/tree-find-current-vs-match.png
 ```
 
-![89b1b4ac-2026-07-12](89b1b4ac-2026-07-12.png)
+![tree-find-current-vs-match](images/dark/tree-find-current-vs-match.png)
 
 After Enter, 2 / 3 — the current ring moved from TASK-1 to TASK-4, exactly the spatial (band, then lane) order the plan specifies. TASK-1 and TASK-2 both correctly demote to the plain thin match ring. The current-vs-plain-match distinction itself remains clear and legible for TASK-1/TASK-2 throughout.
 
@@ -48,7 +48,7 @@ Cropped, 2x-scaled views of TASK-4's ring in the two states above. This was a re
 docs/images/dark/tree-find-bug-ring-match-crop.png
 ```
 
-![d1317d44-2026-07-12](d1317d44-2026-07-12.png)
+![tree-find-bug-ring-match-crop](images/dark/tree-find-bug-ring-match-crop.png)
 
 TASK-4 as a plain match (not current): an inner blue find ring and a clearly separate outer red bug band — two distinct concentric rings, not a blend.
 
@@ -56,7 +56,7 @@ TASK-4 as a plain match (not current): an inner blue find ring and a clearly sep
 docs/images/dark/tree-find-bug-ring-current-crop.png
 ```
 
-![cb7b0cea-2026-07-12](cb7b0cea-2026-07-12.png)
+![tree-find-bug-ring-current-crop](images/dark/tree-find-bug-ring-current-crop.png)
 
 TASK-4 as the CURRENT match: the inner blue ring is now thicker and glowing (the stronger find-current treatment), and the outer red bug band remains fully visible as its own distinct ring beyond it — the red bug signal is **no longer lost**. Confirms the fix: a bug node keeps its bug ring, clearly separated from the find ring, in both the plain-match and current-match states.
 
@@ -64,7 +64,7 @@ TASK-4 as the CURRENT match: the inner blue ring is now thicker and glowing (the
 docs/images/dark/tree-find-zero-results.png
 ```
 
-![a591a453-2026-07-12](a591a453-2026-07-12.png)
+![tree-find-zero-results](images/dark/tree-find-zero-results.png)
 
 Query `zzzznomatch`: the counter reads "No results" in the error color, and — critically — **nothing is dimmed**. Every card (including TASK-4's permanent bug ring, unrelated to find) looks exactly as it does with the find bar closed. Confirms zero-result does not fall back to "dim everything."
 
@@ -76,7 +76,7 @@ The rings lean on `var(--vscode-focusBorder)`, which is a light saturated blue o
 docs/images/light/tree-find-multi-hit.png
 ```
 
-![ea7e3eca-2026-07-12](ea7e3eca-2026-07-12.png)
+![tree-find-multi-hit](images/light/tree-find-multi-hit.png)
 
 Same `login` query, 1 / 3, on light. The current-ring glow (TASK-1) and plain match ring (TASK-2) both stay legible against the white card background. TASK-3/5/9 dim to a pale gray-blue wash — visibly lighter than the un-dimmed cards, but the contrast margin is much narrower here than on dark (see verdict).
 
@@ -84,7 +84,7 @@ Same `login` query, 1 / 3, on light. The current-ring glow (TASK-1) and plain ma
 docs/images/light/tree-find-current-vs-match.png
 ```
 
-![00b487df-2026-07-12](00b487df-2026-07-12.png)
+![tree-find-current-vs-match](images/light/tree-find-current-vs-match.png)
 
 2 / 3 after Enter — current ring correctly moved to TASK-4, same spatial order as dark. TASK-1/TASK-2 demote to plain match rings cleanly.
 
@@ -96,7 +96,7 @@ Same TASK-4 crop pair as dark, re-captured after the fix, to confirm the ring-ov
 docs/images/light/tree-find-bug-ring-match-crop.png
 ```
 
-![1436449f-2026-07-12](1436449f-2026-07-12.png)
+![tree-find-bug-ring-match-crop](images/light/tree-find-bug-ring-match-crop.png)
 
 Plain match + bug: a clearly separate inner blue find ring and outer red/pink bug band — two distinct rings.
 
@@ -104,7 +104,7 @@ Plain match + bug: a clearly separate inner blue find ring and outer red/pink bu
 docs/images/light/tree-find-bug-ring-current-crop.png
 ```
 
-![7d25982f-2026-07-12](7d25982f-2026-07-12.png)
+![tree-find-bug-ring-current-crop](images/light/tree-find-bug-ring-current-crop.png)
 
 Current match + bug: the inner blue ring is thicker/glowing (current-match treatment), and the outer red bug band stays fully visible and distinct — same fix confirmed on light as on dark, so this is a genuine CSS layering fix, not a theme-contrast coincidence.
 
@@ -112,7 +112,7 @@ Current match + bug: the inner blue ring is thicker/glowing (current-match treat
 docs/images/light/tree-find-zero-results.png
 ```
 
-![7de3fb26-2026-07-12](7de3fb26-2026-07-12.png)
+![tree-find-zero-results](images/light/tree-find-zero-results.png)
 
 `zzzznomatch` on light: "No results," nothing dimmed. Same clean behavior as dark.
 

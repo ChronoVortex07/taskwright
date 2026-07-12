@@ -125,7 +125,12 @@
     top: 8px;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 12;
+    /*
+     * Above the canvas toolbar and the "Promote all proposed" button (both z-index 20): in a
+     * narrow panel this top-center bar can overlap them, and as a transient, focused overlay
+     * it must win — otherwise the input slides underneath and becomes unclickable.
+     */
+    z-index: 30;
     display: flex;
     align-items: center;
     gap: 4px;

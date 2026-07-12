@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import type { Task, TaskIdDisplayMode } from '../../lib/types';
   import { vscode } from '../../stores/vscode.svelte';
   import {
@@ -55,6 +56,15 @@ import ContextMenu from './ContextMenu.svelte';
     minimapPanX?: number;
     minimapPanY?: number;
     minimapPanNonce?: number;
+    /**
+     * Host→canvas "open the find bar" command (same nonce convention as the navigator
+     * jumps above): Tasks.svelte's window-level `/` + Ctrl/Cmd-F handler increments this,
+     * and the $effect below calls openFind(). It exists because onCanvasKeydown is bound to
+     * `.tree-viewport`, so a keydown whose target is a sibling of the viewport (a toolbar
+     * button, the promote-all button, <body> after a popover ✕ removed the focused element)
+     * never reaches the canvas handler.
+     */
+    findRequestNonce?: number;
     onSelectTask: (taskId: string, meta?: Pick<Task, 'filePath' | 'source' | 'branch'>) => void;
     /** Open the unified create form (P3a: reportBug; P3b: drop-on-empty click-in-place). */
     onCreateInPlace?: (opts: {
@@ -87,6 +97,7 @@ import ContextMenu from './ContextMenu.svelte';
     minimapPanX = 0,
     minimapPanY = 0,
     minimapPanNonce = 0,
+    findRequestNonce = 0,
     onSelectTask,
     onCreateInPlace,
   }: Props = $props();
@@ -265,6 +276,21 @@ import ContextMenu from './ContextMenu.svelte';
     });
   });
 
+  // Host-requested find (`/` or Ctrl/Cmd-F handled at the window level in Tasks.svelte,
+  // where the keystroke lands however the user last focused something — a toolbar button,
+  // the promote-all button, <body>). Nonce lets a repeat request re-trigger.
+  //
+  // REACTIVE GRAPH: this effect reads ONLY `findRequestNonce` (a prop) and writes `findOpen`.
+  // It reads neither findResults/findMatchIds/dimmedIds nor any derived, so it adds no edge
+  // to the find/dim derived graph — the "findResults may depend only on the primitive dim
+  // sources" invariant documented below is untouched.
+  let lastFindRequestNonce = 0;
+  $effect(() => {
+    if (findRequestNonce === lastFindRequestNonce) return;
+    lastFindRequestNonce = findRequestNonce;
+    void openFind();
+  });
+
   // Feed the navigator minimap with the current normalized viewport rect (debounced).
   let minimapTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
@@ -308,10 +334,18 @@ import ContextMenu from './ContextMenu.svelte';
     milestoneBand = null;
   }
 
-  function openFind() {
+  /**
+   * Idempotent: opening an already-open bar just re-focuses (and selects) its input — it
+   * never toggles. Both keyboard layers (the canvas's own onCanvasKeydown and the host's
+   * window-level handler via findRequestNonce) route here, and a single keystroke can fire
+   * both when focus is already inside the viewport; because this only ever sets `true`,
+   * they cannot fight each other.
+   */
+  async function openFind() {
     findOpen = true;
-    // The bar renders on the next tick; focus after it exists.
-    queueMicrotask(() => findBar?.focus());
+    // The bar renders on the next flush; focus after it exists.
+    await tick();
+    findBar?.focus();
   }
 
   function closeFind() {
@@ -353,13 +387,15 @@ import ContextMenu from './ContextMenu.svelte';
     }
   });
 
-  // Give the canvas keyboard focus once per mount, so `/`, Ctrl/Cmd-F, and arrow/j-k node
-  // navigation work immediately on a "cold" Tree tab (opened but never clicked). Without
-  // this, onCanvasKeydown — attached directly to `.tree-viewport`, not `window` — never
-  // receives a keydown whose target is `<body>` (nothing has focused the viewport yet),
-  // and Tasks.svelte's own window-level `/`/Ctrl-F handler only focuses an
-  // already-rendered find/search input, which doesn't exist until openFind() runs — so a
-  // first keypress on a cold tab silently did nothing (TASK-7 e2e finding). The `focusedOnce`
+  // Give the canvas keyboard focus once per mount, so arrow/j-k node navigation works
+  // immediately on a "cold" Tree tab (opened but never clicked): onCanvasKeydown is attached
+  // directly to `.tree-viewport`, not `window`, so it never receives a keydown whose target
+  // is `<body>` (nothing has focused the viewport yet).
+  //
+  // NOTE: this is NOT what makes `/` and Ctrl/Cmd-F work. Those are guaranteed by the
+  // window-level handler in Tasks.svelte, which bumps `findRequestNonce` → openFind() no
+  // matter where focus is (a toolbar button, <body>, …). This effect is belt-and-braces for
+  // find, and load-bearing only for the node-nav keys. The `focusedOnce`
   // flag keeps this from re-stealing focus on every re-render within a single mount — it is
   // NOT once-per-session: TechTreeCanvas renders inside `{:else if activeTab === 'tree'}` in
   // Tasks.svelte, so it unmounts/remounts on every tab switch and this flag resets each time.
@@ -772,9 +808,14 @@ import ContextMenu from './ContextMenu.svelte';
   }
 
   function onContextMenu(e: MouseEvent) {
-    e.preventDefault();
     const target = e.target as HTMLElement;
-    // Only show context menu on empty canvas — not on nodes, toolbars, or headers.
+    // The find bar is a text-entry overlay: bail BEFORE preventDefault() so a right-click in
+    // its input keeps the NATIVE text-editing menu (copy/paste/undo) instead of being
+    // swallowed and replaced by the canvas "create here" menu. Mirrors the `.tree-find-bar`
+    // guard in onPointerDown.
+    if (target.closest('.tree-find-bar')) return;
+    e.preventDefault();
+    // Otherwise only show the canvas menu on empty canvas — not on nodes, toolbars, headers.
     if (target.closest('.tree-node') || target.closest('.tree-toolbar') || target.closest('.tree-band-header')) {
       return;
     }

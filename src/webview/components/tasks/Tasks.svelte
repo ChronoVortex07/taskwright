@@ -54,6 +54,8 @@
   let minimapPanX = $state(0);
   let minimapPanY = $state(0);
   let minimapPanNonce = $state(0);
+  // Host→canvas "open the tree find bar" command (same nonce convention as the jumps above).
+  let findRequestNonce = $state(0);
 
   // True while the board is in cross-branch mode (no local tree layout is computed).
   let crossBranch = $state(false);
@@ -380,6 +382,28 @@
     };
   }
 
+  /**
+   * `/` and Ctrl/Cmd-F, handled at the WINDOW level so they work wherever focus happens to
+   * be (a tree toolbar button, the promote-all button, <body> after a popover ✕ removed the
+   * focused element — none of which sit inside `.tree-viewport`, so the canvas's own
+   * onCanvasKeydown never sees the keystroke).
+   *
+   * On the Tree tab this OPENS the find bar (bumping a nonce the canvas watches and answers
+   * with its own openFind() — one opener, no duplicated logic; openFind is idempotent, so a
+   * keystroke that also reaches onCanvasKeydown cannot double-toggle). On the List tab it
+   * focuses that view's already-rendered search box, as before.
+   */
+  function requestFind() {
+    if (activeTab === 'tree') {
+      findRequestNonce += 1;
+      return;
+    }
+    const searchInput = document.querySelector(
+      '[data-testid="search-input"]'
+    ) as HTMLInputElement | null;
+    searchInput?.focus();
+  }
+
   onMount(() => {
     vscode.postMessage({ type: 'refresh' });
 
@@ -419,20 +443,20 @@
         return;
       }
 
-      // Find (Ctrl/Cmd-F). Handled before the single-key switch, alongside Ctrl/Cmd-N.
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
-        e.preventDefault();
-        const searchInput = document.querySelector(
-          '[data-testid="tree-search-input"], [data-testid="search-input"]'
-        ) as HTMLInputElement | null;
-        searchInput?.focus();
-        return;
-      }
-
       // With the create-form modal open, bare single-key shortcuts must not fire behind it
       // (e.g. focus on a form <select>/<button> is not INPUT/TEXTAREA, so `t`/`z`/… would
       // switch tabs). Escape stays live: the form's own <svelte:window> handles close.
       if (createForm) return;
+
+      // Find (Ctrl/Cmd-F). Deliberately AFTER the modal guard above (unlike Ctrl/Cmd-N):
+      // with the create form open, focus can sit on one of its buttons/selects (not an
+      // INPUT, so the bail-out at the top doesn't catch it) and Ctrl-F would otherwise pull
+      // focus into a search box *behind* the modal.
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+        e.preventDefault();
+        requestFind();
+        return;
+      }
 
       switch (e.key) {
         case 't': handleTabChange('tree'); break;
@@ -453,16 +477,10 @@
         }
         case 'n': openCreateForm('full'); break;
         case 'r': vscode.postMessage({ type: 'refresh' }); break;
-        case '/': {
+        case '/':
           e.preventDefault();
-          // The Tree's find bar and the List's search box never coexist (each renders only
-          // on its own tab), so a union selector resolves to whichever is mounted.
-          const searchInput = document.querySelector(
-            '[data-testid="tree-search-input"], [data-testid="search-input"]'
-          ) as HTMLInputElement | null;
-          searchInput?.focus();
+          requestFind();
           break;
-        }
       }
     }
 
@@ -695,6 +713,7 @@
       {minimapPanX}
       {minimapPanY}
       {minimapPanNonce}
+      {findRequestNonce}
       onSelectTask={handleSelectTask}
       onCreateInPlace={(opts) =>
         openCreateForm(opts.mode ?? 'full', {

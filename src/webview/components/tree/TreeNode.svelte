@@ -510,10 +510,9 @@
   }
 
   /*
-   * A match always outranks the find-dim: while a find is active every non-match is in
-   * `dimmedIds`, so a matched node must never also read as dimmed.
+   * NOTE (deliberately no `.find-match.nav-dimmed { opacity: 1 }` override): a find match
+   * can never also be dimmed, by construction in TechTreeCanvas.svelte — find candidates
+   * exclude `navFilterDimmedIds`, and find only ever ADDS non-matches to `dimmedIds`. Such
+   * a rule would be dead code; if you ever make a match dimmable, add it back consciously.
    */
-  .tree-node.find-match.nav-dimmed {
-    opacity: 1;
-  }
 </style>

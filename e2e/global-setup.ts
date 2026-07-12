@@ -2,8 +2,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * Playwright globalSetup: fail fast and loudly if `dist/webview/*` is missing or stale,
- * instead of letting the suite run against a half-built extension.
+ * Playwright globalSetup: fail fast and loudly if any required `dist/webview/*` file is
+ * MISSING, instead of letting the suite run against a half-built extension. (Existence only
+ * — it does not detect a stale-but-present build.)
  *
  * `package.json`'s `build` script is `compile:webview && build:css && compile` — only
  * `build:css` emits `dist/webview/styles.css`. A partial build (e.g. someone running just
