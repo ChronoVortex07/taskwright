@@ -461,8 +461,10 @@
   /*
    * Find rings (TASK: tree find bar). A match gets an accent ring; the CURRENT cycle
    * target gets a thicker, brighter one. `box-shadow` (not `border`/`outline`) so the
-   * ring never changes the node's box and cannot reflow the canvas — and it composes
-   * additively with the existing selected/hovered shadows rather than replacing them.
+   * ring never changes the node's box and cannot reflow the canvas. Note this does NOT
+   * compose "for free" with `.selected`/`.hovered` (they use `outline`/`border-color`,
+   * so there was never a conflict there) — the real box-shadow user is `.has-active-bug`
+   * above, which the higher-specificity combined rules below merge with explicitly.
    */
   .tree-node.find-match {
     box-shadow: 0 0 0 2px var(--vscode-editor-findMatchHighlightBorder, var(--vscode-focusBorder));
@@ -473,6 +475,27 @@
       0 0 0 3px var(--vscode-focusBorder),
       0 0 12px 2px var(--vscode-focusBorder);
     z-index: 3;
+  }
+
+  /*
+   * `box-shadow` replaces (never merges) across rules of equal specificity, so a node
+   * that is both `.has-active-bug` and a find match would silently lose its bug ring to
+   * the rules above. These higher-specificity (3-class) rules combine both rings
+   * explicitly, reusing `.has-active-bug`'s exact color/geometry alongside the matching
+   * find ring's own shadow list. Ordered so `.find-current` (the stronger find state)
+   * wins over `.find-match` when a node somehow carries both.
+   */
+  .tree-node.has-active-bug.find-match {
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--vscode-editorError-foreground, #f14c4c) 40%, transparent),
+      0 0 0 2px var(--vscode-editor-findMatchHighlightBorder, var(--vscode-focusBorder));
+  }
+
+  .tree-node.has-active-bug.find-current {
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--vscode-editorError-foreground, #f14c4c) 40%, transparent),
+      0 0 0 3px var(--vscode-focusBorder),
+      0 0 12px 2px var(--vscode-focusBorder);
   }
 
   /*
