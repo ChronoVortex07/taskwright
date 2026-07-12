@@ -4,7 +4,7 @@ title: >-
   Tree canvas renders nothing when a task uses the reserved Backburner milestone
   (duplicate band key)
 type: bug
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-12 17:28'
 updated_date: '2026-07-12 17:28'
@@ -14,6 +14,9 @@ labels:
 dependencies: []
 priority: high
 category: Tree
+claimed_by: '@agent/task-124-tree-canvas-renders-nothing-when-a-task-uses-the-reserved-backburner-milestone-duplicate-band-key'
+worktree: task-124-tree-canvas-renders-nothing-when-a-task-uses-the-reserved-backburner-milestone-duplicate-band-key
+claimed_at: '2026-07-13 01:28'
 ---
 
 ## Description
