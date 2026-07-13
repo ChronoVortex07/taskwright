@@ -4,6 +4,54 @@ All notable changes to Taskwright are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] — 2026-07-13
+
+The **stable task IDs** release: a draft never changes its ID, so anything that references a draft
+— another task's `dependencies`, a spec, a handoff — stays valid for the life of the task.
+
+### Changed
+
+- **Drafts mint real `TASK-N` IDs from the shared counter.** There is **one ID space** across
+  `tasks/`, `drafts/`, `completed/`, and `archive/` — the `drafts/` folder (never the ID) is the sole
+  draftness marker. `promoteDraft` and `demoteTask` are **pure file moves**: the ID and status are
+  preserved, and nothing that referenced the draft dangles. `getNextTaskId` scans every folder, and
+  `allocateAndWrite` locks a single `backlog/.locks/` namespace — per-directory locks would let a
+  concurrent `create_task` and draft-create both claim the same number (the old TASK-48 clobber,
+  re-armed by the shared counter).
+- **Legacy `DRAFT-N` boards migrate automatically and idempotently** at activation and MCP startup
+  (`src/core/draftIdMigration.ts`, plus a `legacy-draft-ids` board-doctor finding). The migration
+  re-IDs drafts in place — it never promotes — and remaps every reference through the shared
+  `src/core/idRemap.ts` (which also closes the `parent_task_id` / `subtasks` / `references[]` gaps
+  `promoteDrafts`' old remap missed). `remapIds` scans every folder an id can occupy —
+  `tasks`/`drafts`/`completed`/both `archive` subfolders — because a completed task's dependency list
+  and an archived task's references are restorable records (archiving is a soft delete).
+- **Archive/restore routes by source folder.** `archive_task` moves a draft → `archive/drafts/` and a
+  task → `archive/tasks/`; `restore_task` returns it to the folder it came from. This deletes the
+  last id-prefix branch in the codebase.
+
+### Added
+
+- **End-to-end acceptance test** (`stableTaskIds.integration.test.ts`): proves the invariant rather
+  than its parts — a reference written against a draft, structurally **and in prose**, survives
+  promotion on a fresh board AND on a migrated legacy one. The prose case is the point: no remap can
+  rewrite free text, so prose written against a legacy id before the migration is unrecoverable
+  (asserted, deliberately) — which is why the fix is "never change an id", not "remap harder".
+- **`idSpaceContract.test.ts`** — fails the build if any agent-facing surface (the `create_task`
+  `draft` flag, `promote_draft`/`promote_drafts`/`demote_task`, `archive_task`/`restore_task`, the
+  create-task and index-codebase skills, CLAUDE.md, AGENTS.md) promises the legacy id shape outside an
+  explicit legacy/migration note, since that makes agents write draft-flavored ids into specs and
+  handoffs.
+
+### Fixed
+
+- **Playwright no longer silently reuses another worktree's Vite fixture server.** The primary
+  checkout serves on 5173; each `.worktrees/<branch>` now derives its own stable port from its path
+  (`scripts/lib/fixtureServer.ts`), and the global setup aborts loudly if the server on the expected
+  port serves another tree's `dist/webview/` directory. (TASK-111)
+- **Stale `findRequestNonce` no longer reopens the find bar on tree remount.** A nonce bumped by a
+  prior `/` keystroke could survive into the next mount and reopen the bar. The nonce is now cleared
+  after the canvas acknowledges it, and the initial mount never answers a non-zero nonce.
+
 ## [1.8.1] — 2026-07-13
 
 Three field bugs, each traced to a root cause and reproduced before it was fixed: autonomous runs
