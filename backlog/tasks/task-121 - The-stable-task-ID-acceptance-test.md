@@ -1,7 +1,7 @@
 ---
 id: TASK-121
 title: The stable-task-ID acceptance test
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-12 16:43'
 updated_date: '2026-07-12 16:43'
@@ -17,6 +17,9 @@ references:
   - docs/superpowers/plans/2026-07-12-stable-task-ids.md
 priority: high
 category: 'Core Board'
+claimed_by: '@agent/.worktrees/task-121-the-stable-task-id-acceptance-test'
+worktree: .worktrees/task-121-the-stable-task-id-acceptance-test
+claimed_at: '2026-07-13 08:03'
 ---
 
 ## Description
