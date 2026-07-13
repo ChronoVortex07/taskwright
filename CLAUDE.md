@@ -511,8 +511,18 @@ rebase_conflict`) so `/orchestrate-board` branches without parsing prose. **Dura
   all say a draft's id is FINAL — a surface still promising the legacy id shape makes agents write
   draft-flavored ids into specs and handoffs, the exact failure stable ids remove, so
   `src/test/unit/idSpaceContract.test.ts` fails the build if such a legacy promise reappears in one
-  of those surfaces outside an explicit legacy/migration note. Coverage:
-  `src/test/unit/{idRemap,draftIdMigration,idSpaceContract,BacklogWriter.drafts,BacklogWriter.pureMove,BacklogWriter.idAllocation,BacklogWriter.archiveFolder}.test.ts`.
+  of those surfaces outside an explicit legacy/migration note. **`remapIds` scans every folder an id
+  can occupy** — `tasks`/`drafts`/`completed`/both `archive` subfolders — not just the live board: a
+  completed task's dependency list and an archived task's references are restorable records
+  (archiving is a soft delete), so a reference the remap cannot see is one that dangles forever. It
+  is safe to walk all five because the id allocator scans all five, so an id names exactly one file
+  board-wide. The end-to-end acceptance test (`stableTaskIds.integration.test.ts`) proves the
+  invariant rather than its parts: a reference written against a draft — structurally **and in
+  prose** — survives promotion on a fresh board AND on a migrated legacy one. The prose case is the
+  point: no remap pass can rewrite free text, so prose written against a legacy id before the
+  migration is unrecoverable (asserted, deliberately) — which is why the fix is "never change an id",
+  not "remap harder". Coverage:
+  `src/test/unit/{stableTaskIds.integration,idRemap,draftIdMigration,idSpaceContract,BacklogWriter.drafts,BacklogWriter.pureMove,BacklogWriter.idAllocation,BacklogWriter.archiveFolder}.test.ts`.
   Design: `docs/superpowers/specs/2026-07-12-stable-task-ids-design.md`; plan:
   `docs/superpowers/plans/2026-07-12-stable-task-ids.md`.
 

@@ -53,9 +53,25 @@ function writeDraft(id: string, title: string, deps_: string[] = [], extra = '')
   );
 }
 
+function writeIn(
+  folder: string,
+  id: string,
+  title: string,
+  deps_: string[] = [],
+  extra = ''
+): void {
+  const dir = path.join(backlogPath, ...folder.split('/'));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, `${id.toLowerCase()} - ${title}.md`),
+    fileContent(id, title, 'To Do', deps_, extra),
+    'utf-8'
+  );
+}
+
 function read(id: string): string {
-  for (const dir of ['tasks', 'drafts']) {
-    const p = path.join(backlogPath, dir);
+  for (const dir of ['tasks', 'drafts', 'completed', 'archive/tasks', 'archive/drafts']) {
+    const p = path.join(backlogPath, ...dir.split('/'));
     for (const f of fs.existsSync(p) ? fs.readdirSync(p) : []) {
       const c = fs.readFileSync(path.join(p, f), 'utf-8');
       if (new RegExp(`^id:\\s*${id}\\b`, 'm').test(c)) return c;
@@ -216,6 +232,53 @@ describe('remapIds', () => {
     expect(after).toContain('\r\n');
     // no lone LF survived the round-trip
     expect(/[^\r]\n/.test(after)).toBe(false);
+  });
+
+  /**
+   * TASK-121. The scan used to stop at tasks/ + drafts/ — the LIVE board — so an inbound
+   * reference held by a completed or archived task was silently left dangling. Both are
+   * restorable records (archive is a documented soft delete; completed keeps its real
+   * dependency list), so a rename must reach them too.
+   */
+  describe('scans every folder an id can occupy', () => {
+    it('rewrites an inbound reference held by a COMPLETED task', async () => {
+      writeIn('completed', 'TASK-50', 'Shipped', ['DRAFT-3']);
+      const d = deps();
+      const remapped = await remapIds(d, new Map([['DRAFT-3', 'TASK-12']]));
+      const t50 = await d.parser.getTask('TASK-50');
+      expect(t50!.folder).toBe('completed');
+      expect(t50!.dependencies).toEqual(['TASK-12']);
+      expect(remapped).toContain('TASK-50');
+    });
+
+    it('rewrites an inbound reference held by an ARCHIVED task', async () => {
+      writeIn('archive/tasks', 'TASK-51', 'Shelved', ['DRAFT-3'], 'parent_task_id: DRAFT-3\n');
+      const d = deps();
+      const remapped = await remapIds(d, new Map([['DRAFT-3', 'TASK-12']]));
+      const t51 = await d.parser.getTask('TASK-51');
+      expect(t51!.folder).toBe('archive');
+      expect(t51!.dependencies).toEqual(['TASK-12']);
+      expect(t51!.parentTaskId).toBe('TASK-12');
+      expect(remapped).toContain('TASK-51');
+    });
+
+    it('rewrites an inbound reference held by an ARCHIVED DRAFT', async () => {
+      writeIn('archive/drafts', 'TASK-52', 'Archived-draft', [], 'type: bug\ncaused_by: DRAFT-3\n');
+      const d = deps();
+      const remapped = await remapIds(d, new Map([['DRAFT-3', 'TASK-12']]));
+      expect((await d.parser.getTask('TASK-52'))!.causedBy).toBe('TASK-12');
+      expect(remapped).toContain('TASK-52');
+    });
+
+    it('still performs no writes on a completed/archived task with nothing to remap', async () => {
+      writeIn('completed', 'TASK-50', 'Shipped', ['TASK-5']);
+      writeIn('archive/tasks', 'TASK-51', 'Shelved', ['TASK-5']);
+      const d = deps();
+      const update = vi.spyOn(d.writer, 'updateTask');
+      const remapped = await remapIds(d, new Map([['DRAFT-3', 'TASK-12']]));
+      expect(remapped).toEqual([]);
+      expect(update).not.toHaveBeenCalled();
+    });
   });
 
   it('preserves the claim/tree surgical frontmatter fields through a rewrite', async () => {

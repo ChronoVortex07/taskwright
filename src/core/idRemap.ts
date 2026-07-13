@@ -38,8 +38,21 @@ function mapList(ids: string[], oldToNew: Map<string, string>): string[] | undef
 }
 
 /**
- * Rewrite dependencies / caused_by / parent_task_id / subtasks / references across the
- * whole live board (tasks + drafts). Returns the ids of every task actually rewritten.
+ * Rewrite dependencies / caused_by / parent_task_id / subtasks / references across EVERY folder
+ * a task id can occupy — tasks, drafts, completed, and both archive subfolders. Returns the ids
+ * of every task actually rewritten.
+ *
+ * WHY THE SCAN IS THIS WIDE (TASK-121). It used to cover only `tasks/` + `drafts/` — the live
+ * board — so an inbound reference held by a COMPLETED or ARCHIVED task was silently left
+ * pointing at an id that no longer existed. Both are real, restorable records, not tombstones:
+ * archiving is a documented SOFT delete (`restoreArchivedTask` puts the task back on the live
+ * board), and a completed task's `dependencies` are the record of what it was actually blocked
+ * on. A reference the remap cannot see is a reference that dangles forever — precisely the
+ * silent breakage this milestone exists to end, so a rename must reach every holder of it.
+ *
+ * Iterating all five folders is safe by construction: since TASK-114 the id allocator scans
+ * every one of them, so an id identifies exactly one file board-wide and `parser.getTask` (which
+ * `updateTask`/`setCausedBy` resolve through) cannot land on the wrong one.
  *
  * `oldToNew` keys must be uppercased ids. The board is re-read here, so callers must have
  * finished their file moves first.
@@ -50,10 +63,15 @@ export async function remapIds(
 ): Promise<string[]> {
   if (oldToNew.size === 0) return [];
 
-  const [tasks, drafts] = await Promise.all([deps.parser.getTasks(), deps.parser.getDrafts()]);
+  const [tasks, drafts, completed, archived] = await Promise.all([
+    deps.parser.getTasks(),
+    deps.parser.getDrafts(),
+    deps.parser.getCompletedTasks(),
+    deps.parser.getArchivedTasks(),
+  ]);
   const remapped: string[] = [];
 
-  for (const t of [...tasks, ...drafts]) {
+  for (const t of [...tasks, ...drafts, ...completed, ...archived]) {
     const updates: Partial<Task> = {};
 
     const nextDeps = mapList(t.dependencies ?? [], oldToNew);
