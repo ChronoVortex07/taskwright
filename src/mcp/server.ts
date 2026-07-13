@@ -330,7 +330,12 @@ async function main(): Promise<void> {
           .describe('Implementation notes body (markdown).'),
         finalSummary: z.string().optional().describe('Final summary body (markdown).'),
         references: z.array(z.string()).optional().describe('Reference URLs or paths.'),
-        draft: z.boolean().optional().describe('Create as a draft (DRAFT-N in drafts/).'),
+        draft: z
+          .boolean()
+          .optional()
+          .describe(
+            'Create as a draft: a provisional task in drafts/ that a human reviews and promotes. It carries a NORMAL task id (TASK-N) from birth — drafts and tasks share one id space, and promoting NEVER changes the id, so the id returned here is FINAL and safe to reference in specs, handoffs, and other tasks’ dependencies.'
+          ),
       },
     },
     async (args) => runTool(() => createTaskHandler(deps, args))

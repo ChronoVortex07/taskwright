@@ -28,7 +28,11 @@ external CLI. At the start of a task session:
    own task is an idempotent no-op, while a task live-claimed by a different session returns
    `surrendered`/`heldBy` — pick a different task instead of overriding.
 4. Do the work. Use `create_task` / `edit_task` to add or update tasks, and `create_subtask` for
-   breakdowns. Record progress with `edit_task` (implementationNotes / finalSummary). Do **not** call
+   breakdowns. **A draft's ID is final** — there is ONE ID space: `create_task { draft: true }`
+   mints a real `TASK-N` in `backlog/drafts/`, the `drafts/` folder (never the ID) is what makes
+   it a draft, and promoting it is a pure file move that does not rename it. So the ID a draft
+   comes back with is safe to reference immediately — in another task's `dependencies`, in a
+   spec, in a handoff. Record progress with `edit_task` (implementationNotes / finalSummary). Do **not** call
    `complete_task` as part of the normal flow — `request_merge` marks the task **Done** on the board,
    and it stays there. (`complete_task` files a task away into `backlog/completed/`, which removes it
    from the board; it is an opt-in archival action, not the way a merged task reaches Done.)
@@ -390,8 +394,8 @@ backlog/
 ├── .user                         # Local user settings (optional, not committed)
 ├── tasks/                        # Active task files
 │   └── TASK-1 - Task-title.md
-├── drafts/                       # Draft task files (pre-promotion)
-│   └── DRAFT-1 - Draft-title.md
+├── drafts/                       # Draft task files (pre-promotion) — same ID space as tasks/
+│   └── TASK-2 - Draft-title.md
 ├── completed/                    # Tasks moved here when done
 │   └── TASK-5 - Done-task.md
 ├── archive/
@@ -436,18 +440,23 @@ date_format: 'yyyy-mm-dd' # string, display format
 
 #### File Naming Conventions
 
-| Entity    | Prefix       | Pattern                          | Example                        |
-| --------- | ------------ | -------------------------------- | ------------------------------ |
-| Task      | configurable | `{TASK_PREFIX}-{N} - {Title}.md` | `TASK-1 - Add-login.md`        |
-| Draft     | `draft`      | `DRAFT-{N} - {Title}.md`         | `DRAFT-3 - Explore-caching.md` |
-| Document  | `doc`        | `doc-{N} - {Title}.md`           | `doc-1 - API-Reference.md`     |
-| Decision  | `decision`   | `decision-{N} - {Title}.md`      | `decision-1 - Use-React.md`    |
-| Milestone | `m`          | `m-{N} - {Title}.md`             | `m-1 - Launch-prep.md`         |
+| Entity    | Prefix       | Pattern                          | Example                       |
+| --------- | ------------ | -------------------------------- | ----------------------------- |
+| Task      | configurable | `{TASK_PREFIX}-{N} - {Title}.md` | `TASK-1 - Add-login.md`       |
+| Draft     | configurable | `{TASK_PREFIX}-{N} - {Title}.md` | `TASK-3 - Explore-caching.md` |
+| Document  | `doc`        | `doc-{N} - {Title}.md`           | `doc-1 - API-Reference.md`    |
+| Decision  | `decision`   | `decision-{N} - {Title}.md`      | `decision-1 - Use-React.md`   |
+| Milestone | `m`          | `m-{N} - {Title}.md`             | `m-1 - Launch-prep.md`        |
 
 - Title sanitization: removes `<>:"/\|?*'(),!@#$%^&+=[]{}`, spaces → hyphens, collapse multiple hyphens
 - IDs are uppercase in frontmatter (`TASK-1`) but lowercase in filenames may vary
 - Zero-padding applies per config: `zero_padded_ids: 3` → `TASK-001`
 - Subtask IDs use dot notation: `TASK-5.1`, `TASK-5.2`
+- **Drafts and tasks share ONE ID space** (Taskwright): a draft in `drafts/` carries a normal
+  task ID minted from the same counter, so an ID is unique across `tasks/`, `drafts/`,
+  `completed/` and `archive/`, and it never changes for the life of the task. (This diverges
+  from upstream Backlog.md, whose legacy scheme mints a separate `DRAFT-{N}` and re-IDs it on
+  promotion; a board carrying such legacy IDs is migrated onto stable ones automatically.)
 
 #### Other Entity Frontmatter
 
@@ -459,11 +468,11 @@ date_format: 'yyyy-mm-dd' # string, display format
 
 #### Key Operations & Business Rules
 
-- **Draft vs Task**: Status "Draft" → draft workflow; any other status → task workflow
-- **Promote**: draft → task (new TASK-N ID, old draft file deleted)
-- **Demote**: task → draft (new DRAFT-N ID, old task file deleted)
+- **Draft vs Task**: the **folder** is the marker — a file in `drafts/` is a draft, one in `tasks/` is a task. Never the ID, and never the status: a draft carries a real status (a **Done** baseline draft is legitimate), so status says nothing about draftness.
+- **Promote**: draft → task. A **pure file move** (`drafts/` → `tasks/`): the ID is unchanged and the status is preserved. Nothing that referenced the draft dangles.
+- **Demote**: task → draft. The mirror-image pure file move: the ID is unchanged and the status is preserved.
 - **Complete**: moves task file to `completed/`
-- **Archive**: moves to `archive/{tasks,drafts,milestones}/` (soft delete, IDs reusable)
+- **Archive**: moves to `archive/{tasks,drafts,milestones}/`, routed by **source folder** (a draft → `archive/drafts/`); restore returns it to the folder it came from. Soft delete, but IDs are **not** reused — the next-ID scan covers `archive/` too.
 - **Status callbacks**: per-task `onStatusChange` overrides global config
 - **Timestamps**: `created_date` set once; `updated_date` on every modification
 

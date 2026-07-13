@@ -70,7 +70,10 @@ subsystems, releases, and decisions, not per-file detail.
    - `create_category` for each approved new lane; `create_milestone` for each age, **oldest
      first** (creation order = left→right band order).
    - `create_task` for each node, in **dependency order (prerequisites first)** — edges are the
-     `dependencies` array and a prerequisite must exist before a dependent can name it. Set
+     `dependencies` array and a prerequisite must exist before a dependent can name it. The ID
+     each draft comes back with is **final** (a draft is minted with a real task ID, e.g.
+     `TASK-112` in `drafts/`, and promotion is a pure move that never renames it), so you can
+     name it in a later node's `dependencies`/`causedBy` and the edge survives promotion. Set
      `draft: true`, `status: "Done"` for a **baseline** node (a Done draft) and `draft: true`
      with **no status** (defaults to To Do) for a **gap** node, plus `category`, `priority`,
      `milestone`, and `dependencies` in the one call (drafts carry all of these). Use
@@ -107,6 +110,7 @@ before each write, dedupe against the live board:
 - Baseline = **Done draft**; gap = **To-Do draft**; everything provisional until the human promotes.
 - Ages are created oldest-first (creation order = left→right band order).
 - Emit drafts prerequisites-first; design the dependency graph acyclic.
+- A draft's ID is final — one ID space, promotion never renames. Reference it freely.
 - Reuse a lane before creating one; a new lane is a decision to surface, not assume.
 - Confirm the reconstruction summary before writing; never promote — the human does.
 - Subscription-safe: forensics via Bash/Read/Grep/Glob, writes via MCP, never `claude -p`.

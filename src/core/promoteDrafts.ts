@@ -1,12 +1,19 @@
 /**
  * Bulk draft promotion with reference remap (P4, GAP-3). vscode-free.
  *
- * `writer.promoteDraft` re-ids DRAFT-N → TASK-N but rewrites only the moved file's
- * frontmatter — inbound references to the old DRAFT id are left dangling. This core
- * promotes a set in dependency order (deps first, so prerequisites get lower ids), then
- * delegates to the shared `remapIds` core, which rewrites EVERY inbound reference kind
- * across the live board (tasks + remaining drafts, incl. the just-promoted tasks' own
- * edges): dependencies, bug `caused_by`, `parent_task_id`, `subtasks`, and `references[]`.
+ * Since stable ids (TASK-115/116), a draft carries a real TASK-N id from birth and
+ * `writer.promoteDraft` is a PURE MOVE that keeps it — so promoting a linked proposal set
+ * normally needs no remap at all: every edge already points at an id that did not change.
+ *
+ * The remap survives for the LEGACY path only: a draft whose id lacks the board's task
+ * prefix (an old `DRAFT-N` file, or one written by the upstream Backlog.md CLI) is still
+ * re-id'd on promotion, and `writer.promoteDraft` rewrites only the moved file's own
+ * frontmatter — inbound references to the old id would dangle. So this core promotes a set
+ * in dependency order (deps first, so prerequisites get lower ids), then delegates to the
+ * shared `remapIds` core for the entries whose id actually changed (`from !== to`), which
+ * rewrites EVERY inbound reference kind across the live board (tasks + remaining drafts,
+ * incl. the just-promoted tasks' own edges): dependencies, bug `caused_by`,
+ * `parent_task_id`, `subtasks`, and `references[]`.
  *
  * Consumers (parity): MCP `promote_drafts` (bulk), MCP `promote_draft` (single id →
  * gains remap for free), and the canvas "Promote all proposed" webview message.

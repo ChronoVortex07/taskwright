@@ -246,7 +246,7 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   > `/execute-task` runs from **any** session: dispatched (already worktree-rooted) it proceeds
   > directly; primary-rooted it bootstraps the task's worktree via `start_task` and either relaunches
   > into it or continues single-session and closes with `request_merge { worktree }`
-  > (DRAFT-7 — `docs/superpowers/plans/2026-07-08-execute-task-from-any-session.md`).
+  > (plan: `docs/superpowers/plans/2026-07-08-execute-task-from-any-session.md`).
   > Coverage: `src/test/unit/{cancellationMarker,cancelDispatch,dispatchActions,dispatchPrompt,toSummary,TasksController}.test.ts`,
   > `e2e/tree-popover.spec.ts`. Design:
   > `docs/superpowers/specs/2026-07-02-tech-tree-p5-execute-task-skill-design.md`; plan:
@@ -283,9 +283,9 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
   **Claim-before-work** is the anti-collision guard (a `surrendered` claim ⇒ skip, never
   double-execute); a **failure** is surfaced + `release_task` + move-on (no auto-retry by default);
   the loop **stops** on drained / all-blocked / user budget / no-progress. Subscription-safe —
-  parallelism is in-session subagents via the `Task` tool, never `claude -p`. Composes DRAFT-5
-  (`next_ready_tasks`), DRAFT-3 (`start_task`), DRAFT-7 (`/execute-task` from any session), and
-  DRAFT-4 (`request_merge { worktree }`). Plan:
+  parallelism is in-session subagents via the `Task` tool, never `claude -p`. Composes
+  `next_ready_tasks`, `start_task`, `/execute-task` from any session, and
+  `request_merge { worktree }`. Plan:
   `docs/superpowers/plans/2026-07-08-orchestrate-board-skill.md`.
   **Conflict-safe parallel batching (TASK-80):** dependency-independence ≠ file-independence, so the
   parallel batch is pulled via `next_ready_tasks { parallelSafe: true, limit: cap }` — only tasks whose
@@ -492,6 +492,29 @@ rebase_conflict`) so `/orchestrate-board` branches without parsing prose. **Dura
   push through `pushBand()` would not be enough (a discovered "Backburner" sorts into the middle and
   `backburnerIdx` would point at an unrelated band). Coverage:
   `src/test/unit/{worktreeEntryContract,mcpMergeHandlers,boardHomeMigration,gitAutoIntegration,treeLayout}.test.ts`.
+
+- **Stable task IDs (one ID space)** ✅: a draft is created with a real `TASK-N` id in
+  `backlog/drafts/` — `folder === 'drafts'` is the sole draftness marker, never the id (and never
+  the status: a draft carries a real one, so a Done baseline draft is legitimate). `promoteDraft` /
+  `demoteTask` are **pure moves** (id and status preserved; nothing to remap). `getNextTaskId` scans
+  every folder (`tasks`/`drafts`/`completed`/`archive`), and `allocateAndWrite` locks in ONE shared
+  `backlog/.locks/` namespace — a per-directory lock would let a concurrent `create_task` and
+  draft-create both claim the same number (the TASK-48 clobber, re-armed by the shared counter).
+  Archive/restore route by **folder** (`archive/drafts/` ↔ `drafts/`), which deletes the last
+  id-prefix branch in the codebase. Legacy `DRAFT-N` boards **migrate automatically** and
+  idempotently (`src/core/draftIdMigration.ts`, run from the deferred bootstrap and MCP startup, plus
+  a `legacy-draft-ids` board-doctor finding; it re-ids in place — it never promotes), remapping
+  references through the shared `src/core/idRemap.ts` (which also closes `promoteDrafts`' old
+  `parent_task_id`/`subtasks`/`references[]` gaps). **Every agent-facing surface must tell this
+  truth**: the `create_task` `draft` flag, `promote_draft`/`promote_drafts`/`demote_task`,
+  `archive_task`/`restore_task`, the create-task and index-codebase skills, CLAUDE.md and AGENTS.md
+  all say a draft's id is FINAL — a surface still promising the legacy id shape makes agents write
+  draft-flavored ids into specs and handoffs, the exact failure stable ids remove, so
+  `src/test/unit/idSpaceContract.test.ts` fails the build if such a legacy promise reappears in one
+  of those surfaces outside an explicit legacy/migration note. Coverage:
+  `src/test/unit/{idRemap,draftIdMigration,idSpaceContract,BacklogWriter.drafts,BacklogWriter.pureMove,BacklogWriter.idAllocation,BacklogWriter.archiveFolder}.test.ts`.
+  Design: `docs/superpowers/specs/2026-07-12-stable-task-ids-design.md`; plan:
+  `docs/superpowers/plans/2026-07-12-stable-task-ids.md`.
 
 ## Conventions
 

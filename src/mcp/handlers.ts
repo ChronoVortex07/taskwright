@@ -350,7 +350,8 @@ export function isSamePath(a: string, b: string, winLike: boolean = IS_WINDOWS):
 }
 
 /**
- * Resolve + validate an explicit `worktree` target for request_merge (DRAFT-4).
+ * Resolve + validate an explicit `worktree` target for request_merge
+ * (`docs/superpowers/plans/2026-07-08-request-merge-worktree-target.md`).
  * Accepts a bare branch name (=> <primaryRoot>/.worktrees/<name>) or a repo-root-
  * relative path (contains a separator). Returns the resolved target, or an abort
  * reason. The four gates (containment / real linked worktree / non-detached /
@@ -1354,7 +1355,9 @@ export interface CreateTaskArgs {
   draft?: boolean;
 }
 
-/** Create a task (or draft) and return its summary. */
+/** Create a task (or draft) and return its summary. A draft is minted with a real TASK-N id
+ *  from the shared counter (TASK-115), so the id in the returned summary is FINAL — promotion
+ *  never changes it, and callers may reference it immediately. */
 export async function createTaskHandler(
   deps: McpHandlerDeps,
   args: CreateTaskArgs

@@ -882,8 +882,8 @@ export class BacklogWriter {
 
     // Scan the WHOLE board for the next likely id (considering cross-branch IDs to avoid
     // collisions), then claim it atomically under the shared lock namespace: two concurrent
-    // creates can both scan before either has written (DRAFT-25) — allocateAndWrite retries
-    // the next candidate instead of colliding.
+    // creates can both scan before either has written (the TASK-48 clobber race) —
+    // allocateAndWrite retries the next candidate instead of colliding.
     const scannedId = this.getNextTaskId(backlogPath, taskPrefix, crossBranchIds);
 
     return this.allocateAndWrite(
@@ -981,7 +981,8 @@ export class BacklogWriter {
 
     // Scan the WHOLE board for the next id (drafts mint from the TASK counter now), then claim
     // it atomically in the board's SHARED lock namespace: two concurrent creates can both scan
-    // before either has written (DRAFT-25) — allocateAndWrite retries the next candidate.
+    // before either has written (the TASK-48 clobber race) — allocateAndWrite retries the next
+    // candidate.
     //
     // The lock NAME below is identical to createTask's (`.${lowerPrefix}-${id}.lock`), and it
     // lives in createTask's directory (backlog/.locks/). Both halves are load-bearing: sharing
@@ -1026,7 +1027,7 @@ export class BacklogWriter {
   /**
    * Atomically claim the next free numeric id under `dir` (starting from `startId`,
    * already scanned/adjusted by the caller) and write the real file for it — closing the
-   * DRAFT-25 race where two concurrent creates both scan a stale max before either has
+   * TASK-48 clobber race, where two concurrent creates both scan a stale max before either has
    * written and land on the same id under different (title-derived) filenames.
    *
    * Two guards, both keyed only by the numeric id (never the title-derived filename), make

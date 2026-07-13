@@ -61,6 +61,11 @@ or plan is warranted) drafts files via `superpowers:writing-plans`.
      `definitionOfDone`, `implementationPlan`, `references`, `labels`, `assignee`, `description`
      (drafts carry all of these). Use `type: "bug"` + `causedBy` for a bug node.
      `create_subtask` for within-task breakdowns.
+   - The ID a draft comes back with is **final**. A draft is minted with a real task ID
+     (`TASK-112` in `drafts/`) from the same ID space as tasks, and promoting it is a pure
+     file move that never changes the ID. So the ID `create_task` returns is safe to write
+     straight into another task's `dependencies` / `causedBy`, into a spec, or into a plan —
+     it will still resolve after the human promotes.
    - Drafts render as **proposed nodes** on the tree canvas.
 
 5. **Plans (optional).** When a task genuinely warrants a spec/plan (large or ambiguous
@@ -70,8 +75,8 @@ or plan is warranted) drafts files via `superpowers:writing-plans`.
 6. **Hand off to review.** Tell the user the proposal is on the tree as draft nodes. They
    edit / reslot / connect / disconnect with the P3 board gestures and **promote** when
    satisfied — single (per-node Promote) or all at once ("Promote all proposed", which runs
-   `promote_drafts` and rewires the dependency edges). Do **not** promote for them; the
-   review-and-promote step is the human's.
+   `promote_drafts`). Promotion keeps every ID, so the dependency edges you wired survive it
+   untouched. Do **not** promote for them; the review-and-promote step is the human's.
 
 ## Rules of thumb
 
@@ -81,4 +86,5 @@ or plan is warranted) drafts files via `superpowers:writing-plans`.
 - Reuse a lane before creating one; a new lane is a decision to surface, not assume.
 - Default milestone Backburner when the flow position is unknown.
 - Link to existing work over duplicating it.
+- A draft's ID is final — one ID space, promotion never renames. Reference it freely.
 - Drafts only — you propose, the human promotes.
