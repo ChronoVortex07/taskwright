@@ -23,6 +23,7 @@ category: Orchestration
 claimed_by: '@agent/task-129-return-full-task-context-from-start-task-claim-task-and-give-get-active-task-a-session-claim-fallback'
 worktree: task-129-return-full-task-context-from-start-task-claim-task-and-give-get-active-task-a-session-claim-fallback
 claimed_at: '2026-07-14 17:45'
+plan: docs/superpowers/specs/2026-07-14-session-task-context-design.md
 ---
 
 ## Description
