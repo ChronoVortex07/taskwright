@@ -80,6 +80,19 @@ xvfb`); the scripts detect a headless Linux host and wrap the run in `xvfb-run` 
 - Use [Lucide icons](https://lucide.dev/) (inline SVG), not emojis, in webviews.
 - Support Light, Dark, and High Contrast themes.
 
+### Line endings — just commit normally
+
+The repo is LF end to end, and one line enforces it: `.gitattributes` has `* text=auto eol=lf`.
+`eol=lf` **overrides `core.autocrlf`**, so every checkout produces LF no matter how your git is
+configured — you do not need to set `core.autocrlf` yourself. Prettier is pinned to `endOfLine: lf`
+to match, and lint-staged only ever formats the files you actually staged.
+
+**Do not commit with `--no-verify`.** Older notes in this repo told you to, because the pre-commit
+hook once flipped the whole tree CRLF→LF on Windows. That is fixed, and skipping the hook also skips
+the lint it exists to run. `src/test/unit/precommitEol.test.ts` pins the invariant: it clones a
+fixture with the hostile `core.autocrlf=true`, runs the real lint-staged, and asserts every file the
+commit did not stage is byte-identical afterwards.
+
 ## Visual proof
 
 UI changes should include a short before/after. The repo ships a `visual-proof` Claude Code skill
