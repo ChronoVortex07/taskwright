@@ -3,10 +3,10 @@ id: TASK-127
 title: >-
   Add a task-less merge path so dev-worktree sessions can close through the
   merge queue
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-14 05:25'
-updated_date: '2026-07-14 09:39'
+updated_date: '2026-07-14 09:41'
 labels:
   - friction
   - merge-queue
@@ -19,9 +19,6 @@ references:
   - src/mcp/handlers.ts
 priority: medium
 category: Worktrees & Merge
-claimed_by: '@agent/task-127-add-a-task-less-merge-path-so-dev-worktree-sessions-can-close-through-the-merge-queue'
-worktree: task-127-add-a-task-less-merge-path-so-dev-worktree-sessions-can-close-through-the-merge-queue
-claimed_at: '2026-07-14 17:16'
 ---
 
 ## Description
