@@ -3,10 +3,10 @@ id: TASK-132
 title: >-
   Make the verify doctor proactive at setup so wrong default verify commands
   don't ship silently
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-14 05:26'
-updated_date: '2026-07-14 09:41'
+updated_date: '2026-07-14 09:44'
 labels:
   - friction
   - merge-queue
@@ -17,9 +17,6 @@ references:
   - .taskwright/docs/friction-report-2026-07-14.md
 priority: low
 category: Worktrees & Merge
-claimed_by: '@agent/.worktrees/task-132-make-the-verify-doctor-proactive-at-setup-so-wrong-default-verify-commands-don-t-ship-silently'
-worktree: .worktrees/task-132-make-the-verify-doctor-proactive-at-setup-so-wrong-default-verify-commands-don-t-ship-silently
-claimed_at: '2026-07-14 17:16'
 ---
 
 ## Description
