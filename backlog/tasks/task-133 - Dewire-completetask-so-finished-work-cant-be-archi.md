@@ -1,10 +1,10 @@
 ---
 id: TASK-133
 title: Dewire complete_task so finished work can't be archived off the board
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-14 08:51'
-updated_date: '2026-07-14 09:04'
+updated_date: '2026-07-14 09:05'
 labels: []
 milestone: Workflow Friction Hardening
 dependencies: []
@@ -16,9 +16,6 @@ references:
   - src/mcp/instructions.ts
 priority: high
 category: Core Board
-claimed_by: '@agent/task-133-dewire-complete-task-so-finished-work-can-t-be-archived-off-the-board'
-worktree: task-133-dewire-complete-task-so-finished-work-can-t-be-archived-off-the-board
-claimed_at: '2026-07-14 16:52'
 ---
 
 ## Description
