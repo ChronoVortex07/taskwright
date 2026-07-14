@@ -1514,11 +1514,14 @@ export async function boardDoctorHandler(deps: McpHandlerDeps): Promise<BoardDoc
   // getPrimaryRoot, not dirname(backlogPath): in git-auto the backlog path is
   // inside .taskwright/board, whose dirname is NOT the repo root.
   const repoRoot = deps.parser.getPrimaryRoot();
-  let opts: { syncMode?: SyncMode; ref?: string } = {};
+  let opts: { syncMode?: SyncMode; ref?: string; commonDir?: string } = {};
   try {
     const facts = await gitFacts(deps.gitExec ?? defaultGitExec, deps.root);
     const syncCfg = readSyncConfig(syncConfigPath(facts.commonDir), deps.fsDeps ?? nodeQueueFs);
-    opts = { syncMode: syncCfg.mode, ref: syncCfg.ref };
+    // commonDir also enables check 12: merge-verify commands that do not fit this
+    // repo — the pre-flight an agent wants BEFORE it spends a task on a gate that
+    // was never going to run (TASK-132).
+    opts = { syncMode: syncCfg.mode, ref: syncCfg.ref, commonDir: facts.commonDir };
   } catch {
     // Not a git repo — the base checks still run; the board-home checks stay off.
   }

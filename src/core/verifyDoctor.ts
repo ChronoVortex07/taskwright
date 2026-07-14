@@ -21,6 +21,12 @@ export interface RepoProfile {
   kind: RepoKind;
   /** Node repos: the package manager inferred from the lockfile (default npm). */
   packageManager?: NodePackageManager;
+  /**
+   * True when a LOCKFILE proved `packageManager`. False means it was defaulted to
+   * npm with no evidence — in which case a runner difference proves nothing and
+   * must never be reported (see {@link diagnoseVerifyCommands}).
+   */
+  packageManagerProven?: boolean;
   /** Node repos: script names found in package.json (empty when unreadable). */
   scripts: string[];
   /** Python repos: true when uv manages the project (uv.lock or [tool.uv]). */
@@ -29,17 +35,27 @@ export interface RepoProfile {
 
 export interface VerifyCommandFinding {
   command: string;
+  /** False only when the repo's files PROVE the command cannot run at all. */
   ok: boolean;
-  /** Present when ok=false: why the command provably cannot run here. */
+  /** Present when ok=false or mismatch=true: what the repo's files say. */
   reason?: string;
+  /**
+   * True when the command CAN run (its script exists) but invokes a package
+   * manager other than the one this repo's lockfile proves it uses — the shape
+   * the bun-flavored DEFAULTS take in a pnpm/npm/yarn repo (TASK-132). Weaker
+   * evidence than `ok: false`, so it is tracked separately and never conflated.
+   */
+  mismatch?: boolean;
 }
 
 export interface VerifyDoctorReport {
   profile: RepoProfile;
   findings: VerifyCommandFinding[];
-  /** The subset of findings with ok=false. */
+  /** The subset of findings with ok=false: provably cannot run here. */
   broken: VerifyCommandFinding[];
-  /** True when every configured command passed. */
+  /** The subset that runs but uses the wrong package manager for this repo. */
+  mismatched: VerifyCommandFinding[];
+  /** True when nothing needs attention — no broken commands AND no mismatches. */
   ok: boolean;
   /** Replacement commands for this repo (empty when none can be inferred). */
   suggestions: string[];
@@ -81,15 +97,24 @@ export function detectRepoProfile(root: string, fs: DoctorFs): RepoProfile {
         // corrupt package.json — still a node repo, but no provable scripts
       }
     }
-    const packageManager: NodePackageManager =
+    const lockfilePm: NodePackageManager | undefined =
       has(root, 'bun.lockb', fs) || has(root, 'bun.lock', fs)
         ? 'bun'
         : has(root, 'pnpm-lock.yaml', fs)
           ? 'pnpm'
           : has(root, 'yarn.lock', fs)
             ? 'yarn'
-            : 'npm';
-    return { kind: 'node', packageManager, scripts };
+            : has(root, 'package-lock.json', fs)
+              ? 'npm'
+              : undefined;
+    return {
+      kind: 'node',
+      // Unchanged default: no lockfile ⇒ npm. But record that it was a GUESS, so
+      // the mismatch check below cannot build an accusation on top of it.
+      packageManager: lockfilePm ?? 'npm',
+      packageManagerProven: lockfilePm !== undefined,
+      scripts,
+    };
   }
 
   const pythonMarkers = [
@@ -112,34 +137,60 @@ export function detectRepoProfile(root: string, fs: DoctorFs): RepoProfile {
   return { kind: 'unknown', scripts: [] };
 }
 
+const SCRIPT_RUNNERS: NodePackageManager[] = ['bun', 'npm', 'pnpm', 'yarn'];
+
+/** The lockfile that proves each package manager — quoted as the evidence in a mismatch reason. */
+const LOCKFILE_OF: Record<NodePackageManager, string> = {
+  bun: 'bun.lock',
+  pnpm: 'pnpm-lock.yaml',
+  yarn: 'yarn.lock',
+  npm: 'package-lock.json',
+};
+
+interface ScriptRunnerCall {
+  runner: NodePackageManager;
+  script: string;
+}
+
 /**
  * Parse a script-runner invocation: `bun|npm|pnpm|yarn run <script>` plus
- * `npm test` (an alias for `npm run test`). Returns the script name, or
- * undefined when the command is not a provable script-runner call.
+ * `npm test` (an alias for `npm run test`). Returns the runner and the script
+ * name, or undefined when the command is not a provable script-runner call.
  * (`bun test` is bun's built-in test runner, not a script lookup — skipped.)
  */
-function scriptRunnerTarget(command: string): string | undefined {
+function scriptRunnerCall(command: string): ScriptRunnerCall | undefined {
   const tokens = command.trim().split(/\s+/);
   const [runner, sub, script] = tokens;
   if (!runner) return undefined;
-  if (['bun', 'npm', 'pnpm', 'yarn'].includes(runner) && sub === 'run' && script) {
-    return script;
-  }
-  if (runner === 'npm' && (sub === 'test' || sub === 't')) return 'test';
+  if (!(SCRIPT_RUNNERS as string[]).includes(runner)) return undefined;
+  const pm = runner as NodePackageManager;
+  if (sub === 'run' && script) return { runner: pm, script };
+  if (pm === 'npm' && (sub === 'test' || sub === 't')) return { runner: pm, script: 'test' };
   return undefined;
 }
 
 /**
- * Flag the commands the repo's files PROVE cannot run. Everything else passes —
- * the doctor only reports evidence, never guesses.
+ * Diagnose each configured command against the repo's files. Two strictly
+ * separate severities, both evidence-based:
+ *
+ *  - `ok: false` — the repo PROVES the command cannot run (no package.json for a
+ *    script runner; no such script in package.json).
+ *  - `mismatch: true` — the command runs, but drives a package manager the repo's
+ *    LOCKFILE says it does not use. This is the silent case TASK-132 exists for:
+ *    the bun-flavored defaults in a pnpm/npm/yarn repo are not "broken" by the
+ *    proof above, so nothing ever flagged them and the gate quietly depended on a
+ *    package manager that may not even be installed on the machine running it.
+ *
+ * Everything else passes. A package manager that was merely DEFAULTED (no lockfile)
+ * is not evidence, so it never yields a mismatch — the doctor must not cry wolf.
  */
 export function diagnoseVerifyCommands(
   commands: string[],
   profile: RepoProfile
 ): VerifyCommandFinding[] {
   return commands.map((command) => {
-    const script = scriptRunnerTarget(command);
-    if (script === undefined) return { command, ok: true };
+    const call = scriptRunnerCall(command);
+    if (call === undefined) return { command, ok: true };
     if (profile.kind !== 'node') {
       return {
         command,
@@ -147,11 +198,20 @@ export function diagnoseVerifyCommands(
         reason: `no package.json in this repo, so \`${command}\` cannot run`,
       };
     }
-    if (!profile.scripts.includes(script)) {
+    if (!profile.scripts.includes(call.script)) {
       return {
         command,
         ok: false,
-        reason: `package.json has no "${script}" script`,
+        reason: `package.json has no "${call.script}" script`,
+      };
+    }
+    const pm = profile.packageManager;
+    if (profile.packageManagerProven === true && pm !== undefined && call.runner !== pm) {
+      return {
+        command,
+        ok: true,
+        mismatch: true,
+        reason: `this repo is ${pm}-managed (${LOCKFILE_OF[pm]}), but \`${command}\` runs ${call.runner}`,
       };
     }
     return { command, ok: true };
@@ -190,13 +250,35 @@ export function runVerifyDoctor(options: {
   const profile = detectRepoProfile(options.root, options.fs);
   const findings = diagnoseVerifyCommands(options.commands, profile);
   const broken = findings.filter((f) => !f.ok);
+  const mismatched = findings.filter((f) => f.ok && f.mismatch === true);
   return {
     profile,
     findings,
     broken,
-    ok: broken.length === 0,
+    mismatched,
+    ok: broken.length === 0 && mismatched.length === 0,
     suggestions: suggestVerifyCommands(profile),
   };
+}
+
+/**
+ * A stable fingerprint of the SITUATION a report describes: the repo's shape, the
+ * commands that were checked, and what the doctor would suggest instead. It keys
+ * the prompt-once memory (verifyDoctorState.ts), so:
+ *
+ *  - re-running the doctor on unchanged state yields the same key ⇒ a decision
+ *    recorded once is respected forever (no nagging);
+ *  - changing the commands, or changing the repo so the advice changes, yields a
+ *    NEW key ⇒ the doctor may speak once about the new situation. A decision is a
+ *    decision about one situation, never a blanket mute of the doctor.
+ */
+export function verifyDoctorSignature(report: VerifyDoctorReport): string {
+  return [
+    `kind=${report.profile.kind}`,
+    `pm=${report.profile.packageManagerProven === true ? report.profile.packageManager : '-'}`,
+    `cmds=${report.findings.map((f) => f.command).join('|')}`,
+    `suggest=${report.suggestions.join('|')}`,
+  ].join(';');
 }
 
 export interface VerifyDoctorNotification {
@@ -206,22 +288,35 @@ export interface VerifyDoctorNotification {
 
 /**
  * Human-readable summary for a warning notification, or undefined when the
- * report is healthy (nothing to surface).
+ * report is healthy (nothing to surface). Broken commands lead — they are the
+ * stronger claim ("cannot run") — and a mismatch-only report says exactly that
+ * instead, so the message never overstates the evidence.
  */
 export function verifyDoctorNotification(
   report: VerifyDoctorReport
 ): VerifyDoctorNotification | undefined {
   if (report.ok) return undefined;
-  const brokenList = report.broken.map((f) => `\`${f.command}\``).join(', ');
-  const cause = report.broken[0]?.reason ?? 'they cannot run in this repo';
   const suggestionText =
     report.suggestions.length > 0
       ? ` Suggested for this repo: ${report.suggestions.join(' && ')}.`
       : '';
+  const total = report.findings.length;
+  if (report.broken.length > 0) {
+    const list = report.broken.map((f) => `\`${f.command}\``).join(', ');
+    const cause = report.broken[0]?.reason ?? 'they cannot run in this repo';
+    return {
+      message:
+        `Taskwright merge verify: ${report.broken.length} of ${total} configured ` +
+        `verify command(s) cannot run here (${list} — ${cause}).${suggestionText}`,
+      suggestions: report.suggestions,
+    };
+  }
+  const list = report.mismatched.map((f) => `\`${f.command}\``).join(', ');
+  const cause = report.mismatched[0]?.reason ?? 'they use the wrong package manager for this repo';
   return {
     message:
-      `Taskwright merge verify: ${report.broken.length} of ${report.findings.length} configured ` +
-      `verify command(s) cannot run here (${brokenList} — ${cause}).${suggestionText}`,
+      `Taskwright merge verify: ${report.mismatched.length} of ${total} configured ` +
+      `verify command(s) run the wrong package manager for this repo (${list} — ${cause}).${suggestionText}`,
     suggestions: report.suggestions,
   };
 }

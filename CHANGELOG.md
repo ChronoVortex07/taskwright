@@ -32,6 +32,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   injected convention, the MCP instructions) now names this path where it forbids merging in the repo
   root — a contract test fails the build if one of them forbids without offering the alternative.
 
+- **The verify doctor is now proactive: wrong verify commands can't ship silently.** The doctor could
+  already prove a repo's merge-verify commands were wrong (1.x), but nothing ever _asked_ — and the
+  bun-flavored defaults ship with every install, so a cross-repo scan found 0/5 repos had ever
+  changed them. A non-bun repo therefore carried a gate that could not run, and only discovered it as
+  a baffling `verify_failed` abort at merge time, after the work was done.
+
+  Two changes close that. **The doctor now also catches a _runner mismatch_** — commands that run but
+  drive a package manager the repo's **lockfile** proves it does not use (`bun run test` in a
+  pnpm-locked repo). This is the shape the untouched defaults actually take: nothing is "provably
+  broken", so the old evidence-only check stayed silent. A package manager that was merely _guessed_
+  (no lockfile) is never evidence, so the doctor still does not cry wolf. **And it speaks at board
+  init**, with a one-click "Apply suggested commands".
+
+  It asks **once per situation**, remembered durably in `<commonDir>/taskwright/verify-doctor.json`
+  and keyed by a signature of (repo shape + configured commands + suggested commands): declining is
+  respected — no re-prompt, and no standing `board_doctor` finding either — while changing the
+  commands, or changing the repo so the advice changes, is a _new_ situation the doctor may raise
+  once. A decision is never a blanket mute. Nothing is ever rewritten without a human click.
+
+- **`board_doctor` reports a typed `verify-commands-mismatch` finding** (repair:
+  `apply-verify-commands`, carrying the exact command set to apply), so an agent pre-flighting the
+  board sees a mis-wired merge gate _before_ spending a task on it — and the extension's doctor
+  offers the one-click fix. Suppressed only by an explicit human decline.
+
 ### Fixed
 
 - **Concurrent merges no longer flake each other's verify suites.** The merge queue serialized the
@@ -44,8 +68,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   contention instead of removing it.
 
   `request_merge` now takes a **shared verify slot** (`src/core/verifySlot.ts`) around every verify
-  run: an O_EXCL lock file in the git common dir, so exactly one verify runs at a time across every
-  worktree _and_ every MCP server process sharing the repo. The slot is held only for the run and
+  run: an O*EXCL lock file in the git common dir, so exactly one verify runs at a time across every
+  worktree \_and* every MCP server process sharing the repo. The slot is held only for the run and
   released **before** the merge-queue wait, so a slot-holder → queue-waiter → slot-waiter cycle
   cannot form; it is stealable when its holder's process is gone, its lease expires, or the record is
   a torn write, so a crashed holder cannot wedge every future merge. Throughput is essentially

@@ -75,6 +75,12 @@ import {
   mergeConfigPath,
 } from './core/mergeConfig';
 import { runVerifyDoctor, verifyDoctorNotification } from './core/verifyDoctor';
+import {
+  verifyDoctorStatePath,
+  readVerifyDoctorState,
+  recordVerifyDoctorDecision,
+  shouldPromptVerifyDoctor,
+} from './core/verifyDoctorState';
 import { nodeQueueFs, MergeQueueStore, mergeQueuePath, type MergeQueue } from './core/mergeQueue';
 import {
   resolveSyncConfigFromSettings,
@@ -259,16 +265,27 @@ async function syncMergeConfig(repoRoot: string): Promise<void> {
 }
 
 /**
- * Verify-command doctor (TASK-86): validate the effective merge-verify commands
- * against the repo's actual shape (package.json scripts, Python/uv markers, …)
- * and, when a command provably cannot run (e.g. the bun-flavored defaults in a
- * Python repo), surface a warning with a one-click "Apply suggested commands"
- * that persists durably (workspace setting + republished merge-config.json).
- * Suggestions are always human-confirmed — nothing is rewritten silently.
+ * Verify-command doctor (TASK-86, made PROACTIVE by TASK-132): validate the
+ * effective merge-verify commands against the repo's actual shape (package.json
+ * scripts, lockfile, Python/uv markers, …) and, when a command provably cannot
+ * run (the bun-flavored defaults in a Python repo) or drives a package manager
+ * this repo's lockfile says it does not use (those same defaults in a pnpm repo),
+ * ask the human — once — with a one-click apply that persists durably (workspace
+ * setting + republished merge-config.json).
+ *
+ * Two rules hold this together:
+ *
+ *  - **Never a silent rewrite.** Applying is always the human's click (TASK-86).
+ *  - **Never a nag.** The prompt fires at most once per SITUATION, keyed by the
+ *    doctor's signature and remembered in `verify-doctor.json`. A decline is
+ *    respected — by this prompt AND by the standing board_doctor finding.
+ *
+ * `force` (the explicit setup command) bypasses the memory: an explicit human
+ * action is entitled to an answer, and it is the escape hatch back from a decline.
  */
 async function runVerifyDoctorCheck(
   repoRoot: string,
-  options: { quietWhenOk: boolean }
+  options: { quietWhenOk: boolean; force?: boolean }
 ): Promise<void> {
   const commonDir = await resolveCommonDir(repoRoot);
   if (!commonDir) return;
@@ -286,12 +303,23 @@ async function runVerifyDoctorCheck(
     }
     return;
   }
+  const statePath = verifyDoctorStatePath(commonDir);
+  const state = readVerifyDoctorState(statePath, nodeQueueFs);
+  // Already answered for this exact situation ⇒ stay quiet. The board doctor keeps
+  // the finding (unless it was an explicit decline), so nothing is lost.
+  if (!options.force && !shouldPromptVerifyDoctor(report, state)) return;
+
   const note = verifyDoctorNotification(report);
   if (!note) return;
   const applyAction = 'Apply suggested commands';
   const settingsAction = 'Open Settings';
-  const actions = note.suggestions.length > 0 ? [applyAction, settingsAction] : [settingsAction];
+  const declineAction = 'Keep mine';
+  const actions =
+    note.suggestions.length > 0
+      ? [applyAction, settingsAction, declineAction]
+      : [settingsAction, declineAction];
   const pick = await vscode.window.showWarningMessage(note.message, ...actions);
+
   if (pick === applyAction) {
     await vscode.workspace
       .getConfiguration('taskwright')
@@ -301,15 +329,32 @@ async function runVerifyDoctorCheck(
     // next activation. The config-change listener also fires; publishing is
     // idempotent and clobber-safe (TASK-85).
     await syncMergeConfig(repoRoot);
+    recordVerifyDoctorDecision(statePath, report, 'applied', nodeQueueFs);
     vscode.window.showInformationMessage(
       `Updated taskwright.mergeVerifyCommands to: ${note.suggestions.join(' && ')}`
     );
-  } else if (pick === settingsAction) {
+    return;
+  }
+  if (pick === settingsAction) {
+    // They are going to edit the commands themselves: don't ask again about the
+    // situation they just took ownership of. Whatever they land on is re-checked
+    // on its own merits (a new command set ⇒ a new signature).
+    recordVerifyDoctorDecision(statePath, report, 'declined', nodeQueueFs);
     void vscode.commands.executeCommand(
       'workbench.action.openSettings',
       'taskwright.mergeVerifyCommands'
     );
+    return;
   }
+  if (pick === declineAction) {
+    // An explicit "no": remembered and respected everywhere — no re-prompt, no
+    // board_doctor finding, and (of course) no rewrite.
+    recordVerifyDoctorDecision(statePath, report, 'declined', nodeQueueFs);
+    return;
+  }
+  // Dismissed without answering (the X). Stop asking — but keep the finding in the
+  // board doctor, so a stray click cannot silently lose the diagnosis.
+  recordVerifyDoctorDecision(statePath, report, 'deferred', nodeQueueFs);
 }
 
 /**
@@ -2554,7 +2599,9 @@ export async function activate(context: vscode.ExtensionContext) {
     // defaults in a Python repo), offering a one-click confirmed fix. Setup is
     // an explicit human action, so a healthy gate is confirmed out loud too.
     await syncMergeConfig(root);
-    await runVerifyDoctorCheck(root, { quietWhenOk: false });
+    // Setup is an explicit human action, so this run FORCES the prompt (past any
+    // remembered decline) and confirms a healthy gate out loud.
+    await runVerifyDoctorCheck(root, { quietWhenOk: false, force: true });
   };
   // Codex integration adapter: register the Taskwright MCP server in Codex's
   // user-global config.toml and install the four user-facing skills as native

@@ -5,6 +5,7 @@ import {
   suggestVerifyCommands,
   runVerifyDoctor,
   verifyDoctorNotification,
+  verifyDoctorSignature,
   type RepoProfile,
 } from '../../core/verifyDoctor';
 
@@ -55,6 +56,18 @@ describe('detectRepoProfile', () => {
   it('defaults the package manager to npm when no lockfile is present', () => {
     const fs = memFs({ 'package.json': JSON.stringify({ scripts: { test: 'x' } }) });
     expect(detectRepoProfile(ROOT, fs).packageManager).toBe('npm');
+  });
+
+  it('marks the package manager PROVEN only when a lockfile decided it', () => {
+    const scripts = JSON.stringify({ scripts: { test: 'x' } });
+    expect(
+      detectRepoProfile(ROOT, memFs({ 'package.json': scripts, 'pnpm-lock.yaml': '' }))
+        .packageManagerProven
+    ).toBe(true);
+    // No lockfile ⇒ the npm default is a guess, never evidence.
+    expect(detectRepoProfile(ROOT, memFs({ 'package.json': scripts })).packageManagerProven).toBe(
+      false
+    );
   });
 
   it('tolerates a corrupt package.json (node repo, no scripts)', () => {
@@ -153,6 +166,50 @@ describe('diagnoseVerifyCommands', () => {
     );
     expect(findings.every((f) => f.ok)).toBe(true);
   });
+
+  // Runner MISMATCH (TASK-132): the script exists, so the command is not provably
+  // broken — but it invokes a different package manager than the one this repo's
+  // lockfile proves it uses. This is the shape the bun-flavored DEFAULTS take in a
+  // pnpm/npm/yarn repo: they never trip the "provably broken" check, so before
+  // TASK-132 they shipped silently and only blew up as verify_failed at merge time.
+  it('flags a runner mismatch when the lockfile proves a different package manager', () => {
+    const pnpmProfile: RepoProfile = {
+      kind: 'node',
+      packageManager: 'pnpm',
+      packageManagerProven: true,
+      scripts: ['test', 'lint'],
+    };
+    const findings = diagnoseVerifyCommands(['bun run test', 'pnpm run lint'], pnpmProfile);
+    expect(findings[0]).toMatchObject({ command: 'bun run test', ok: true, mismatch: true });
+    expect(findings[0].reason).toContain('pnpm');
+    // The repo's own runner is never a mismatch.
+    expect(findings[1]).toMatchObject({ command: 'pnpm run lint', ok: true });
+    expect(findings[1].mismatch).toBeUndefined();
+  });
+
+  it('never flags a mismatch when no lockfile PROVES the package manager', () => {
+    const guessed: RepoProfile = {
+      kind: 'node',
+      packageManager: 'npm',
+      packageManagerProven: false,
+      scripts: ['test'],
+    };
+    const findings = diagnoseVerifyCommands(['bun run test'], guessed);
+    expect(findings[0].ok).toBe(true);
+    expect(findings[0].mismatch).toBeUndefined();
+  });
+
+  it('does not double-report: a missing script is broken, not a mismatch', () => {
+    const pnpmProfile: RepoProfile = {
+      kind: 'node',
+      packageManager: 'pnpm',
+      packageManagerProven: true,
+      scripts: [],
+    };
+    const [finding] = diagnoseVerifyCommands(['bun run lint'], pnpmProfile);
+    expect(finding.ok).toBe(false);
+    expect(finding.mismatch).toBeUndefined();
+  });
 });
 
 describe('suggestVerifyCommands', () => {
@@ -231,6 +288,79 @@ describe('runVerifyDoctor', () => {
     expect(report.broken.map((f) => f.command)).toEqual(['npm run lint']);
     expect(report.suggestions).toEqual(['npm run test']);
   });
+
+  // The exact silent-shipping case from the friction report: the bun DEFAULTS in a
+  // pnpm repo that happens to have all three scripts. Nothing is provably broken —
+  // yet the gate runs a package manager the repo does not use.
+  it('flags the unchanged bun defaults in a pnpm repo as a runner mismatch', () => {
+    const fs = memFs({
+      'package.json': JSON.stringify({
+        scripts: { test: 'vitest', lint: 'eslint', typecheck: 'tsc' },
+      }),
+      'pnpm-lock.yaml': '',
+    });
+    const report = runVerifyDoctor({
+      root: ROOT,
+      commands: ['bun run test', 'bun run lint', 'bun run typecheck'],
+      fs,
+    });
+    expect(report.broken).toEqual([]);
+    expect(report.mismatched).toHaveLength(3);
+    expect(report.ok).toBe(false); // ok == "nothing needs attention"
+    expect(report.suggestions).toEqual(['pnpm run test', 'pnpm run lint', 'pnpm run typecheck']);
+  });
+
+  it('stays quiet on an unknown repo it cannot classify', () => {
+    const report = runVerifyDoctor({
+      root: ROOT,
+      commands: ['make check'],
+      fs: memFs({}),
+    });
+    expect(report.ok).toBe(true);
+    expect(report.suggestions).toEqual([]);
+  });
+});
+
+describe('verifyDoctorSignature', () => {
+  const pnpmFs = memFs({
+    'package.json': JSON.stringify({ scripts: { test: 'vitest' } }),
+    'pnpm-lock.yaml': '',
+  });
+
+  it('is stable across identical runs (an idempotent prompt-once key)', () => {
+    const of = () =>
+      verifyDoctorSignature(
+        runVerifyDoctor({ root: ROOT, commands: ['bun run test'], fs: pnpmFs })
+      );
+    expect(of()).toBe(of());
+  });
+
+  it('changes when the configured commands change', () => {
+    const a = verifyDoctorSignature(
+      runVerifyDoctor({ root: ROOT, commands: ['bun run test'], fs: pnpmFs })
+    );
+    const b = verifyDoctorSignature(
+      runVerifyDoctor({ root: ROOT, commands: ['pnpm run test'], fs: pnpmFs })
+    );
+    expect(a).not.toBe(b);
+  });
+
+  it('changes when the repo itself changes (new script ⇒ new suggestions)', () => {
+    const before = verifyDoctorSignature(
+      runVerifyDoctor({ root: ROOT, commands: ['bun run test'], fs: pnpmFs })
+    );
+    const after = verifyDoctorSignature(
+      runVerifyDoctor({
+        root: ROOT,
+        commands: ['bun run test'],
+        fs: memFs({
+          'package.json': JSON.stringify({ scripts: { test: 'vitest', lint: 'eslint' } }),
+          'pnpm-lock.yaml': '',
+        }),
+      })
+    );
+    expect(before).not.toBe(after);
+  });
 });
 
 describe('verifyDoctorNotification', () => {
@@ -255,5 +385,18 @@ describe('verifyDoctorNotification', () => {
     expect(note?.message).toContain('bun run test');
     expect(note?.message).toContain('uv run pytest -q');
     expect(note?.suggestions).toEqual(['uv run pytest -q']);
+  });
+
+  it('summarizes a mismatch-only report as the wrong runner, not as unrunnable', () => {
+    const fs = memFs({
+      'package.json': JSON.stringify({ scripts: { test: 'vitest' } }),
+      'yarn.lock': '',
+    });
+    const report = runVerifyDoctor({ root: ROOT, commands: ['bun run test'], fs });
+    const note = verifyDoctorNotification(report);
+    expect(note).toBeDefined();
+    expect(note?.message).toContain('bun run test');
+    expect(note?.message).toContain('yarn');
+    expect(note?.suggestions).toEqual(['yarn run test']);
   });
 });

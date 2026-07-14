@@ -22,16 +22,15 @@ import {
   stripDanglingContinuations,
   type DoctorFinding,
 } from '../core/boardDoctor';
-import {
-  runDraftIdMigrationLocked,
-  formatMigrationMessage,
-} from '../core/draftIdMigration';
+import { runDraftIdMigrationLocked, formatMigrationMessage } from '../core/draftIdMigration';
 import { releaseTaskClaim } from './claimActions';
 import { ensureBoardWorktree } from '../core/boardWorktree';
 import { foldPrimaryStrays } from '../core/boardHomeMigration';
 import { materializeRefToWorktree } from '../core/boardRef';
 import { formatConflictMessage } from '../core/boardSyncUx';
 import { resolveSyncConfigFromSettings } from '../core/syncConfig';
+import { mergeConfigPath, publishMergeConfig } from '../core/mergeConfig';
+import { nodeQueueFs } from '../core/mergeQueue';
 
 /**
  * Board-doctor UX glue (TASK-90): run the pure `runBoardDoctor` core, surface
@@ -56,6 +55,20 @@ export interface DoctorFlowDeps {
   refresh: () => void;
   /** Injectable for tests; defaults to a real `git` runner. */
   exec?: GitExecFn;
+}
+
+/**
+ * The shared git common dir — where merge-config.json and the verify doctor's
+ * decision record live (identical from every worktree). Undefined when this is
+ * not a git repo, which simply turns the verify checks off.
+ */
+async function resolveCommonDir(exec: GitExecFn, repoRoot: string): Promise<string | undefined> {
+  try {
+    const { stdout } = await exec(repoRoot, ['rev-parse', '--git-common-dir']);
+    return path.resolve(repoRoot, stdout.trim());
+  } catch {
+    return undefined;
+  }
 }
 
 /** Human-readable label for the one-click repair a finding carries. */
@@ -83,6 +96,10 @@ export function repairLabel(finding: DoctorFinding): string {
       return 'Restore the board into backlog/';
     case 'migrate-draft-ids':
       return 'Migrate the drafts to stable task IDs';
+    case 'apply-verify-commands':
+      return finding.suggestedCommands
+        ? `Set verify commands to: ${finding.suggestedCommands.join(' && ')}`
+        : 'Fix the merge verify commands';
   }
 }
 
@@ -180,6 +197,24 @@ async function applyRepair(deps: DoctorFlowDeps, finding: DoctorFinding): Promis
       parser.invalidateTaskCache();
       return true;
     }
+    case 'apply-verify-commands': {
+      const commands = finding.suggestedCommands;
+      if (!commands || commands.length === 0) return false;
+      // Human-confirmed by construction (the user ticked this repair in the picker),
+      // which is the whole point: TASK-86's rule is that the doctor never rewrites a
+      // verify command silently. Persist to BOTH stores the gate reads — the VS Code
+      // setting (what the user sees) and the shared merge-config.json the
+      // out-of-process MCP merge gate actually loads — so the fix is live now, not
+      // after the next activation.
+      await vscode.workspace
+        .getConfiguration('taskwright')
+        .update('mergeVerifyCommands', commands, vscode.ConfigurationTarget.Workspace);
+      const commonDir = await resolveCommonDir(deps.exec ?? defaultExec, repoRoot);
+      if (commonDir) {
+        publishMergeConfig(mergeConfigPath(commonDir), { verifyCommands: commands }, nodeQueueFs);
+      }
+      return true;
+    }
     case 'migrate-draft-ids': {
       // The SAME locked core the automatic passes run, so a manual repair and the
       // activation/MCP runs cannot diverge — and a repair fired while a peer process
@@ -228,6 +263,8 @@ export async function runBoardDoctorFlow(
   const findings = await runBoardDoctor(deps.parser, repoRoot, {
     syncMode: syncCfg.mode,
     ref: syncCfg.ref,
+    // Enables check 12 (merge-verify commands that do not fit this repo).
+    commonDir: await resolveCommonDir(deps.exec ?? defaultExec, repoRoot),
   });
 
   if (findings.length === 0) {

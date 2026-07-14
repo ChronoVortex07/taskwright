@@ -12,6 +12,10 @@ import {
   type DoctorTask,
 } from '../../core/boardDoctor';
 import { BacklogParser } from '../../core/BacklogParser';
+import { mergeConfigPath } from '../../core/mergeConfig';
+import { nodeQueueFs } from '../../core/mergeQueue';
+import { runVerifyDoctor } from '../../core/verifyDoctor';
+import { recordVerifyDoctorDecision, verifyDoctorStatePath } from '../../core/verifyDoctorState';
 
 const STATUSES = ['To Do', 'In Progress', 'Done'];
 
@@ -429,6 +433,80 @@ describe('gatherDoctorFacts', () => {
   });
 });
 
+/**
+ * Check 12 (TASK-132): the merge gate's verify commands are part of board health.
+ * The bun-flavored defaults ship on every repo, so on a repo the doctor CAN
+ * classify and whose files contradict them, the board doctor says so — instead of
+ * letting it surface as a confusing verify_failed abort at merge time.
+ */
+describe('diagnoseBoard — verify commands (check 12)', () => {
+  const verify = (overrides: Partial<NonNullable<BoardDoctorInput['verify']>> = {}) => ({
+    repoKind: 'node',
+    brokenCommands: [],
+    mismatchedCommands: ['bun run test', 'bun run lint'],
+    suggestions: ['pnpm run test', 'pnpm run lint'],
+    ...overrides,
+  });
+
+  it('flags verify commands that use the wrong runner for a classifiable repo', () => {
+    const findings = diagnoseBoard(makeInput({ verify: verify() }));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({
+      type: 'verify-commands-mismatch',
+      repair: 'apply-verify-commands',
+      suggestedCommands: ['pnpm run test', 'pnpm run lint'],
+    });
+    expect(findings[0].message).toContain('bun run test');
+  });
+
+  it('flags verify commands that provably cannot run at all', () => {
+    const findings = diagnoseBoard(
+      makeInput({
+        verify: verify({
+          repoKind: 'python',
+          brokenCommands: ['bun run test'],
+          mismatchedCommands: [],
+          suggestions: ['uv run pytest -q'],
+        }),
+      })
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0].type).toBe('verify-commands-mismatch');
+    expect(findings[0].suggestedCommands).toEqual(['uv run pytest -q']);
+  });
+
+  it('says nothing when the configured commands fit the repo', () => {
+    const findings = diagnoseBoard(
+      makeInput({
+        verify: verify({ mismatchedCommands: [], suggestions: ['bun run test'] }),
+      })
+    );
+    expect(findings).toEqual([]);
+  });
+
+  it('never cries wolf on a repo it cannot classify (no suggestions to make)', () => {
+    const findings = diagnoseBoard(
+      makeInput({
+        verify: verify({
+          repoKind: 'unknown',
+          brokenCommands: ['bun run test'],
+          suggestions: [],
+        }),
+      })
+    );
+    expect(findings).toEqual([]);
+  });
+
+  it('respects a decline: a dismissed situation is not re-reported', () => {
+    const findings = diagnoseBoard(makeInput({ verify: verify({ dismissed: true }) }));
+    expect(findings).toEqual([]);
+  });
+
+  it('stays off entirely when no verify facts were gathered', () => {
+    expect(diagnoseBoard(makeInput())).toEqual([]);
+  });
+});
+
 describe('runBoardDoctor', () => {
   it('diagnoses a real backlog directory end-to-end via BacklogParser', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-e2e-'));
@@ -502,5 +580,88 @@ describe('runBoardDoctor', () => {
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  /**
+   * The whole TASK-132 path through real files: a pnpm repo whose merge gate still
+   * carries the shipped bun defaults. Nothing here is provably "broken" (all three
+   * scripts exist), which is exactly why it used to sail through to a confusing
+   * verify_failed at merge time.
+   */
+  describe('verify commands (check 12) end-to-end', () => {
+    function makePnpmRepo(): { root: string; commonDir: string } {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), 'doctor-verify-'));
+      const backlog = path.join(root, 'backlog');
+      fs.mkdirSync(path.join(backlog, 'tasks'), { recursive: true });
+      fs.writeFileSync(
+        path.join(backlog, 'config.yml'),
+        ['project_name: "Verify Test"', 'statuses: ["To Do", "In Progress", "Done"]', ''].join('\n')
+      );
+      fs.writeFileSync(
+        path.join(root, 'package.json'),
+        JSON.stringify({ scripts: { test: 'vitest', lint: 'eslint', typecheck: 'tsc' } })
+      );
+      fs.writeFileSync(path.join(root, 'pnpm-lock.yaml'), '');
+      // The shared merge config the out-of-process gate reads, carrying the defaults.
+      const commonDir = path.join(root, '.git');
+      fs.mkdirSync(path.join(commonDir, 'taskwright'), { recursive: true });
+      fs.writeFileSync(
+        mergeConfigPath(commonDir),
+        JSON.stringify({ verifyCommands: ['bun run test', 'bun run lint', 'bun run typecheck'] })
+      );
+      return { root, commonDir };
+    }
+
+    it('reports the bun defaults in a pnpm repo, with the pnpm commands to apply', async () => {
+      const { root, commonDir } = makePnpmRepo();
+      try {
+        const parser = new BacklogParser(path.join(root, 'backlog'));
+        const findings = await runBoardDoctor(parser, root, { commonDir });
+        const verify = findings.filter((f) => f.type === 'verify-commands-mismatch');
+        expect(verify).toHaveLength(1);
+        expect(verify[0].repair).toBe('apply-verify-commands');
+        expect(verify[0].suggestedCommands).toEqual([
+          'pnpm run test',
+          'pnpm run lint',
+          'pnpm run typecheck',
+        ]);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('goes quiet once the human declines — the decline is durable, on disk', async () => {
+      const { root, commonDir } = makePnpmRepo();
+      try {
+        const parser = new BacklogParser(path.join(root, 'backlog'));
+        const report = runVerifyDoctor({
+          root,
+          commands: ['bun run test', 'bun run lint', 'bun run typecheck'],
+          fs: nodeQueueFs,
+        });
+        recordVerifyDoctorDecision(
+          verifyDoctorStatePath(commonDir),
+          report,
+          'declined',
+          nodeQueueFs
+        );
+
+        const findings = await runBoardDoctor(parser, root, { commonDir });
+        expect(findings.filter((f) => f.type === 'verify-commands-mismatch')).toEqual([]);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it('stays off when the caller gives no common dir', async () => {
+      const { root } = makePnpmRepo();
+      try {
+        const parser = new BacklogParser(path.join(root, 'backlog'));
+        const findings = await runBoardDoctor(parser, root);
+        expect(findings.filter((f) => f.type === 'verify-commands-mismatch')).toEqual([]);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
   });
 });

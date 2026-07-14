@@ -284,7 +284,7 @@ async function main(): Promise<void> {
     {
       title: 'Board doctor',
       description:
-        'Read-only health check over the board and its .taskwright/.worktrees state. Returns { healthy, findings } where each finding is typed (dangling-active-task, stale-handoff, orphaned-worktree, in-flight-no-claim, claim-worktree-vanished, malformed-category, dangling-continuation, board-worktree-missing, board-strays-in-primary, board-mode-mismatch) with a suggested repair kind. Never mutates anything — repairs run through the extension (taskwright.doctor) with human confirmation. Use this to pre-flight the board before orchestrating work.',
+        'Read-only health check over the board and its .taskwright/.worktrees state. Returns { healthy, findings } where each finding is typed (dangling-active-task, stale-handoff, orphaned-worktree, in-flight-no-claim, claim-worktree-vanished, malformed-category, dangling-continuation, board-worktree-missing, board-strays-in-primary, board-mode-mismatch, legacy-draft-ids, verify-commands-mismatch) with a suggested repair kind. Never mutates anything — repairs run through the extension (taskwright.doctor) with human confirmation. Use this to pre-flight the board before orchestrating work: a verify-commands-mismatch finding means the merge gate is configured with commands this repo cannot run (or that drive the wrong package manager), so request_merge would fail verification no matter how good the work is — surface it to your human rather than fighting the gate.',
     },
     async () => runTool(() => boardDoctorHandler(deps))
   );

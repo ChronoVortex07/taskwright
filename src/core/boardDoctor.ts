@@ -26,6 +26,14 @@ import type { SyncMode } from './syncConfig';
 import { BOARD_SUBDIRS } from './boardRef';
 import { boardWorktreePathFor } from './boardRoot';
 import { boardWorktreeStatusOf } from './boardWorktree';
+import { nodeQueueFs } from './mergeQueue';
+import { mergeConfigPath, readMergeConfig } from './mergeConfig';
+import { runVerifyDoctor } from './verifyDoctor';
+import {
+  isVerifyDoctorDismissed,
+  readVerifyDoctorState,
+  verifyDoctorStatePath,
+} from './verifyDoctorState';
 
 export type DoctorFindingType =
   | 'dangling-active-task'
@@ -38,7 +46,8 @@ export type DoctorFindingType =
   | 'board-worktree-missing'
   | 'board-strays-in-primary'
   | 'board-mode-mismatch'
-  | 'legacy-draft-ids';
+  | 'legacy-draft-ids'
+  | 'verify-commands-mismatch';
 
 /** The one-click repair a finding calls for; the caller confirms + executes. */
 export type DoctorRepair =
@@ -52,7 +61,8 @@ export type DoctorRepair =
   | 'repair-board-worktree'
   | 'fold-primary-strays'
   | 'restore-board-to-primary'
-  | 'migrate-draft-ids';
+  | 'migrate-draft-ids'
+  | 'apply-verify-commands';
 
 export interface DoctorFinding {
   type: DoctorFindingType;
@@ -65,6 +75,26 @@ export interface DoctorFinding {
   detail?: string;
   /** For `fix-category`: the replacement value ('' means clear the field). */
   suggestion?: string;
+  /** For `apply-verify-commands`: the command set the doctor would write. */
+  suggestedCommands?: string[];
+}
+
+/**
+ * The merge gate's verify commands, as diagnosed by the verify doctor
+ * (verifyDoctor.ts) — gathered by {@link gatherVerifyFacts}. Absent means the
+ * check is off (no git common dir, or the caller did not ask for it).
+ */
+export interface VerifyDoctorFacts {
+  /** The detected repo kind; 'unknown' means the doctor could not classify it. */
+  repoKind: string;
+  /** Configured commands the repo PROVES cannot run at all. */
+  brokenCommands: string[];
+  /** Configured commands that run, but drive the wrong package manager. */
+  mismatchedCommands: string[];
+  /** What the doctor would configure instead (empty ⇒ it has no advice). */
+  suggestions: string[];
+  /** The human already declined this exact situation — stay quiet. */
+  dismissed?: boolean;
 }
 
 /** The slice of a task the doctor needs; mirrors Task but stays decoupled. */
@@ -110,6 +140,8 @@ export interface BoardDoctorInput {
   drafts?: DoctorTask[];
   /** The board's configured `task_prefix`; an id lacking it is a legacy draft id. */
   taskPrefix?: string;
+  /** Merge-verify diagnosis. Check 12 only runs when provided. */
+  verify?: VerifyDoctorFacts;
 }
 
 /** Facts gathered from the filesystem for {@link diagnoseBoard}. */
@@ -396,6 +428,34 @@ export function diagnoseBoard(input: BoardDoctorInput): DoctorFinding[] {
     }
   }
 
+  // 12. The merge gate's verify commands do not fit this repo (TASK-132). The
+  // bun-flavored defaults ship with every install and nothing forces a repo to
+  // revisit them, so a non-bun repo silently carries a gate that cannot run —
+  // discovered only as a confusing `verify_failed` abort at merge time. This is
+  // the standing surface for it; the one-time prompt (extension.ts) is the push.
+  //
+  // Reported only with EVIDENCE and only with ADVICE: a repo the doctor cannot
+  // classify has no suggestions, so it is never accused. An explicit human
+  // decline (`dismissed`) is respected here too — the board stops calling it an
+  // issue, not just the toast.
+  const verify = input.verify;
+  if (verify && !verify.dismissed && verify.suggestions.length > 0) {
+    const offenders = [...verify.brokenCommands, ...verify.mismatchedCommands];
+    if (offenders.length > 0) {
+      const problem =
+        verify.brokenCommands.length > 0
+          ? `cannot run in this ${verify.repoKind} repo`
+          : `run the wrong package manager for this ${verify.repoKind} repo`;
+      findings.push({
+        type: 'verify-commands-mismatch',
+        repair: 'apply-verify-commands',
+        detail: offenders.join(', '),
+        suggestedCommands: verify.suggestions,
+        message: `Merge verify command(s) ${problem}: ${offenders.join(', ')} — suggested: ${verify.suggestions.join(' && ')}`,
+      });
+    }
+  }
+
   return findings;
 }
 
@@ -433,6 +493,36 @@ export async function gatherBoardHomeFacts(
     };
   } catch {
     return {};
+  }
+}
+
+/**
+ * Facts for check 12: run the verify doctor over the EFFECTIVE merge-verify
+ * commands (the shared merge-config.json the out-of-process gate actually reads,
+ * defaults included), and fold in whether the human already declined this exact
+ * situation. Never throws — any failure means "unknown", which disables check 12.
+ */
+export function gatherVerifyFacts(
+  repoRoot: string,
+  commonDir: string
+): VerifyDoctorFacts | undefined {
+  try {
+    const config = readMergeConfig(mergeConfigPath(commonDir), nodeQueueFs);
+    const report = runVerifyDoctor({
+      root: repoRoot,
+      commands: config.verifyCommands,
+      fs: nodeQueueFs,
+    });
+    const state = readVerifyDoctorState(verifyDoctorStatePath(commonDir), nodeQueueFs);
+    return {
+      repoKind: report.profile.kind,
+      brokenCommands: report.broken.map((f) => f.command),
+      mismatchedCommands: report.mismatched.map((f) => f.command),
+      suggestions: report.suggestions,
+      dismissed: isVerifyDoctorDismissed(report, state),
+    };
+  } catch {
+    return undefined;
   }
 }
 
@@ -480,7 +570,7 @@ export function gatherDoctorFacts(repoRoot: string): DoctorFacts {
 export async function runBoardDoctor(
   parser: BacklogParser,
   repoRoot: string,
-  opts: { syncMode?: SyncMode; ref?: string } = {}
+  opts: { syncMode?: SyncMode; ref?: string; commonDir?: string } = {}
 ): Promise<DoctorFinding[]> {
   const [tasks, statuses, config, drafts, completed] = await Promise.all([
     parser.getTasks(),
@@ -514,6 +604,8 @@ export async function runBoardDoctor(
     drafts: drafts.map((d) => ({ id: d.id, title: d.title, status: d.status })),
     taskPrefix: config.task_prefix || 'TASK',
     extraKnownTaskIds: [...drafts, ...completed].map((t) => t.id),
+    // Check 12 needs the git common dir (where the shared merge config lives).
+    verify: opts.commonDir ? gatherVerifyFacts(repoRoot, opts.commonDir) : undefined,
     ...gatherDoctorFacts(repoRoot),
     ...(opts.syncMode
       ? await gatherBoardHomeFacts(repoRoot, opts.syncMode, opts.ref ?? 'taskwright-board')
