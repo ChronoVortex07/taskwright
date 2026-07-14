@@ -33,19 +33,19 @@ Dewire it — disconnect the surfaces, keep the machinery — until the Done-vs-
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The `complete_task` MCP tool is no longer registered on the Taskwright MCP server (`src/mcp/server.ts`), so no agent can call it; a call to it fails as an unknown tool.
-- [ ] #2 No UI surface dispatches the webview `completeTask` message any more — the action is gone from the board/detail/tree surfaces that offered it.
-- [ ] #3 `BacklogWriter.completeTask()` and its existing unit tests are left intact and passing. Only the surfaces are dewired, so re-wiring is a re-registration, not a rewrite.
-- [ ] #4 The `TasksController` `completeTask` message case is either removed or made unreachable-and-inert, with no silent path left that still moves a task into `backlog/completed/`.
-- [ ] #5 Agent-facing text is corrected: `src/mcp/instructions.ts` no longer needs to warn 'Do not call complete_task' about a tool that no longer exists, and `src/test/unit/mcpInstructions.test.ts` is updated to match rather than left asserting the stale warning.
-- [ ] #6 Tasks already sitting in `backlog/completed/` still parse and still render; `restore_task` still brings them back. Dewiring the entry point does not orphan anything already archived.
-- [ ] #7 Full gate green in the worktree: `bun run test && bun run lint && bun run typecheck`.
+- [x] #1 The `complete_task` MCP tool is no longer registered on the Taskwright MCP server (`src/mcp/server.ts`), so no agent can call it; a call to it fails as an unknown tool.
+- [x] #2 No UI surface dispatches the webview `completeTask` message any more — the action is gone from the board/detail/tree surfaces that offered it.
+- [x] #3 `BacklogWriter.completeTask()` and its existing unit tests are left intact and passing. Only the surfaces are dewired, so re-wiring is a re-registration, not a rewrite.
+- [x] #4 The `TasksController` `completeTask` message case is either removed or made unreachable-and-inert, with no silent path left that still moves a task into `backlog/completed/`.
+- [x] #5 Agent-facing text is corrected: `src/mcp/instructions.ts` no longer needs to warn 'Do not call complete_task' about a tool that no longer exists, and `src/test/unit/mcpInstructions.test.ts` is updated to match rather than left asserting the stale warning.
+- [x] #6 Tasks already sitting in `backlog/completed/` still parse and still render; `restore_task` still brings them back. Dewiring the entry point does not orphan anything already archived.
+- [x] #7 Full gate green in the worktree: `bun run test && bun run lint && bun run typecheck`.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 A grep for `complete_task` / `completeTask` shows no reachable caller from an MCP tool registration or a UI event handler.
-- [ ] #2 AGENTS.md / CLAUDE.md guidance no longer instructs agents around a tool that is not exposed.
+- [x] #1 A grep for `complete_task` / `completeTask` shows no reachable caller from an MCP tool registration or a UI event handler.
+- [x] #2 AGENTS.md / CLAUDE.md guidance no longer instructs agents around a tool that is not exposed.
 <!-- DOD:END -->
 
 ## Implementation Notes
