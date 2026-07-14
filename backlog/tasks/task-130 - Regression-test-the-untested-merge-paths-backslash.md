@@ -3,7 +3,7 @@ id: TASK-130
 title: >-
   Regression-test the untested merge paths: backslash worktree validation and
   pending/ticket resume
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-14 05:25'
 updated_date: '2026-07-14 08:21'
@@ -21,6 +21,9 @@ references:
   - src/test/unit/requestMerge.test.ts
 priority: medium
 category: Worktrees & Merge
+claimed_by: '@agent/.worktrees/task-130-regression-test-the-untested-merge-paths-backslash-worktree-validation-and-pending-ticket-resume'
+worktree: .worktrees/task-130-regression-test-the-untested-merge-paths-backslash-worktree-validation-and-pending-ticket-resume
+claimed_at: '2026-07-14 17:45'
 ---
 
 ## Description

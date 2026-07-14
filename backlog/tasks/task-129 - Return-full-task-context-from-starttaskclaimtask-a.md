@@ -3,7 +3,7 @@ id: TASK-129
 title: >-
   Return full task context from start_task/claim_task and give get_active_task a
   session-claim fallback
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-14 05:25'
 updated_date: '2026-07-14 08:21'
@@ -20,6 +20,9 @@ references:
   - .claude/skills/execute-task/
 priority: medium
 category: Orchestration
+claimed_by: '@agent/task-129-return-full-task-context-from-start-task-claim-task-and-give-get-active-task-a-session-claim-fallback'
+worktree: task-129-return-full-task-context-from-start-task-claim-task-and-give-get-active-task-a-session-claim-fallback
+claimed_at: '2026-07-14 17:45'
 ---
 
 ## Description
