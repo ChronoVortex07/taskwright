@@ -4,7 +4,7 @@ title: Dewire complete_task so finished work can't be archived off the board
 status: In Progress
 assignee: []
 created_date: '2026-07-14 08:51'
-updated_date: '2026-07-14 08:51'
+updated_date: '2026-07-14 09:04'
 labels: []
 milestone: Workflow Friction Hardening
 dependencies: []
@@ -15,7 +15,7 @@ references:
   - src/core/BacklogWriter.ts
   - src/mcp/instructions.ts
 priority: high
-category: 'Core Board'
+category: Core Board
 claimed_by: '@agent/task-133-dewire-complete-task-so-finished-work-can-t-be-archived-off-the-board'
 worktree: task-133-dewire-complete-task-so-finished-work-can-t-be-archived-off-the-board
 claimed_at: '2026-07-14 16:52'
@@ -47,3 +47,29 @@ Dewire it — disconnect the surfaces, keep the machinery — until the Done-vs-
 - [ ] #1 A grep for `complete_task` / `completeTask` shows no reachable caller from an MCP tool registration or a UI event handler.
 - [ ] #2 AGENTS.md / CLAUDE.md guidance no longer instructs agents around a tool that is not exposed.
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Dewired complete_task at every entry point; left the machinery untouched.
+
+**Surfaces removed**
+- `src/mcp/server.ts` — dropped the `complete_task` `registerTool` block and the `completeTaskHandler` import. A call now fails as an unknown tool (AC#1).
+- `src/providers/TasksController.ts` — removed the `case 'completeTask'` message case (AC#4). No silent path to `backlog/completed/` remains.
+- `src/core/types.ts` — removed the `{ type: 'completeTask' }` variant from the webview message union, so the message is now unsendable by construction.
+- Each removal leaves a NOTE comment explaining why and pointing at TASK-131.
+
+**Finding: the UI action was already dead.** Grepping `src/webview/**` for `completeTask` returns nothing — no Svelte component ever dispatched the message, and no VS Code command in package.json invoked it. So AC#2 was already satisfied; the reachable surface was the MCP tool plus an orphaned controller case. The contract test now pins that shut.
+
+**Machinery preserved (AC#3).** `BacklogWriter.completeTask()` and `completeTaskHandler` are byte-for-byte unchanged, with all their existing tests (incl. the P1 bug/caused_by rule) still passing. Re-wiring is a re-registration in server.ts, not a rewrite.
+
+**Agent-facing text (AC#5).** `src/mcp/instructions.ts` no longer spends its truncation-prone 512-char budget warning agents away from a tool they can no longer call; it now just states request_merge marks the task Done. Same correction in AGENTS.md and `.claude/skills/execute-task/SKILL.md`. CLAUDE.md and README already had no reference. The `.agents/skills/` Codex packages are generated from `.claude/skills` at build time, so the single edit covers both agent brands.
+
+**Tests**
+- New `src/test/unit/completeTaskDewired.test.ts` (11 assertions): no registration, no controller case, no union variant, no webview dispatch (walks src/webview), agent text clean, machinery intact.
+- `src/test/unit/mcpInstructions.test.ts` updated — asserts the absence of the stale warning rather than its presence.
+- Removed the now-vacuous 'blocks completeTask for read-only tasks' test in TasksViewProvider.crossBranchAndDeps.test.ts (deleting the case is the stronger guard).
+- Added a restore-from-`completed/` regression test to BacklogWriter.archiveRestore.test.ts (AC#6): `restoreArchivedTask` on a completed task routes back to `tasks/` (completed/ is not an archive subfolder, so it restores as a task, never a draft). It passed before the change too — kept as a guard that dewiring the entrance did not orphan what is already inside.
+
+Gate green: 2298/2298 unit tests, lint, typecheck.
+<!-- SECTION:NOTES:END -->
