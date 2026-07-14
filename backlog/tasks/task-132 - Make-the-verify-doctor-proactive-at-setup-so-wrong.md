@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-14 05:26'
-updated_date: '2026-07-14 05:26'
+updated_date: '2026-07-14 08:21'
 labels:
   - friction
   - merge-queue
@@ -16,7 +16,7 @@ dependencies: []
 references:
   - .taskwright/docs/friction-report-2026-07-14.md
 priority: low
-category: 'Worktrees & Merge'
+category: Worktrees & Merge
 ---
 
 ## Description

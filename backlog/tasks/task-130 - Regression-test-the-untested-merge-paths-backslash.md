@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-07-14 05:25'
-updated_date: '2026-07-14 05:25'
+updated_date: '2026-07-14 08:21'
 labels:
   - friction
   - testing
@@ -20,7 +20,7 @@ references:
   - src/core/finishTask.ts
   - src/test/unit/requestMerge.test.ts
 priority: medium
-category: 'Worktrees & Merge'
+category: Worktrees & Merge
 ---
 
 ## Description
