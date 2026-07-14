@@ -32,16 +32,23 @@ agent. The sub-skills it invokes (`superpowers:executing-plans`, `superpowers:su
 
 ## The loop
 
-1. **Load once — fix your task ID.** Call `get_active_task` a single time, then settle on exactly ONE
-   task ID for the whole session and work from that fixed ID — **never re-read `get_active_task` for
-   your identity or status**: the active task is an ephemeral human-focus pointer and may drift to an
-   unrelated task while you work.
-   - If `get_active_task` returns a task, use its **task ID** and capture its full context
-     (description, acceptance criteria, plan link, subtasks).
-   - Else if the user named a task (e.g. `/execute-task TASK-7`), use that ID and load its context
-     with `get_board` (find the row) so you have the same fields.
-   - Else (no active task and none named), **STOP and ask which task to work on** — do not guess from
-     the file tree.
+1. **Load once — fix your task ID.** Settle on exactly ONE task ID for the whole session and work from
+   that fixed ID — **never re-read `get_active_task` for your identity or status**: the active task is
+   an ephemeral human-focus pointer and may drift to an unrelated task while you work.
+   - If the user named a task (e.g. `/execute-task TASK-7`), use that ID. Its **full context arrives
+     with the bootstrap** — `start_task` (step 2) and `claim_task` (step 3) each return the task's
+     description, acceptance criteria, plan + progress, and board file path. That is your context; you
+     do not need a separate lookup.
+   - Else call `get_active_task` **once**. A dispatched session gets its task from the marker
+     (`source: "marker"`); a session that already started/claimed a task gets it back from its own
+     session record (`source: "session"`).
+   - Else (nothing named and no active task), **STOP and ask which task to work on**.
+   - **Never hunt the file tree for the board.** Do not `ls backlog/tasks/`, glob for a task file, or
+     grep the repo for your task ID — in `git-auto` mode the board is not even under the repo root.
+     The task context comes from the MCP tools, and only from them. If `get_active_task` returns
+     `candidates` (this session has several tasks in flight and MCP calls carry no working directory,
+     so the server cannot tell which subagent is asking), do **not** guess: use the ID you were given
+     and the context `start_task` / `claim_task` returned for it.
 
 2. **Get into the task's worktree (dispatched, or bootstrap it).** The task runs inside its own
    `.worktrees/<branch>`. Two facts decide everything here, and they are not the same fact:
@@ -67,13 +74,16 @@ agent. The sub-skills it invokes (`superpowers:executing-plans`, `superpowers:su
    - **Not dispatched — bootstrap it yourself.** You already hold a task ID from step 1. Call
      **`start_task { taskId }`**. It creates (or reuses) `.worktrees/<branch>`, seeds the active task
      there, clears any stale cancellation marker, and returns
-     `{ created, branch, worktree, worktreeAbs, relaunchHint }`. Keep `worktree` (repo-root-relative,
-     e.g. `.worktrees/task-7-add-login`). `cd` into `worktreeAbs` (Bash) and run **all** git / file /
-     test commands there; `bun install` once if `node_modules` is absent. Because _you_ called
-     `start_task`, this session's MCP is rooted in the **primary** tree no matter where the shell now
-     is, so you close with **`request_merge { taskId, worktree }`** (step 7). Optionally you may
-     instead surface `relaunchHint` and stop, letting the human relaunch a session inside
-     `worktreeAbs` — but if you continue here, the `worktree` target is mandatory.
+     `{ created, branch, worktree, worktreeAbs, relaunchHint, task }`. **`task` is your full context**
+     (description, acceptance criteria, plan + progress, board file path) — capture it and work from
+     it; there is nothing else to look up. Keep `worktree` (repo-root-relative, e.g.
+     `.worktrees/task-7-add-login`). `cd` into `worktreeAbs` (Bash) and run **all** git / file / test
+     commands there; `bun install` once if `node_modules` is absent. Because _you_ called `start_task`,
+     this session's MCP is rooted in the **primary** tree no matter where the shell now is — so the
+     active-task marker it seeded lives in the worktree you cannot read from here, and you close with
+     **`request_merge { taskId, worktree }`** (step 7). Optionally you may instead surface
+     `relaunchHint` and stop, letting the human relaunch a session inside `worktreeAbs` — but if you
+     continue here, the `worktree` target is mandatory.
 
    - **Never** `git checkout`, `commit`, or `merge` in the repository root — it is shared with other
      agents and a managed pre-commit hook blocks it. All git / file / test commands run in the worktree.
@@ -82,8 +92,10 @@ agent. The sub-skills it invokes (`superpowers:executing-plans`, `superpowers:su
    automatically advances the task status from the board's first configured status (typically
    "To Do") to its second (typically "In Progress"), so the board immediately shows someone is
    working on it. If the task is already past the first status the status is left unchanged.
-   On a synced board a claim may **surrender** if another session already holds it; if so, stop
-   and pick a different task with the user.
+   A successful claim also returns **`task`** — the same full context `start_task` gives you, freshly
+   read after the claim write. If you skipped `start_task` (a dispatched session), this is where your
+   context comes from. On a synced board a claim may **surrender** if another session already holds it
+   (`surrendered: true, heldBy`, and no context); if so, stop and pick a different task with the user.
 
 4. **Execute (adaptive — ordered gate).** Choose the strategy by this precedence, first match wins:
    1. **Attached plan** — the task has a `plan` and its `planProgress.exists` is true ⇒ invoke
@@ -172,6 +184,9 @@ yourself — the extension owns teardown.
 ## Rules of thumb
 
 - One session = one task; hold the task ID from step 1 and never re-derive it.
+- Your task context comes from `start_task` / `claim_task` (or one `get_active_task`) — **never** from
+  the file tree. No `ls backlog/tasks/`, no globbing for the task file: in `git-auto` mode the board
+  does not live under the repo root at all.
 - Get into the worktree before doing work — with `cd` / `git -C`, **never** a harness worktree-switch
   tool (`EnterWorktree`): dispatched ⇒ you are already there; otherwise ⇒ `start_task`, `cd` in, and
   close with `request_merge { taskId, worktree }`.

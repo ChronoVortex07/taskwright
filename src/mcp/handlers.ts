@@ -19,6 +19,12 @@ import { createTaskWithTreeFields, normalizeType } from '../core/createTaskCore'
 import { searchTasks } from '../core/searchTasks';
 import { promoteDrafts, type PromoteDraftsResult } from '../core/promoteDrafts';
 import { readActiveTask } from '../core/activeTask';
+import {
+  readSessionTasks,
+  recordSessionTask,
+  forgetSessionTask,
+  type SessionTaskEntry,
+} from '../core/sessionTasks';
 import { bootstrapTaskWorktree, type StartTaskResult } from '../core/startTask';
 import { loadPlanProgress } from '../core/loadPlanProgress';
 import { ChecklistItem, Milestone, Task } from '../core/types';
@@ -171,11 +177,27 @@ export interface TaskSummary {
   filePath: string;
 }
 
+/**
+ * Where `get_active_task` got its answer (TASK-129):
+ * - `marker`  — the ephemeral active-task file the board popover / a dispatch wrote. Always wins.
+ * - `session` — the single task THIS session started or claimed (`start_task` / `claim_task`).
+ * - `none`    — nothing to work on, or the session has several tasks in flight and the server
+ *               cannot tell which in-session caller is asking (see `candidates`).
+ */
+export type ActiveTaskSource = 'marker' | 'session' | 'none';
+
 export interface ActiveTaskResult {
   active: boolean;
   task?: TaskSummary;
   message?: string;
   queuePosition?: number;
+  /** Which source resolved the answer — so a caller can tell a dispatch from a self-bootstrap. */
+  source: ActiveTaskSource;
+  /**
+   * The in-flight task IDs when the session has more than one and the answer is
+   * therefore ambiguous. Present only with `active: false`, `source: 'none'`.
+   */
+  candidates?: string[];
 }
 
 export interface ClaimResult {
@@ -184,6 +206,12 @@ export interface ClaimResult {
   claimedBy?: string;
   worktree?: string;
   claimedAt?: string;
+  /**
+   * The claimed task's full context (description, ACs, plan, board file path…), so a
+   * session never has to look the board up on disk afterwards. Present on a successful
+   * claim (including an idempotent re-claim); absent on surrender/locked.
+   */
+  task?: TaskSummary;
   /** True when the synced board shows the task is already held by someone else. */
   surrendered?: boolean;
   /** Who holds the task when `surrendered` is true. */
@@ -705,6 +733,13 @@ export async function requestMergeHandler(
       : undefined
   );
 
+  // The task is integrated — it is no longer in flight for this session, so it must
+  // not linger in the ledger and make a NEXT task look ambiguous (TASK-129). A merge
+  // releases the claim too, but that runs against the board, not this session's root.
+  if (result.status === 'merged' || result.status === 'pr_opened') {
+    forgetSessionTask(deps.root, args.taskId);
+  }
+
   // Publish the Done flip (and anything else the merge wrote) to the remote.
   await rt.boundarySync();
   return result;
@@ -803,18 +838,32 @@ export async function requestBranchMergeHandler(
   }
 }
 
+/** `start_task`'s result plus the task's full context (TASK-129). */
+export interface StartTaskHandlerResult extends StartTaskResult {
+  /**
+   * The started task's full context, so the caller can begin work immediately —
+   * no follow-up `get_active_task`, and no hunting for the board on disk (in
+   * git-auto mode it is not even under the repo root).
+   */
+  task?: TaskSummary;
+}
+
 /**
  * `start_task`: from any primary-rooted session, create (or reuse) the task's isolated
  * `.worktrees/<branch>` and seed its active task — the same bootstrap the board Dispatch
  * action performs, exposed over MCP. It does NOT re-root this server (the root is fixed at
  * launch, server.ts:82), so the result's `relaunchHint` tells the caller to relaunch a
  * session with cwd = worktreeAbs to run `/execute-task` there.
+ *
+ * TASK-129: it also returns the task's full context and records the task in this session's
+ * ledger. The marker it seeds lives in the NEW worktree, which this still-primary-rooted
+ * session cannot read — the ledger is what lets a later `get_active_task` here answer at all.
  */
 export async function startTaskHandler(
   deps: McpHandlerDeps,
   args: { taskId: string }
-): Promise<StartTaskResult> {
-  return bootstrapTaskWorktree(
+): Promise<StartTaskHandlerResult> {
+  const result = await bootstrapTaskWorktree(
     {
       // The primary code checkout always owns `.worktrees/`. In git-auto mode
       // `backlogPath` lives under the hidden taskwright-board worktree, so its
@@ -824,6 +873,12 @@ export async function startTaskHandler(
     },
     args.taskId
   );
+  recordSessionTask(deps.root, {
+    taskId: result.taskId,
+    worktree: result.worktree,
+    via: 'start_task',
+  });
+  return { ...result, task: await hydrateTaskSummary(deps, result.taskId) };
 }
 
 /** Board sync is off — the standard "not enabled" response shape for push/pull. */
@@ -993,33 +1048,23 @@ export function toSummary(task: Task, root: string, derived?: TreeDerivedState):
 }
 
 /**
- * Resolve the task a session should work on. Pull-based: returns whatever the
- * board/dispatch recorded as active in `root`, hydrated from the task file.
+ * Load a task and hydrate it into the full `TaskSummary` every context-bearing tool
+ * returns (`get_active_task`, `start_task`, `claim_task`) — one shape, one code path.
+ * Undefined when the id has no task file.
  */
-export async function getActiveTask(deps: McpHandlerDeps): Promise<ActiveTaskResult> {
-  const active = readActiveTask(deps.root);
-  if (!active) {
-    return {
-      active: false,
-      message:
-        'No active task is set. Pick a task on the Taskwright board (or dispatch one), or run ' +
-        '/execute-task naming a task (e.g. /execute-task TASK-7) to bootstrap its worktree from here.',
-    };
-  }
-  const task = await deps.parser.getTask(active.taskId);
-  if (!task) {
-    return {
-      active: false,
-      message: `Active task ${active.taskId} was set but no matching task file was found.`,
-    };
-  }
+async function hydrateTaskSummary(
+  deps: McpHandlerDeps,
+  taskId: string
+): Promise<TaskSummary | undefined> {
+  const task = await deps.parser.getTask(taskId);
+  if (!task) return undefined;
   // Derive subtasks from the full task set (mirror the provider pattern). getTask
   // populates task.subtasks ONLY from the parent's frontmatter subtasks[], but
   // create_subtask writes only the CHILD's parent_task_id — and computeSubtasks (the
   // provider-side derivation) never runs on the MCP path. Without this a dispatched
   // parent returns subtasks: undefined, so /execute-task's independent-subtasks (SDD)
   // branch can never fire. Intentional fail-open: a derive/IO error must not brick
-  // get_active_task (matches the queue/plan-progress catches here).
+  // the caller (matches the queue/plan-progress catches here).
   try {
     const all = await deps.parser.getTasks();
     computeSubtasks(all);
@@ -1028,7 +1073,16 @@ export async function getActiveTask(deps: McpHandlerDeps): Promise<ActiveTaskRes
   } catch {
     // fail-open — leave task.subtasks as loaded from frontmatter
   }
-  let queuePosition: number | undefined;
+  // Intentional fail-open: a transient derive/IO error must not brick claims — do not "fix" to fail-closed.
+  const states = await loadTreeStateFromParser(deps.parser).catch(() => undefined);
+  return toSummary(task, deps.root, states?.get(task.id.trim().toUpperCase()));
+}
+
+/** The task's place in the shared merge queue, when it is waiting in one. */
+async function queuePositionFor(
+  deps: McpHandlerDeps,
+  taskId: string
+): Promise<number | undefined> {
   try {
     const exec = deps.gitExec ?? defaultGitExec;
     const fsDeps = deps.fsDeps ?? nodeQueueFs;
@@ -1036,17 +1090,117 @@ export async function getActiveTask(deps: McpHandlerDeps): Promise<ActiveTaskRes
       deps.root,
       (await exec(deps.root, ['rev-parse', '--git-common-dir'])).stdout.trim()
     );
-    const pos = positionOf(queueStoreFor(commonDir, fsDeps).read(), active.taskId);
-    if (pos > 0) queuePosition = pos;
+    const pos = positionOf(queueStoreFor(commonDir, fsDeps).read(), taskId);
+    return pos > 0 ? pos : undefined;
   } catch {
     // not a git repo / no queue — omit the field
+    return undefined;
   }
-  // Intentional fail-open: a transient derive/IO error must not brick claims — do not "fix" to fail-closed.
-  const states = await loadTreeStateFromParser(deps.parser).catch(() => undefined);
+}
+
+/**
+ * The subset of this session's ledger that is genuinely still in flight: the task
+ * file still exists and the task has not reached the board's terminal (Done) status.
+ * Stale entries (past the claim-staleness window) are ignored — a session that was
+ * killed hours ago should not haunt a fresh one that reuses the root.
+ */
+async function liveSessionTasks(deps: McpHandlerDeps): Promise<SessionTaskEntry[]> {
+  const entries = readSessionTasks(deps.root);
+  if (entries.length === 0) return [];
+  const staleBefore = Date.now() - stalenessMsFromHours(DEFAULT_CLAIM_STALENESS_HOURS);
+  const doneStatus = await deps.parser
+    .getStatuses()
+    .then((s) => s[s.length - 1])
+    .catch(() => undefined);
+
+  const live: SessionTaskEntry[] = [];
+  for (const entry of entries) {
+    const at = Date.parse(entry.at);
+    if (Number.isFinite(at) && at < staleBefore) continue;
+    const task = await deps.parser.getTask(entry.taskId).catch(() => undefined);
+    if (!task) continue; // archived, completed, or never existed
+    if (doneStatus && task.status?.trim().toLowerCase() === doneStatus.trim().toLowerCase()) {
+      continue; // finished — not something this session is still working on
+    }
+    live.push(entry);
+  }
+  return live;
+}
+
+/**
+ * Resolve the task a session should work on.
+ *
+ * Order (TASK-129):
+ *  1. The **marker** — what the board popover or a dispatch recorded in `root`. It always
+ *     wins, so an externally-dispatched session behaves exactly as it always has.
+ *  2. The **session ledger** — the task THIS session started (`start_task`) or claimed
+ *     (`claim_task`). This closes the self-bootstrap blind spot: `start_task` seeds the
+ *     marker inside the NEW worktree while this server stays rooted in the primary tree,
+ *     so the session that just bootstrapped a worktree could never see its own task.
+ *  3. Nothing — or, with several tasks in flight, an honest **ambiguous** answer. One
+ *     orchestrator session shares one MCP server across all its in-session subagents and
+ *     MCP calls carry no working directory, so the server cannot tell which subagent is
+ *     asking. Guessing (e.g. "most recent") would hand N-1 of them someone else's task;
+ *     `active: false` + `candidates` is the only correct answer. That is why every caller
+ *     should work from the context `start_task` / `claim_task` already handed back.
+ */
+export async function getActiveTask(deps: McpHandlerDeps): Promise<ActiveTaskResult> {
+  const active = readActiveTask(deps.root);
+  if (active) {
+    const task = await hydrateTaskSummary(deps, active.taskId);
+    if (!task) {
+      return {
+        active: false,
+        source: 'none',
+        message: `Active task ${active.taskId} was set but no matching task file was found.`,
+      };
+    }
+    return {
+      active: true,
+      source: 'marker',
+      task,
+      queuePosition: await queuePositionFor(deps, active.taskId),
+    };
+  }
+
+  const live = await liveSessionTasks(deps);
+
+  if (live.length === 1) {
+    const entry = live[0];
+    const task = await hydrateTaskSummary(deps, entry.taskId);
+    if (task) {
+      return {
+        active: true,
+        source: 'session',
+        task,
+        queuePosition: await queuePositionFor(deps, entry.taskId),
+        message:
+          `No active-task marker is set here, so this resolved to the task this session ` +
+          `took on (${entry.via}): ${task.id}.`,
+      };
+    }
+  }
+
+  if (live.length > 1) {
+    const ids = live.map((e) => e.taskId);
+    return {
+      active: false,
+      source: 'none',
+      candidates: ids,
+      message:
+        `This session has ${ids.length} tasks in flight (${ids.join(', ')}) and no active-task ` +
+        `marker, and an MCP call carries no working directory — so the server cannot tell which ` +
+        `of them is asking. Work from the task context that start_task / claim_task returned for ` +
+        `YOUR task; do not re-derive it here.`,
+    };
+  }
+
   return {
-    active: true,
-    task: toSummary(task, deps.root, states?.get(task.id.trim().toUpperCase())),
-    queuePosition,
+    active: false,
+    source: 'none',
+    message:
+      'No active task is set. Pick a task on the Taskwright board (or dispatch one), or run ' +
+      '/execute-task naming a task (e.g. /execute-task TASK-7) to bootstrap its worktree from here.',
   };
 }
 
@@ -1116,6 +1270,11 @@ export async function claimTaskHandler(
   }
   if (action === 'self') {
     // Idempotent re-claim: the caller already holds it — echo the existing claim.
+    recordSessionTask(deps.root, {
+      taskId: task.id,
+      worktree: task.worktree,
+      via: 'claim_task',
+    });
     return {
       claimed: true,
       taskId: args.taskId,
@@ -1123,11 +1282,17 @@ export async function claimTaskHandler(
       worktree: task.worktree,
       claimedAt: task.claimedAt,
       alreadyClaimed: true,
+      task: await hydrateTaskSummary(deps, task.id),
     };
   }
 
   const claim = await deps.claimService.claimTask(args.taskId, claimedBy, deps.parser, {
     worktree: args.worktree?.trim() || branch,
+  });
+  recordSessionTask(deps.root, {
+    taskId: task.id,
+    worktree: claim.worktree,
+    via: 'claim_task',
   });
   return {
     claimed: true,
@@ -1135,6 +1300,9 @@ export async function claimTaskHandler(
     claimedBy: claim.claimedBy,
     worktree: claim.worktree,
     claimedAt: claim.claimedAt,
+    // Hydrated AFTER the claim write, so the context reflects the post-claim state
+    // (claim advances To Do -> In Progress); a stale echo would mislead the caller.
+    task: await hydrateTaskSummary(deps, task.id),
   };
 }
 
@@ -1144,6 +1312,8 @@ export async function releaseTaskHandler(
   args: { taskId: string }
 ): Promise<ReleaseResult> {
   await deps.claimService.releaseTask(args.taskId, deps.parser);
+  // Released == no longer in flight for this session (handed off, or done with it).
+  forgetSessionTask(deps.root, args.taskId);
   return { released: true, taskId: args.taskId };
 }
 

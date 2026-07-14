@@ -215,7 +215,7 @@ describe('mcp handlers', () => {
       expect(result.claimedBy).toBe('@agent');
     });
 
-    it('re-claiming your own task is an idempotent no-op (claimed: true, no write)', async () => {
+    it('re-claiming your own task is an idempotent no-op (claimed: true, no board write)', async () => {
       routeClaimedReads([
         "claimed_by: '@agent/task-7-sample'",
         `claimed_at: '${stampHoursAgo(1)}'`,
@@ -225,7 +225,30 @@ describe('mcp handlers', () => {
       expect(result.surrendered).toBeUndefined();
       expect(result.alreadyClaimed).toBe(true);
       expect(result.claimedBy).toBe('@agent/task-7-sample');
-      expect(fs.writeFileSync).not.toHaveBeenCalled();
+      // The BOARD must not churn: no task file is rewritten. (The session-task ledger
+      // under .taskwright/ IS refreshed — see below — but it is local and git-ignored,
+      // not board state.)
+      const boardWrites = vi
+        .mocked(fs.writeFileSync)
+        .mock.calls.filter((c) => String(c[0]).includes(TASK_FILE));
+      expect(boardWrites).toHaveLength(0);
+    });
+
+    it('a self re-claim still refreshes the session ledger (TASK-129 restart case)', async () => {
+      // A relaunched session in the same worktree re-claims its own task; that no-op on the
+      // board is exactly when it must (re)learn which task it is on, so get_active_task can
+      // answer from the ledger rather than reporting active:false.
+      routeClaimedReads([
+        "claimed_by: '@agent/task-7-sample'",
+        `claimed_at: '${stampHoursAgo(1)}'`,
+      ]);
+      const result = await claimTaskHandler(makeWorktreeDeps(), { taskId: 'TASK-7' });
+      expect(result.alreadyClaimed).toBe(true);
+      expect(result.task?.id).toBe('TASK-7');
+      const ledgerWrites = vi
+        .mocked(fs.writeFileSync)
+        .mock.calls.filter((c) => String(c[0]).includes('session-tasks.json'));
+      expect(ledgerWrites.length).toBeGreaterThan(0);
     });
 
     it('a different identity holding a live claim surrenders with heldBy', async () => {

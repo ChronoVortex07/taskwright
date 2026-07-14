@@ -105,6 +105,12 @@ Repeat rounds until a stop condition fires:
      `request_merge { taskId, worktree }` — you bootstrapped the worktree, so the target is required).
      Do **not** commit/merge from the repo root yourself.
 
+   Every task's context comes back from `start_task` / `claim_task` — pass the task **ID** to each
+   runner and let it read its own context from those calls. Neither you nor a runner should ever go
+   looking for the board on disk. Note that `get_active_task` is useless to YOU in parallel mode by
+   design: your subagents share your MCP server and root, so with a batch in flight it reports
+   `candidates` (ambiguous) rather than guessing which one is asking.
+
 5. **Reconcile results.** For each runner's returned status:
    - `done` → count it; its dependents may now be ready.
    - `pending` → the task's `request_merge` hit its `waitMinutes` bound while parked in the merge
@@ -151,13 +157,19 @@ TASK: {{taskId}} — {{title}}
 
 Do this, in order:
 1. Bootstrap the worktree. Call the taskwright MCP tool `start_task` with { "taskId": "{{taskId}}" }.
-   It returns { worktree, worktreeAbs, branch } and seeds this task as the worktree's active task.
+   It returns { worktree, worktreeAbs, branch, task } and seeds this task as the worktree's active
+   task. **`task` is your full context** — description, acceptance criteria, plan, board file path.
+   Work from it. Do NOT call `get_active_task` to re-derive it (the marker `start_task` seeded lives
+   in the new worktree, while the MCP server stays rooted in the primary tree), and NEVER hunt the
+   filesystem for the board — no `ls backlog/tasks/`, no globbing for the task file; in `git-auto`
+   mode the board is not under the repo root at all.
    `cd` into `worktreeAbs` (Bash) — with plain `cd`, NEVER with a harness worktree-switch tool such as
    `EnterWorktree`: this is an ordinary git worktree under `.worktrees/`, that tool manages only its
    own `.claude/worktrees/`, and from your pinned working directory it will prompt and then fail. Keep
    the returned `worktree` value; you need it to close. If `node_modules` is absent there, run
    `bun install` once.
-2. Claim it. Call `claim_task` with { "taskId": "{{taskId}}" }. If the result has
+2. Claim it. Call `claim_task` with { "taskId": "{{taskId}}" }. It returns the same `task` context,
+   re-read after the claim (so it shows the In Progress status). If the result has
    `surrendered: true`, STOP immediately and report {"status":"surrendered","taskId":"{{taskId}}"}
    — another session already holds it; do NOT do the work.
 3. Execute. Invoke the `/execute-task` skill for {{taskId}}. It picks the right strategy (attached

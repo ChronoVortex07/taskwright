@@ -145,7 +145,7 @@ async function main(): Promise<void> {
     {
       title: 'Get active task',
       description:
-        'Return the task this session should work on, as recorded on the Taskwright board / by a dispatch. Call this first to learn your task ID and context.',
+        'Return the task this session should work on. Resolution order, reported as `source`: (1) "marker" — what the board ("Set active") or a dispatch recorded; (2) "session" — the single task THIS session started/claimed, when no marker is set; (3) "none" — nothing to work on, OR the session has several tasks in flight, in which case `candidates` lists them and you must NOT guess (an MCP call carries no working directory, so the server cannot tell which in-session subagent is asking). If you bootstrapped your own worktree with start_task, or claimed with claim_task, those tools ALREADY returned the task\'s full context — work from that; you do not need to call this at all, and you must never hunt the filesystem for the board.',
     },
     async () => runTool(() => getActiveTask(deps))
   );
@@ -155,7 +155,7 @@ async function main(): Promise<void> {
     {
       title: 'Claim task',
       description:
-        'Place an advisory claim on a task so other sessions see it is in progress. The claimant identity is derived from your session worktree/branch (e.g. @agent/task-7-fix-login), so re-claiming YOUR OWN task is an idempotent no-op ({ claimed: true, alreadyClaimed: true }) — safe after a restart. A live claim held by a DIFFERENT identity returns { claimed: false, surrendered: true, heldBy } — pick another task instead of double-executing. Stale claims (past the staleness window) and legacy generic @agent claims are reclaimed in place.',
+        "Place an advisory claim on a task so other sessions see it is in progress, and get the task's full context back. A successful claim returns `task` — the same summary get_active_task returns (description, acceptance criteria, plan + progress, board file path) — so you can start work immediately without any follow-up lookup, and without hunting the filesystem for the board (in git-auto mode it is not under the repo root). The claimant identity is derived from your session worktree/branch (e.g. @agent/task-7-fix-login), so re-claiming YOUR OWN task is an idempotent no-op ({ claimed: true, alreadyClaimed: true }) — safe after a restart. A live claim held by a DIFFERENT identity returns { claimed: false, surrendered: true, heldBy } and no context — pick another task instead of double-executing. Stale claims (past the staleness window) and legacy generic @agent claims are reclaimed in place.",
       inputSchema: {
         taskId: z.string().describe('Task ID to claim, e.g. TASK-7.'),
         claimedBy: z
@@ -603,7 +603,7 @@ async function main(): Promise<void> {
     {
       title: 'Start task',
       description:
-        "Create (or reuse) the task's isolated .worktrees/<branch> worktree and seed its active task, from any primary-rooted session — the same bootstrap the board Dispatch action performs. This server cannot re-root itself mid-session, so it returns a relaunchHint: open a NEW session with its working directory set to the returned worktreeAbs, then run /execute-task there. Idempotent — an existing worktree is reused (created:false). Returns { created, taskId, branch, worktree, worktreeAbs, relaunchHint }.",
+        "Create (or reuse) the task's isolated .worktrees/<branch> worktree and seed its active task, from any primary-rooted session — the same bootstrap the board Dispatch action performs. It returns the task's FULL CONTEXT in `task` (description, acceptance criteria, plan + progress, board file path), so a session that bootstraps its own worktree can start work straight away: do not call get_active_task afterwards, and never hunt the filesystem for the board. This server cannot re-root itself mid-session, so it also returns a relaunchHint: open a NEW session with its working directory set to the returned worktreeAbs to run /execute-task there — and if you instead keep working in THIS session, close with request_merge { taskId, worktree } (a bare request_merge aborts with wrong_root). Idempotent — an existing worktree is reused (created:false). Returns { created, taskId, branch, worktree, worktreeAbs, relaunchHint, task }.",
       inputSchema: { taskId: z.string().describe('Task ID to start, e.g. TASK-7.') },
     },
     async (args) => runTool(() => startTaskHandler(deps, args))
