@@ -68,8 +68,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   contention instead of removing it.
 
   `request_merge` now takes a **shared verify slot** (`src/core/verifySlot.ts`) around every verify
-  run: an O*EXCL lock file in the git common dir, so exactly one verify runs at a time across every
-  worktree \_and* every MCP server process sharing the repo. The slot is held only for the run and
+  run: an `O_EXCL` lock file in the git common dir, so exactly one verify runs at a time across every
+  worktree _and_ every MCP server process sharing the repo. The slot is held only for the run and
   released **before** the merge-queue wait, so a slot-holder → queue-waiter → slot-waiter cycle
   cannot form; it is stealable when its holder's process is gone, its lease expires, or the record is
   a torn write, so a crashed holder cannot wedge every future merge. Throughput is essentially
