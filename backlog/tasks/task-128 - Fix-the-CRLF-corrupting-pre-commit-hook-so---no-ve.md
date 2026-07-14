@@ -2,7 +2,7 @@
 id: TASK-128
 title: Fix the CRLF-corrupting pre-commit hook so --no-verify folklore can be retired
 type: bug
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-14 05:25'
 updated_date: '2026-07-14 09:14'
@@ -18,9 +18,6 @@ references:
   - .gitattributes
 priority: high
 category: Bugs
-claimed_by: '@agent/.worktrees/task-128-fix-the-crlf-corrupting-pre-commit-hook-so-no-verify-folklore-can-be-retired'
-worktree: .worktrees/task-128-fix-the-crlf-corrupting-pre-commit-hook-so-no-verify-folklore-can-be-retired
-claimed_at: '2026-07-14 16:52'
 ---
 
 ## Description
