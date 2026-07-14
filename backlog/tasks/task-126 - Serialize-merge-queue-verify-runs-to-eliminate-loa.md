@@ -3,10 +3,10 @@ id: TASK-126
 title: >-
   Serialize merge-queue verify runs to eliminate load-induced flakes under
   parallel orchestration
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-14 05:24'
-updated_date: '2026-07-14 08:48'
+updated_date: '2026-07-14 08:49'
 labels:
   - friction
   - merge-queue
@@ -17,9 +17,6 @@ references:
   - src/core/finishTask.ts
 priority: high
 category: Worktrees & Merge
-claimed_by: '@agent/task-126-serialize-merge-queue-verify-runs-to-eliminate-load-induced-flakes-under-parallel-orchestration'
-worktree: task-126-serialize-merge-queue-verify-runs-to-eliminate-load-induced-flakes-under-parallel-orchestration
-claimed_at: '2026-07-14 16:23'
 ---
 
 ## Description
