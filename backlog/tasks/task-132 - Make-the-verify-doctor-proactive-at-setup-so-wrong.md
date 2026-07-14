@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-07-14 05:26'
-updated_date: '2026-07-14 08:21'
+updated_date: '2026-07-14 09:23'
 labels:
   - friction
   - merge-queue
@@ -37,3 +37,14 @@ Fix direction: run the doctor at board initialization / first request_merge in a
 - [ ] #3 board_doctor reports a typed finding when verify commands are unset/mismatched for a classifiable repo
 - [ ] #4 Unit tests cover prompt-once, apply, and decline-remembered paths
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. verifyDoctor.ts (pure core): add evidence-based RUNNER MISMATCH detection alongside the existing "provably broken" one — a script-runner command whose script exists but whose runner differs from the repo's LOCKFILE-PROVEN package manager (bun defaults in a pnpm/npm/yarn repo). Add `packageManagerProven` to RepoProfile so an unproven (lockfile-less) pm never cries wolf. Report gains `mismatched` + `ok` becomes "nothing needs attention". Add `verifyDoctorSignature(report)` — a stable fingerprint of (repo profile + configured commands + suggestions) that keys the prompt-once memory.
+2. verifyDoctorState.ts (new): durable decision record at <commonDir>/taskwright/verify-doctor.json ({ signature, decision: applied|declined|deferred, decidedAt }). Pure predicates `shouldPromptVerifyDoctor` (any recorded decision for the same signature suppresses the prompt) and `isVerifyDoctorDismissed` (only an explicit decline suppresses the standing board_doctor finding; an X/ESC "deferred" stops the nag but keeps the finding).
+3. boardDoctor.ts: new typed finding `verify-commands-mismatch` / repair `apply-verify-commands` (check 12), fed by an optional `verify` input; `gatherVerifyFacts(repoRoot, commonDir)` assembles it from merge-config.json + the doctor and honors the dismissal. `runBoardDoctor` takes an optional commonDir.
+4. extension.ts: runVerifyDoctorCheck consults the state — prompts ONCE per signature (Apply / Open Settings / Not now), records the decision, never rewrites silently. The explicit setup path (quietWhenOk:false) forces the prompt, which is the escape hatch back from a decline.
+5. doctorActions.ts + mcp/handlers.ts: route the new repair (update the setting + republish merge-config.json) and pass commonDir so board_doctor emits the finding.
+6. Tests: verifyDoctor (mismatch/proven-pm/signature), verifyDoctorState (prompt-once, apply, decline-remembered), boardDoctor (check 12 fires / stays quiet on unknown repos + dismissal).
+<!-- SECTION:PLAN:END -->
