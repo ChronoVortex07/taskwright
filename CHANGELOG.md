@@ -4,6 +4,43 @@ All notable changes to Taskwright are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Concurrent merges no longer flake each other's verify suites.** The merge queue serialized the
+  _merge_, but every caller ran its verify commands **before** enqueuing — so N parallel
+  `/orchestrate-board` subagents each launched a full `bun run test` (itself a CPU-saturating worker
+  pool) at the same time, oversubscribing the machine by ~N×. Git-subprocess-heavy tests then blew
+  their per-test timeouts and the merge aborted `verify_failed`, with every test passing in
+  isolation; agents responded by blind-retrying (one task burned ~11 minutes over 4 consecutive
+  `request_merge` calls) or by pushing `verifyTimeoutMinutes` ever higher, which masked the
+  contention instead of removing it.
+
+  `request_merge` now takes a **shared verify slot** (`src/core/verifySlot.ts`) around every verify
+  run: an O_EXCL lock file in the git common dir, so exactly one verify runs at a time across every
+  worktree _and_ every MCP server process sharing the repo. The slot is held only for the run and
+  released **before** the merge-queue wait, so a slot-holder → queue-waiter → slot-waiter cycle
+  cannot form; it is stealable when its holder's process is gone, its lease expires, or the record is
+  a torn write, so a crashed holder cannot wedge every future merge. Throughput is essentially
+  unchanged (measured: 3 concurrent suites take 57s each = 57s wall; serialized, 21s each = 63s
+  wall), because vitest already uses every core.
+
+### Changed
+
+- **`taskwright.mergeVerifyTimeoutMinutes` default raised 10 → 20.** Measured on this repo:
+  `bun run test` takes 21s unloaded and 57s with three suites running concurrently. 10 minutes was
+  not provably too small, but the margin under heavy load was only ~2-3× and the failure is
+  asymmetric — a premature kill costs an agent a full retry cycle, a late kill only delays aborting a
+  genuinely hung command.
+- **Vitest's per-test `testTimeout` raised 5s → 20s.** This, not the harness cap, is the timeout the
+  load-induced flakes actually hit: a git-subprocess test that takes ~1s alone can exceed 5s on an
+  oversubscribed machine, turning the suite red.
+- **`verify_failed` and `verify_timeout` are now unmistakable in prose**, not just in the abort code:
+  a red suite says it exited non-zero, that a bare retry will fail the same way, and (when the slot
+  serialized it) that no other merge was competing with it; a killed suite says it was _killed_ for
+  exceeding the clock and names the setting to raise. Agents were reading the former as the latter.
+
 ## [1.9.0] — 2026-07-13
 
 The **stable task IDs** release: a draft never changes its ID, so anything that references a draft

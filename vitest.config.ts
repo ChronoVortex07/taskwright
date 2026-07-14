@@ -52,6 +52,23 @@ export default defineConfig({
   test: {
     include: ['src/test/unit/**/*.test.ts'],
     globals: true,
+    /**
+     * TASK-126. Vitest's 5000ms default is the timeout the merge-queue flakes
+     * actually hit: the git-subprocess-heavy suites (boardRef, boardSyncHook,
+     * mcpBoardPushPullHandlers) spawn real `git` processes, and when the machine
+     * is oversubscribed — several agents verifying at once, or a build alongside
+     * the suite — a test that takes ~1s in isolation can exceed 5s waiting for
+     * its subprocesses. The suite then goes red and `request_merge` aborts
+     * `verify_failed`, even though every test passes on its own.
+     *
+     * The verify slot removes verify-vs-verify contention, but a suite still
+     * competes with whatever else the machine is doing, so give the subprocess
+     * tests real headroom. Measured: the whole suite is 21s unloaded and 57s
+     * with three copies running concurrently, so 20s per test is generous
+     * against genuine work while still catching a truly hung test.
+     */
+    testTimeout: 20_000,
+    hookTimeout: 20_000,
     // Without this, `svelte` is externalized and loaded by plain Node ESM resolution, which
     // ignores the conditions above. The regex must cover the SUBPATHS (`svelte/internal/client`)
     // as well: inlining only the bare entry leaves the internals externalized, so the compiled

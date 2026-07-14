@@ -10,6 +10,7 @@ import {
   type QueueEntry,
 } from './mergeQueue';
 import { intermediateStatusForMode, IN_PROGRESS, type MergeConfig } from './mergeConfig';
+import type { VerifySlot } from './verifySlot';
 
 /** Runs a git subcommand in `cwd`, resolving with its captured output. */
 export type GitExecFn = (
@@ -312,8 +313,12 @@ export interface BoardOps {
  * changes nothing.
  */
 export interface MergeProgress {
-  /** Which long phase is running. */
-  phase: 'verify' | 'queue-wait';
+  /**
+   * Which long phase is running. `verify-wait` is the queue for the shared
+   * verify slot (TASK-126): another merge is running its suite, and we hold
+   * nothing while we wait for it.
+   */
+  phase: 'verify' | 'verify-wait' | 'queue-wait';
   /** Human-readable liveness line (what a client should display). */
   message: string;
   /** verify: the command line currently running. */
@@ -361,6 +366,13 @@ export interface FinishDeps {
   board: BoardOps;
   exec: GitExecFn;
   run: RunFn;
+  /**
+   * The shared verify slot (TASK-126): only one `request_merge` anywhere in the
+   * repo runs its verify suite at a time, so concurrent orchestration subagents
+   * stop oversubscribing the machine and flaking each other's suites. Optional —
+   * with no slot the verifies run unserialized (the historical behavior).
+   */
+  verifySlot?: VerifySlot;
   now: () => Date;
   sleep: (ms: number) => Promise<void>;
   /** Base long-poll interval; jittered per iteration. Default 1000ms. */
@@ -425,7 +437,27 @@ async function resolveHeadSha(exec: GitExecFn, cwd: string): Promise<string | nu
 /** The abort reason for a verify timeout — actionable, and never "Verification failed". */
 function verifyTimeoutReason(command: string | undefined, timeoutMs: number): string {
   const seconds = Math.round(timeoutMs / 1000);
-  return `verify timed out after ${seconds}s on \`${command}\` (raise taskwright.mergeVerifyTimeoutMinutes or pass verifyTimeoutMinutes)`;
+  return `verify timed out after ${seconds}s on \`${command}\` — the command was KILLED for exceeding the timeout, it did not fail (raise taskwright.mergeVerifyTimeoutMinutes or pass verifyTimeoutMinutes)`;
+}
+
+/**
+ * The abort reason for a RED verify — the counterpart of {@link verifyTimeoutReason}
+ * (TASK-126, AC5). The two must never be confusable: agents were reading
+ * load-flaked suites as "timeouts", pushing `verifyTimeoutMinutes` higher, and
+ * blind-retrying an unchanged tree. So this reason says, explicitly, that the
+ * command exited non-zero and that a bare retry will fail again — and, when the
+ * run held the shared verify slot, that no other verify was competing with it,
+ * which rules out load contention as the explanation.
+ */
+function verifyFailedReason(
+  command: string | undefined,
+  opts: { afterWait: boolean; serialized: boolean }
+): string {
+  const when = opts.afterWait ? ' after waiting in the merge queue' : '';
+  const contention = opts.serialized
+    ? ' It ran alone (the shared verify slot serializes verify runs), so this is not load contention from another merge — retrying without changing anything will fail the same way.'
+    : ' Retrying without changing anything will fail the same way.';
+  return `Verification FAILED (non-zero exit, not a timeout) on \`${command}\`${when}; fix it and call request_merge again.${contention}`;
 }
 
 /** Invoke the progress observer, swallowing observer errors (fire-and-forget). */
@@ -495,6 +527,39 @@ async function runVerifyObserved(deps: FinishDeps, stage: string): Promise<Verif
 }
 
 /**
+ * Run `fn` while holding the shared verify slot, so no other `request_merge` in
+ * this repo runs its suite at the same time (TASK-126).
+ *
+ * The slot is held ONLY for the duration of the run and released in a `finally`,
+ * which is what keeps AC3 true: `requestMerge` never parks in the merge queue
+ * (or does anything else that waits on another merge) while holding it, so a
+ * slot-holder → queue-waiter → slot-waiter cycle cannot form. With no slot
+ * injected this is a transparent pass-through.
+ */
+async function withVerifySlot(
+  deps: FinishDeps,
+  taskId: string,
+  stage: string,
+  fn: () => Promise<VerifyResult>
+): Promise<VerifyResult> {
+  const slot = deps.verifySlot;
+  if (!slot) return fn();
+  const release = await slot.acquire(taskId, ({ heldBy, waitedSeconds }) =>
+    safeEmit(deps, {
+      phase: 'verify-wait',
+      message:
+        `${stage}: waiting for the shared verify slot — ${heldBy} is running its suite ` +
+        `(${waitedSeconds}s). Verify runs are serialized so they cannot flake each other.`,
+    })
+  );
+  try {
+    return await fn();
+  } finally {
+    await release();
+  }
+}
+
+/**
  * The full `request_merge` lifecycle. By default one blocking call: it suspends
  * on the long-poll until this task is the head AND (auto-mode OR
  * human-approved), then integrates and cleans up. Aborts before enqueue never
@@ -556,13 +621,20 @@ export async function requestMerge(
   const verifyStillCurrent =
     verifiedHeadSha !== null && existing?.verifiedHeadSha === verifiedHeadSha;
   if (!verifyStillCurrent) {
-    const preVerify = await runVerifyObserved(deps, 'verify');
+    // Serialized against every other request_merge in the repo, and released
+    // before we go anywhere near the queue below.
+    const preVerify = await withVerifySlot(deps, taskId, 'verify', () =>
+      runVerifyObserved(deps, 'verify')
+    );
     if (!preVerify.ok) {
       return {
         status: 'aborted',
         reason: preVerify.timedOut
           ? verifyTimeoutReason(preVerify.failedCommand, config.verifyTimeoutMs)
-          : `Verification failed on \`${preVerify.failedCommand}\`; fix it and call request_merge again.`,
+          : verifyFailedReason(preVerify.failedCommand, {
+              afterWait: false,
+              serialized: deps.verifySlot !== undefined,
+            }),
         detail: preVerify.output,
         code: preVerify.timedOut ? 'verify_timeout' : 'verify_failed',
       };
@@ -642,14 +714,22 @@ export async function requestMerge(
     const rebaseWasNoOp =
       verifiedHeadSha !== null && headSha !== null && headSha === verifiedHeadSha;
     if (!rebaseWasNoOp) {
-      const reVerify = await runVerifyObserved(deps, 're-verify');
+      // Take the slot again for the re-verify. We are the queue head here, so we
+      // wait for nothing but the slot itself — and any slot holder is a verify
+      // run that releases when it finishes, never a merge waiting on us.
+      const reVerify = await withVerifySlot(deps, taskId, 're-verify', () =>
+        runVerifyObserved(deps, 're-verify')
+      );
       if (!reVerify.ok) {
         await board.setStatus(taskId, IN_PROGRESS);
         return {
           status: 'aborted',
           reason: reVerify.timedOut
             ? verifyTimeoutReason(reVerify.failedCommand, config.verifyTimeoutMs)
-            : `Verification failed on \`${reVerify.failedCommand}\` after waiting; fix it and call request_merge again.`,
+            : verifyFailedReason(reVerify.failedCommand, {
+                afterWait: true,
+                serialized: deps.verifySlot !== undefined,
+              }),
           detail: reVerify.output,
           code: reVerify.timedOut ? 'verify_timeout' : 'verify_failed',
         };

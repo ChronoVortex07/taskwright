@@ -186,6 +186,51 @@ describe('requestMerge — verify timeout', () => {
     if (r.status === 'aborted') expect(r.code).toBe('verify_timeout');
     expect(b.statuses).toContain('In Progress'); // status reset after enqueue
   });
+
+  // TASK-126 AC5. Agents were reading load-flaked RED suites as "timeouts",
+  // pushing verifyTimeoutMinutes higher and blind-retrying an unchanged tree.
+  // The two aborts must be unmistakable in prose, not just in the abort code.
+  it('a red suite and a killed suite produce unmistakably different reasons', async () => {
+    const cfg: MergeConfig = {
+      ...DEFAULT_MERGE_CONFIG,
+      verifyCommands: ['bun run test'],
+      verifyTimeoutMs: 900_000,
+    };
+    const red: RunFn = async () => ({ code: 1, stdout: 'x', stderr: '' });
+    const killed: RunFn = async () => ({ code: 1, stdout: '', stderr: '', timedOut: true });
+
+    const rRed = await requestMerge(deps({ run: red, config: cfg }), 'TASK-7');
+    const rKilled = await requestMerge(deps({ run: killed, config: cfg }), 'TASK-7');
+    expect(rRed.status).toBe('aborted');
+    expect(rKilled.status).toBe('aborted');
+    if (rRed.status !== 'aborted' || rKilled.status !== 'aborted') return;
+
+    expect(rRed.code).toBe('verify_failed');
+    expect(rRed.reason).toMatch(/FAILED \(non-zero exit, not a timeout\)/);
+    expect(rRed.reason).toMatch(/fail the same way/i); // don't blind-retry
+    expect(rRed.reason).not.toMatch(/timed out/i);
+    expect(rRed.reason).not.toContain('mergeVerifyTimeoutMinutes'); // never suggest a bigger timeout for a red suite
+
+    expect(rKilled.code).toBe('verify_timeout');
+    expect(rKilled.reason).toMatch(/timed out/i);
+    expect(rKilled.reason).toMatch(/KILLED/);
+    expect(rKilled.reason).not.toMatch(/Verification failed/i);
+  });
+
+  it('says the run was not competing with another merge when the slot serialized it', async () => {
+    // With a slot injected, a red verify cannot be blamed on a parallel verify —
+    // and the reason says so, which is what stops the retry loop.
+    const cfg: MergeConfig = { ...DEFAULT_MERGE_CONFIG, verifyCommands: ['bun run test'] };
+    const red: RunFn = async () => ({ code: 1, stdout: 'x', stderr: '' });
+    const slot = { acquire: async () => async (): Promise<void> => {} };
+    const r = await requestMerge(deps({ run: red, config: cfg, verifySlot: slot }), 'TASK-7');
+    expect(r.status).toBe('aborted');
+    if (r.status === 'aborted') {
+      expect(r.code).toBe('verify_failed');
+      expect(r.reason).toMatch(/ran alone|verify slot/i);
+      expect(r.reason).toMatch(/not load contention/i);
+    }
+  });
 });
 
 describe('requestMerge — auto-merge happy path', () => {

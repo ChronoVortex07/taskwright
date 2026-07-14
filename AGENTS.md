@@ -42,9 +42,16 @@ external CLI. At the start of a task session:
    queue entry and board status are kept; resume by calling `request_merge` again with the same task
    ID (+ the returned `ticket`), or park and report the ticket so a later session finishes the merge.
    A `sent_back` on resume means a reviewer sent the task back while you were parked. Never treat
-   `pending` as an error, and never fall back to merging from the repo root. If verification is
-   killed for time (abort code `verify_timeout`), raise `taskwright.mergeVerifyTimeoutMinutes` or
-   pass `verifyTimeoutMinutes` per call — don't shrink the suite to fit the clock.
+   `pending` as an error, and never fall back to merging from the repo root.
+   **Verify runs are serialized repo-wide.** Only one `request_merge` anywhere in the repo runs its
+   verify suite at a time (a shared verify slot); if another merge is verifying, yours waits its
+   turn. A wait there is normal, not a hang — parallel merges can no longer flake each other's
+   suites by oversubscribing the machine. So read the two verify aborts differently:
+   `verify_failed` means a verify command exited **non-zero** — it ran alone, so it is a real
+   failure, not load contention: **do not blind-retry** and do not raise the timeout, fix it.
+   `verify_timeout` means a command was **killed** for exceeding the clock — only then raise
+   `taskwright.mergeVerifyTimeoutMinutes` or pass `verifyTimeoutMinutes` per call, and don't shrink
+   the suite to fit the clock (the default is 20 minutes per command; you should rarely need more).
    If you bootstrapped the worktree yourself with `start_task`, pass the `worktree` it returned:
    `request_merge { taskId, worktree }`. A bare call from a primary-rooted session aborts with
    `wrong_root` — a **misuse, not a cancellation**. Re-issue it with the target; never abandon
@@ -513,7 +520,7 @@ bun run vite &               # Start fixture dev server — note the port it pri
 **Port is per-checkout.** The primary checkout serves on **5173**; a linked `.worktrees/<branch>`
 derives its own stable port from its path (`scripts/lib/fixtureServer.ts`). That is deliberate: with
 a fixed port, Playwright's `reuseExistingServer` silently consumed a fixture server running in a
-*different* worktree and ran the whole suite against **that tree's `dist/webview/`** (TASK-111). Use
+_different_ worktree and ran the whole suite against **that tree's `dist/webview/`** (TASK-111). Use
 the URL vite prints (substitute it for `5173` below); `TASKWRIGHT_FIXTURE_PORT=<port>` pins it, and
 `e2e/global-setup.ts` aborts loudly if the server on our port turns out to serve another tree.
 

@@ -131,21 +131,32 @@ describe('resolveMergeConfigFromSettings', () => {
     expect(resolveMergeConfigFromSettings({ staleMinutes: -1 }).staleMinutes).toBe(30);
   });
 
-  it('defaults verifyTimeoutMs to 10 minutes and omits verifyTimeoutMaxMs', () => {
-    expect(DEFAULT_VERIFY_TIMEOUT_MS).toBe(600_000);
+  // TASK-126: raised 10 → 20 min. The verify suite competes with whatever else a
+  // loaded machine is doing, and a premature kill costs an agent a whole retry
+  // cycle while a late kill only delays aborting a hung command — so the margin
+  // is deliberately generous. See DEFAULT_VERIFY_TIMEOUT_MS for the measurements.
+  it('defaults verifyTimeoutMs to 20 minutes and omits verifyTimeoutMaxMs', () => {
+    expect(DEFAULT_VERIFY_TIMEOUT_MS).toBe(1_200_000);
     const cfg = resolveMergeConfigFromSettings({});
-    expect(cfg.verifyTimeoutMs).toBe(600_000);
+    expect(cfg.verifyTimeoutMs).toBe(1_200_000);
     expect(cfg.verifyTimeoutMaxMs).toBeUndefined();
-    expect(DEFAULT_MERGE_CONFIG.verifyTimeoutMs).toBe(600_000);
+    expect(DEFAULT_MERGE_CONFIG.verifyTimeoutMs).toBe(1_200_000);
   });
 
   it('keeps valid positive timeout values and rejects invalid ones', () => {
     expect(resolveMergeConfigFromSettings({ verifyTimeoutMs: 1_500_000 }).verifyTimeoutMs).toBe(
       1_500_000
     );
-    expect(resolveMergeConfigFromSettings({ verifyTimeoutMs: 0 }).verifyTimeoutMs).toBe(600_000);
-    expect(resolveMergeConfigFromSettings({ verifyTimeoutMs: -5 }).verifyTimeoutMs).toBe(600_000);
-    expect(resolveMergeConfigFromSettings({ verifyTimeoutMs: 'x' }).verifyTimeoutMs).toBe(600_000);
+    // Invalid values fall back to the default, whatever it currently is.
+    expect(resolveMergeConfigFromSettings({ verifyTimeoutMs: 0 }).verifyTimeoutMs).toBe(
+      DEFAULT_VERIFY_TIMEOUT_MS
+    );
+    expect(resolveMergeConfigFromSettings({ verifyTimeoutMs: -5 }).verifyTimeoutMs).toBe(
+      DEFAULT_VERIFY_TIMEOUT_MS
+    );
+    expect(resolveMergeConfigFromSettings({ verifyTimeoutMs: 'x' }).verifyTimeoutMs).toBe(
+      DEFAULT_VERIFY_TIMEOUT_MS
+    );
     expect(
       resolveMergeConfigFromSettings({ verifyTimeoutMaxMs: 3_600_000 }).verifyTimeoutMaxMs
     ).toBe(3_600_000);

@@ -45,6 +45,7 @@ never pollutes one session. Storage backbone is [Backlog.md](https://github.com/
 All features below are complete. Design docs live in `docs/superpowers/specs/`.
 
 ### Board & data model
+
 - **Advisory claiming** — `claimed_by`/`worktree`/`claimed_at` per-task; per-session `@agent/<branch>`
   identity so restarts recognize their own claims; stale-claim expiry (default 12h).
 - **Stable task IDs (one ID space)** — drafts get a real `TASK-N` and keep it for life;
@@ -57,6 +58,7 @@ All features below are complete. Design docs live in `docs/superpowers/specs/`.
   legitimate; promote/demote preserve status.
 
 ### Sync & versioning
+
 - **Single shared board** (Board Sync v2) — exactly one physical board at the primary checkout,
   resolved from any worktree. `sync.mode`: `off` (default) | `git` (manual push/pull) | `git-auto`
   (event-driven auto-commit + sync to a hidden `.taskwright/board/` worktree of the
@@ -67,6 +69,7 @@ All features below are complete. Design docs live in `docs/superpowers/specs/`.
   own policy); drifted board worktrees are folded forward, not aborted against.
 
 ### Tech-tree canvas
+
 - **Tree tab** (default view) — dependency graph where lanes = categories, bands = milestones/ages.
   Pan/zoom, level-of-detail scaling, `treeGeometry.ts` layout engine.
 - **Drag surface** — drag-to-connect (needs/unlocks handles, client-side cycle detection),
@@ -82,6 +85,7 @@ All features below are complete. Design docs live in `docs/superpowers/specs/`.
   by name, so a duplicate is a Svelte `each_key_duplicate` that blanks the canvas.
 
 ### Agent workflow
+
 - **Dispatch** — subscription-safe: renders a paste-ready prompt, copies to clipboard, **never**
   spawns `claude -p`. Worktree isolation on by default.
 - **Execute task (`/execute-task` skill)** — adaptive strategy (plan > independent-subtasks > TDD);
@@ -99,6 +103,7 @@ All features below are complete. Design docs live in `docs/superpowers/specs/`.
   otherwise).
 
 ### MCP + MCP server
+
 - **Taskwright MCP server** — stdio JSON-RPC, 20+ tools, `console.log` → stderr. Build-independent
   in worktrees via committed `scripts/taskwright-mcp.cjs` (resolves primary checkout's
   `dist/mcp/server.js`). MCP root is fixed at launch — cannot re-root mid-session.
@@ -110,23 +115,36 @@ All features below are complete. Design docs live in `docs/superpowers/specs/`.
 - **Superpowers bridge** — `attach_plan` links task→spec; checkbox progress from plan file.
 
 ### Merge queue
-- **Configurable verify** — `taskwright.mergeVerifyTimeoutMinutes`, per-call `verifyTimeoutMinutes`,
-  machine-readable abort codes (`verify_timeout`|`verify_failed`|`dirty_worktree`|`dirty_primary`|
-  `rebase_conflict`).
+
+- **Serialized verify (verify slot)** — the queue serializes the _merge_; the verify slot
+  (`src/core/verifySlot.ts`) serializes the _verify_. One `request_merge` runs its suite at a time,
+  repo-wide, via an O_EXCL lock file in the git common dir (cross-process: concurrent subagents AND
+  separate MCP servers). Held only for the run and released **before** the queue wait — so no
+  slot→queue→slot deadlock; stealable on a dead pid / expired lease / torn write, so a crashed
+  holder can't wedge every future merge. Without it, N orchestration subagents ran N CPU-saturating
+  `bun run test`s at once and flaked each other (`verify_failed` with every test green in isolation).
+- **Configurable verify** — `taskwright.mergeVerifyTimeoutMinutes` (default 20), per-call
+  `verifyTimeoutMinutes`, machine-readable abort codes (`verify_timeout`|`verify_failed`|
+  `dirty_worktree`|`dirty_primary`|`rebase_conflict`). `verify_failed` (red exit) and
+  `verify_timeout` (killed) must stay unmistakable in prose, not just in the code — agents were
+  reading flakes as timeouts and blind-retrying. Vitest's per-test `testTimeout` (20s, not the 5s
+  default) is the _other_ timeout that matters: it, not the harness cap, is what load actually blew.
 - **Resumable** — `request_merge { waitMinutes }` returns `{ status: "pending", queuePosition,
-  ticket }` on expiry; resume with the same taskId + ticket. Queue-head re-verify skipped when base
+ticket }` on expiry; resume with the same taskId + ticket. Queue-head re-verify skipped when base
   didn't move.
 - **Verify doctor** — classifies repo type, flags provably unrunnable commands; never rewrites
   silently.
 - **Durable merge-config** — only explicitly-set settings republished; agent fixes survive restarts.
 
 ### Multi-agent
+
 - **Codex support** — native `.agents/skills/` SKILL.md packages (same as Claude Code gets),
   `.codex-plugin/` distributable, MCP server in `$CODEX_HOME/config.toml`.
 - **Agent-agnostic dispatch** — profiles as data; headless deny-list applies regardless of agent
   brand.
 
 ### Performance & startup
+
 - **No glob activation events** — plain `workspaceContains:` paths only (build fails if a glob
   returns).
 - **Deferred bootstrap** — git subprocesses run ~2s after activation, never inline.
@@ -134,6 +152,7 @@ All features below are complete. Design docs live in `docs/superpowers/specs/`.
 - **Zoom crispness** — `will-change: transform` is gesture-scoped, dropped at rest.
 
 ### Health
+
 - **Board doctor** — typed findings with one-click repairs; runs silently-when-clean at
   activation; `board_doctor` MCP tool for pre-flight checks.
 - **Intake** — "Categorize with Claude" captures editor notes, renders paste-ready prompt;

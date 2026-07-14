@@ -28,8 +28,30 @@ export const INTERMEDIATE_STATUSES: string[] = MERGE_MODES.map(intermediateStatu
 
 export const DEFAULT_VERIFY_COMMANDS = ['bun run test', 'bun run lint', 'bun run typecheck'];
 export const DEFAULT_STALE_MINUTES = 30;
-/** Default per-command verify timeout: 10 minutes (the historical hardcoded cap). */
-export const DEFAULT_VERIFY_TIMEOUT_MS = 600_000;
+/**
+ * Default per-command verify timeout: 20 minutes (TASK-126; was 10).
+ *
+ * Reviewed against this repo's own suite, measured on a Windows dev machine:
+ *   - unloaded:            `bun run test` 21s, `bun run lint` 4s, `bun run typecheck` 3s
+ *   - 3 suites in parallel: `bun run test` 57s each (~2.7× inflation — vitest already
+ *                           saturates every core, so N concurrent runs oversubscribe by ~N×)
+ *
+ * A realistic worst case (5+ orchestration subagents, plus builds and an
+ * extension host) lands in the low minutes, so 10 minutes was not *provably*
+ * too small — but the margin was only ~2-3×, and the failure is badly
+ * asymmetric: a premature kill costs an agent a full retry cycle (mined
+ * evidence: TASK-90 burned ~11 minutes over 4 consecutive request_merge calls),
+ * while a late kill only delays the abort of a genuinely hung command. 20
+ * minutes restores a ~4× margin under heavy load at that trivial cost.
+ *
+ * Note what this default is NOT: the load-induced flakes that motivated TASK-126
+ * were mostly *vitest per-test* timeouts (`testTimeout`, see vitest.config.ts)
+ * surfacing as `verify_failed` — a red suite, not a killed command. Raising this
+ * value would never have fixed them. The real fixes are the shared verify slot
+ * (verifySlot.ts — verify runs no longer overlap) and that per-test timeout;
+ * this raise is belt-and-braces for the genuinely slow, genuinely loaded case.
+ */
+export const DEFAULT_VERIFY_TIMEOUT_MS = 1_200_000;
 
 export interface MergeConfig {
   mode: MergeMode;

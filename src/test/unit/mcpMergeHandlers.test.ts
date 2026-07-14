@@ -242,6 +242,35 @@ describe('requestMergeHandler', () => {
     };
   }
 
+  // TASK-126: the handler must wire the REAL cross-process slot by default — the
+  // whole point is that two MCP servers (or two subagents) sharing this repo
+  // cannot verify at once. Proven against the real filesystem: the lock exists
+  // at <commonDir>/taskwright/verify-slot.lock while the verify command runs,
+  // names the task holding it, and is gone once the merge returns.
+  it('holds the shared verify-slot lock file while verifying, and releases it after', async () => {
+    const f = timeoutFixture({});
+    const primaryRoot = path.join(tmpDir, 'primary');
+    const lockPath = path.join(primaryRoot, '.git', 'taskwright', 'verify-slot.lock');
+
+    let lockDuringVerify: string | null = null;
+    const observingRun: RunFn = async () => {
+      lockDuringVerify = fs.existsSync(lockPath) ? fs.readFileSync(lockPath, 'utf-8') : null;
+      return { code: 0, stdout: '', stderr: '' };
+    };
+
+    const r = await requestMergeHandler(
+      makeDeps(f.root, { board: f.board, fsDeps: f.fsDeps, shellRun: observingRun }),
+      { taskId: 'TASK-7' }
+    );
+    expect(r.status).toBe('merged');
+    expect(lockDuringVerify).not.toBeNull();
+    expect(JSON.parse(lockDuringVerify as unknown as string)).toMatchObject({
+      owner: 'TASK-7',
+      pid: process.pid,
+    });
+    expect(fs.existsSync(lockPath)).toBe(false); // released — no leaked lock wedges the next merge
+  });
+
   it('runs verify with the config verifyTimeoutMs by default', async () => {
     const f = timeoutFixture({ verifyTimeoutMs: 720_000 });
     const r = await requestMergeHandler(

@@ -62,6 +62,14 @@ import {
   type RequestMergeResult,
   type MergeProgress,
 } from '../core/finishTask';
+import {
+  FileVerifySlot,
+  nodeVerifySlotFs,
+  verifySlotLeaseMs,
+  verifySlotPath,
+  type VerifySlot,
+  type VerifySlotFs,
+} from '../core/verifySlot';
 import { worktreePathFor } from '../core/WorktreeService';
 import { selectReadyTasks, DEFAULT_CLAIM_STALENESS_HOURS } from '../core/readyTasks';
 import { resolveClaimAction, stalenessMsFromHours } from '../core/claimResolution';
@@ -96,6 +104,13 @@ export interface McpHandlerDeps {
   board?: BoardOps;
   /** Injectable fs adapter for queue/config I/O (defaults to nodeQueueFs). Tests override. */
   fsDeps?: QueueFsDeps;
+  /**
+   * Injectable shared verify slot (TASK-126). Defaults to a FileVerifySlot over
+   * `<commonDir>/taskwright/verify-slot.lock` — the real, cross-process one.
+   */
+  verifySlot?: VerifySlot;
+  /** Injectable fs adapter for the verify slot's lock file (defaults to nodeVerifySlotFs). */
+  verifySlotFs?: VerifySlotFs;
   /** Injectable git runner for board-ref plumbing that needs isolated-index env
    *  forwarding (defaults to boardRef's defaultBoardExec) — `gitExec` above has
    *  no env param and would silently drop `GIT_INDEX_FILE`. Tests override. */
@@ -541,6 +556,24 @@ export async function requestMergeHandler(
       ? args.waitMinutes
       : undefined;
 
+  const now = deps.now ?? ((): Date => new Date());
+  const sleep =
+    deps.sleep ?? ((ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms)));
+
+  // TASK-126: the shared verify slot. It lives beside the merge queue in the
+  // common dir, so it serializes verify runs across every worktree AND every MCP
+  // server process sharing this repo — which is exactly the concurrency
+  // /orchestrate-board creates. The lease covers the worst case a legitimate
+  // verify can take (every command running to its full timeout) so a slow suite
+  // is never robbed of its slot.
+  const verifySlot =
+    deps.verifySlot ??
+    new FileVerifySlot(verifySlotPath(facts.commonDir), deps.verifySlotFs ?? nodeVerifySlotFs, {
+      now,
+      sleep,
+      leaseMs: verifySlotLeaseMs(config.verifyTimeoutMs, config.verifyCommands.length),
+    });
+
   const result = await requestMerge(
     {
       root,
@@ -552,8 +585,9 @@ export async function requestMergeHandler(
       board,
       exec,
       run,
-      now: deps.now ?? (() => new Date()),
-      sleep: deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))),
+      verifySlot,
+      now,
+      sleep,
       onProgress,
     },
     args.taskId,

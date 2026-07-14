@@ -178,9 +178,9 @@
         },
         "taskwright.mergeVerifyTimeoutMinutes": {
           "type": "number",
-          "default": 10,
+          "default": 20,
           "minimum": 1,
-          "markdownDescription": "Minutes each `taskwright.mergeVerifyCommands` command may run before `request_merge` kills it and aborts with code `verify_timeout`. Raise this for repos with long test suites so verification can actually finish. An agent can also raise it per call via the `verifyTimeoutMinutes` parameter of the `request_merge` MCP tool (bounded by `taskwright.mergeVerifyTimeoutMaxMinutes`)."
+          "markdownDescription": "Minutes each `taskwright.mergeVerifyCommands` command may run before `request_merge` kills it and aborts with code `verify_timeout` (distinct from `verify_failed`, which means the command actually went red). Raise this for repos with long test suites so verification can actually finish. An agent can also raise it per call via the `verifyTimeoutMinutes` parameter of the `request_merge` MCP tool (bounded by `taskwright.mergeVerifyTimeoutMaxMinutes`). Note that concurrent `request_merge` calls no longer run their verify suites at the same time — they take turns via a shared verify slot — so a slow verify is rarely a sign that this value is too low."
         },
         "taskwright.mergeVerifyTimeoutMaxMinutes": {
           "type": "number",
