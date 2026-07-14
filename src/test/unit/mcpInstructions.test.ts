@@ -12,8 +12,14 @@ describe('TASKWRIGHT_MCP_INSTRUCTIONS', () => {
     expect(critical).toContain('worktree');
   });
 
-  it('warns agents away from the destructive/manual close paths', () => {
-    expect(TASKWRIGHT_MCP_INSTRUCTIONS).toContain('Do not call complete_task');
+  it('warns agents away from the manual close path', () => {
     expect(TASKWRIGHT_MCP_INSTRUCTIONS).toContain('do not merge from the primary checkout');
+  });
+
+  // TASK-133: complete_task is no longer registered as an MCP tool, so the instructions must not
+  // spend their (truncation-prone) budget warning agents away from a tool they cannot call. The
+  // warning existed only to defend against a surface we ourselves exposed.
+  it('does not warn about complete_task, which is no longer an exposed tool', () => {
+    expect(TASKWRIGHT_MCP_INSTRUCTIONS).not.toContain('complete_task');
   });
 });

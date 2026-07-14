@@ -845,31 +845,11 @@ export class TasksController {
         break;
       }
 
-      case 'completeTask': {
-        if (!this.parser || !message.taskId) break;
-        const completeTarget = await this.parser.getTask(message.taskId);
-        if (completeTarget && isReadOnlyTask(completeTarget)) {
-          vscode.window.showErrorMessage(
-            `Cannot complete task: ${completeTarget.id} is read-only from ${getReadOnlyTaskContext(completeTarget)}.`
-          );
-          break;
-        }
-        const completeConfirmation = await vscode.window.showWarningMessage(
-          `Move task "${completeTarget?.title}" to completed?`,
-          { modal: true },
-          'Complete'
-        );
-
-        if (completeConfirmation === 'Complete') {
-          try {
-            await this.writer.completeTask(message.taskId, this.parser);
-            await this.refresh();
-          } catch (error) {
-            vscode.window.showErrorMessage(`Failed to complete: ${error}`);
-          }
-        }
-        break;
-      }
+      // NOTE (TASK-133): there is deliberately no 'completeTask' case. Moving a task into
+      // `backlog/completed/` takes it off the board, and `request_merge` already marks merged work
+      // Done in place — so the action was pure downside, one click from the board. The message
+      // variant is gone from the union too, so nothing can send it. `BacklogWriter.completeTask()`
+      // is untouched, pending TASK-131's Done-vs-Completed decision.
 
       case 'promoteDraft': {
         if (!this.parser || !message.taskId) break;

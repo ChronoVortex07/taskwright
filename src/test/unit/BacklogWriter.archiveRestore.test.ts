@@ -333,6 +333,32 @@ describe('BacklogWriter', () => {
       expect(result).toEqual(posixPath('/fake/backlog/tasks/task-5 - Archived-Task.md'));
     });
 
+    // TASK-133: complete_task is dewired, but tasks ALREADY sitting in completed/ must not be
+    // orphaned by that — restore still has to bring them back to tasks/. (completed/ is not an
+    // archive subfolder, so it restores as a task, never as a draft.)
+    it('should move an already-completed task from completed/ back to tasks/', async () => {
+      vi.spyOn(mockParser, 'getTask').mockResolvedValue({
+        id: 'TASK-7',
+        title: 'Completed Task',
+        status: 'Done' as const,
+        folder: 'completed' as const,
+        filePath: path.join('/fake/backlog/completed', 'task-7 - Completed-Task.md'),
+        labels: [],
+        assignee: [],
+        dependencies: [],
+        acceptanceCriteria: [],
+        definitionOfDone: [],
+      });
+
+      const result = await writer.restoreArchivedTask('TASK-7', mockParser);
+
+      expect(fs.renameSync).toHaveBeenCalledWith(
+        posixPath('/fake/backlog/completed/task-7 - Completed-Task.md'),
+        posixPath('/fake/backlog/tasks/task-7 - Completed-Task.md')
+      );
+      expect(result).toEqual(posixPath('/fake/backlog/tasks/task-7 - Completed-Task.md'));
+    });
+
     it('should throw when task is not found', async () => {
       vi.spyOn(mockParser, 'getTask').mockResolvedValue(undefined);
 

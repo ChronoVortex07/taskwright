@@ -98,37 +98,10 @@ describe('TasksViewProvider', () => {
       );
     });
 
-    it('blocks completeTask for read-only tasks before confirmation prompt', async () => {
-      (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
-        id: 'TASK-REMOTE',
-        title: 'Remote Task',
-        status: 'Done',
-        source: 'remote',
-        branch: 'origin/main',
-        labels: [],
-        assignee: [],
-        dependencies: [],
-        acceptanceCriteria: [],
-        definitionOfDone: [],
-        filePath: '/fake/.backlog/branches/origin-main/remote-task.md',
-      });
-
-      const provider = new TasksViewProvider(extensionUri, mockParser, mockContext);
-      resolveView(provider);
-
-      const messageHandler = (mockWebview.onDidReceiveMessage as ReturnType<typeof vi.fn>).mock
-        .calls[0][0];
-      await messageHandler({ type: 'completeTask', taskId: 'TASK-REMOTE' });
-
-      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
-        expect.stringContaining('read-only')
-      );
-      expect(vscode.window.showWarningMessage).not.toHaveBeenCalledWith(
-        expect.stringContaining('Move task'),
-        expect.anything(),
-        expect.anything()
-      );
-    });
+    // TASK-133 removed the read-only guard for 'completeTask' along with the message case itself —
+    // the strongest possible guard. The equivalent read-only protection for the surviving
+    // destructive move (archive) is covered above/below; see completeTaskDewired.test.ts for the
+    // contract that no completeTask entry point comes back.
 
     it('does not treat local tasks with branch metadata as read-only', async () => {
       (mockParser.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({

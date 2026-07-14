@@ -37,7 +37,6 @@ import {
   createCategoryHandler,
   createMilestoneHandler,
   editTaskHandler,
-  completeTaskHandler,
   archiveTaskHandler,
   restoreTaskHandler,
   promoteDraftHandler,
@@ -402,15 +401,12 @@ async function main(): Promise<void> {
     async (args) => runTool(() => editTaskHandler(deps, args))
   );
 
-  server.registerTool(
-    'complete_task',
-    {
-      title: 'Complete task',
-      description: 'Move a task into completed/. Returns { taskId, outcome, path }.',
-      inputSchema: { taskId: z.string().describe('Task ID to complete.') },
-    },
-    async (args) => runTool(() => completeTaskHandler(deps, args))
-  );
+  // NOTE (TASK-133): the completion tool is deliberately NOT registered here. It moved a task into
+  // `backlog/completed/`, taking it off the board entirely — while `request_merge` already marks a
+  // merged task Done and leaves it in `tasks/`, where it stays visible. Exposing it only gave
+  // agents and humans a one-call way to make finished work vanish. The machinery is intact (see
+  // `handlers.ts` and `BacklogWriter`); re-wiring is a re-registration here, once TASK-131 settles
+  // the Done-vs-Completed archival semantics.
 
   server.registerTool(
     'archive_task',

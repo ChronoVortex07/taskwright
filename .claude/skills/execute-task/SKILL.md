@@ -103,8 +103,8 @@ agent. The sub-skills it invokes (`superpowers:executing-plans`, `superpowers:su
    session belongs on the task, not just in your context.
 
 5. **Record progress.** As you go, use `edit_task` to append implementation notes (decisions,
-   surprises) and, when done, a final summary. Do **not** call `complete_task` — `request_merge`
-   marks the task Done on the board and leaves it there.
+   surprises) and, when done, a final summary. Finishing is `request_merge`'s job — it marks the
+   task Done on the board and leaves it there, in `tasks/`, still visible.
 
 6. **Cancellation checkpoint (mandatory before closing).** Before `request_merge` — and between major
    steps — run the cancellation check (below). If cancelled, **stop; do not `request_merge`**.

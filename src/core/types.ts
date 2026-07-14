@@ -306,7 +306,9 @@ export type WebviewMessage =
   | { type: 'toggleMilestoneCollapse'; milestone: string }
   | { type: 'filterByStatus'; status: string }
   | { type: 'filterByLabel'; label: string }
-  | { type: 'completeTask'; taskId: string }
+  // TASK-133: no 'completeTask' variant — filing finished work into backlog/completed/ takes it
+  // off the board, and request_merge already marks merged work Done in place. Dewired at every
+  // surface; the writer method survives for a future, deliberate archival feature (TASK-131).
   | { type: 'promoteDraft'; taskId: string }
   | { type: 'promoteDrafts'; taskIds: string[] }
   | { type: 'demoteTask'; taskId: string }
