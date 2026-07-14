@@ -36,11 +36,11 @@ Fix direction: (a) make start_task and claim_task return the task's full context
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 start_task and claim_task responses include the task's full context (frontmatter summary, description, acceptance criteria, plan, board file path)
-- [ ] #2 get_active_task falls back to the session's own claimed/started task when the ephemeral marker is unset, and says which source it used
-- [ ] #3 Externally-dispatched sessions see no behavior change (marker still wins over fallback)
-- [ ] #4 orchestrate-board and execute-task skills reflect the new contract; no skill step instructs a directory hunt for the board
-- [ ] #5 Unit tests cover marker-set, fallback, and no-claim (still active:false) cases
+- [x] #1 start_task and claim_task responses include the task's full context (frontmatter summary, description, acceptance criteria, plan, board file path)
+- [x] #2 get_active_task falls back to the session's own claimed/started task when the ephemeral marker is unset, and says which source it used
+- [x] #3 Externally-dispatched sessions see no behavior change (marker still wins over fallback)
+- [x] #4 orchestrate-board and execute-task skills reflect the new contract; no skill step instructs a directory hunt for the board
+- [x] #5 Unit tests cover marker-set, fallback, and no-claim (still active:false) cases
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -61,3 +61,13 @@ Tightened one pre-existing test: `mcpHandlers.test.ts` asserted a self re-claim 
 
 Verified end-to-end by driving the BUILT dist/mcp/server.js over stdio JSON-RPC in a scratch repo, replaying the exact friction sequence: start_task and claim_task return full context; get_active_task (the call that returned {"active": false} for 9 of 11 subagents) now returns active:true / source:"session"; two tasks in flight yield active:false + candidates.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+start_task and claim_task now hand back the task's full context (description, ACs, plan + progress, board file path), so a self-bootstrapping session never needs a follow-up lookup — and get_active_task gained a session-claim fallback for the structural blind spot where start_task seeds the marker inside the new worktree while the MCP server stays rooted in the primary tree.
+
+Resolution order is marker (board/dispatch — still wins, so dispatched sessions are unchanged) → session ledger → none, with the source reported. The ledger is a list, and with more than one task in flight get_active_task returns candidates instead of guessing: one orchestrator session shares one MCP server across all its subagents and MCP calls carry no cwd, so a "most recent" guess would have handed N-1 subagents someone else's task.
+
+New: src/core/sessionTasks.ts (git-ignored ledger, atomic writes, best-effort — never gates a claim). 30 new tests across sessionTasks / sessionTaskContext / taskContextContract; full suite 2411 passing, lint + typecheck clean, and verified end-to-end against the built dist/mcp/server.js over stdio JSON-RPC.
+<!-- SECTION:FINAL_SUMMARY:END -->
