@@ -390,15 +390,27 @@ interface ResolvedWorktreeTarget {
 const IS_WINDOWS = process.platform === 'win32';
 
 /**
- * Compare two filesystem paths for equality after resolving them. On Windows the drive letter and
- * the path are case-insensitive (as is the FS), so `git worktree list` reporting `C:\…` must still
- * match a `primaryRoot` derived as `c:\…`. `path.resolve` normalizes separators but NOT case, so a
- * strict `===` would wrongly miss it. `winLike` is injectable so the behavior is testable on both
- * platforms.
+ * Compare two filesystem paths for equality after resolving them. Two things differ between what
+ * `git worktree list --porcelain` prints and what `path.resolve` yields on Windows, and BOTH must
+ * normalize away or request_merge rejects a perfectly good target with "not a linked worktree of
+ * this repository" (the wild-type failure that derailed the TASK-80/TASK-81 closes):
+ *
+ *  - **separators** — git prints `C:/repo/.worktrees/x`, path.resolve yields `C:\repo\.worktrees\x`;
+ *  - **drive-letter case** — git may print `c:` where the resolved path has `C:` (the FS is
+ *    case-insensitive, so both name the same tree).
+ *
+ * `winLike` selects the path FLAVOR, not just the case rule: on a Windows-like platform a backslash
+ * is a separator (so the two spellings above must collapse to one), while on POSIX a backslash is a
+ * legal filename character and must NOT be treated as one. Resolving with the ambient `path.resolve`
+ * would tie that decision to `process.platform` and make `winLike` a half-truth — the win32 rules
+ * would be untestable on Linux CI and vice versa. Binding the flavor to the flag keeps production
+ * behavior identical on both real platforms (`path.win32 === path` on Windows, `path.posix === path`
+ * on POSIX) while making both rule sets assertable from either one (TASK-130).
  */
 export function isSamePath(a: string, b: string, winLike: boolean = IS_WINDOWS): boolean {
-  const na = path.resolve(a);
-  const nb = path.resolve(b);
+  const flavor = winLike ? path.win32 : path.posix;
+  const na = flavor.resolve(a);
+  const nb = flavor.resolve(b);
   return winLike ? na.toLowerCase() === nb.toLowerCase() : na === nb;
 }
 

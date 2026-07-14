@@ -65,6 +65,43 @@ describe('parseWorktreeEntries', () => {
     expect(parseWorktreeEntries('')).toEqual([]);
     expect(parseWorktreeEntries('garbage\nbranch refs/heads/x\n')).toEqual([]);
   });
+
+  // TASK-130 — AC #1, the parse half. Verbatim `git worktree list --porcelain` output as git
+  // prints it on Windows: forward slashes, lowercase drive letter, CRLF line endings. The parser
+  // must keep those paths byte-for-byte (it is isSamePath's job, not the parser's, to reconcile
+  // them with a backslash path.resolve() result) — and the two must then MATCH.
+  it('keeps git-style Windows paths verbatim, and they match the backslash-resolved form', () => {
+    const porcelain =
+      'worktree c:/Users/dev/Documents/GitHub/taskwright\r\n' +
+      'HEAD 1111111111111111111111111111111111111111\r\n' +
+      'branch refs/heads/main\r\n' +
+      '\r\n' +
+      'worktree c:/Users/dev/Documents/GitHub/taskwright/.worktrees/task-80-x\r\n' +
+      'HEAD 2222222222222222222222222222222222222222\r\n' +
+      'branch refs/heads/task-80-x\r\n';
+
+    const entries = parseWorktreeEntries(porcelain);
+    expect(entries).toEqual([
+      {
+        path: 'c:/Users/dev/Documents/GitHub/taskwright',
+        branch: 'main',
+        detached: false,
+        bare: false,
+      },
+      {
+        path: 'c:/Users/dev/Documents/GitHub/taskwright/.worktrees/task-80-x',
+        branch: 'task-80-x',
+        detached: false,
+        bare: false,
+      },
+    ]);
+
+    // The end-to-end claim: what git parsed out (forward slashes, `c:`) is the SAME tree as what
+    // path.resolve() hands Gate 2 (backslashes, `C:`). This is the comparison request_merge makes.
+    const resolvedTarget = 'C:\\Users\\dev\\Documents\\GitHub\\taskwright\\.worktrees\\task-80-x';
+    const match = entries.find((e) => isSamePath(e.path, resolvedTarget, true) && !e.bare);
+    expect(match?.branch).toBe('task-80-x');
+  });
 });
 
 describe('isSamePath', () => {
@@ -79,6 +116,47 @@ describe('isSamePath', () => {
   });
   it('normalizes separators/segments before comparing', () => {
     expect(isSamePath('/repo/a/b', '/repo/./a/b', false)).toBe(true);
+  });
+
+  // TASK-130 — the wild-type Windows false negative that derailed the TASK-80/TASK-81 closes:
+  // `git worktree list --porcelain` prints FORWARD slashes (and whatever case the drive letter
+  // has), while path.resolve() yields BACKslashes with the cwd's drive case. Comparing those two
+  // raw strings misses, and request_merge wrongly reported "not a linked worktree of this
+  // repository". These assertions pin the separator+case normalization, and they are pinned to the
+  // win32 flavor explicitly (via winLike) rather than to process.platform — so they exercise the
+  // SAME code path and assert the SAME match on Windows and on Linux CI (AC #4).
+  it('matches git-style forward-slash output against a backslash path.resolve() result (win32)', () => {
+    const fromGit = 'C:/Users/dev/repo/.worktrees/task-80-x'; // git worktree list --porcelain
+    const fromResolve = 'C:\\Users\\dev\\repo\\.worktrees\\task-80-x'; // path.resolve()
+    expect(isSamePath(fromGit, fromResolve, true)).toBe(true);
+  });
+
+  it('matches when the separators AND the drive-letter case both differ (win32)', () => {
+    // git said `c:/…`, path.resolve() said `C:\…` — the exact pair that produced the false negative.
+    expect(
+      isSamePath(
+        'c:/users/dev/repo/.worktrees/task-81-y',
+        'C:\\Users\\dev\\repo\\.worktrees\\task-81-y',
+        true
+      )
+    ).toBe(true);
+    // …and mixed separators within one path still normalize.
+    expect(
+      isSamePath('C:/Users\\dev/repo\\.worktrees/x', 'c:\\users/dev\\repo/.worktrees\\x', true)
+    ).toBe(true);
+  });
+
+  it('still distinguishes genuinely different win32 paths (the normalization is not a blanket true)', () => {
+    expect(
+      isSamePath('C:/repo/.worktrees/task-80-x', 'C:\\repo\\.worktrees\\task-81-y', true)
+    ).toBe(false);
+    expect(isSamePath('C:/repo/.worktrees/x', 'D:\\repo\\.worktrees\\x', true)).toBe(false);
+  });
+
+  it('does NOT treat a backslash as a separator on POSIX (it is a legal filename char there)', () => {
+    // Guards the flavor split: with winLike=false a backslash must stay an ordinary character,
+    // so a POSIX board can never confuse `a\b` (one file) with `a/b` (a directory + file).
+    expect(isSamePath('/repo/a\\b', '/repo/a/b', false)).toBe(false);
   });
 });
 
@@ -108,7 +186,26 @@ interface ExecOpts {
   /** Return a RELATIVE `.git` for rev-parse --git-dir/--git-common-dir, as git does from the
    *  primary tree — the case that broke the worktree target when path.resolve dropped the cwd. */
   relativeGitDir?: boolean;
+  /** Print worktree paths the way real git does: forward slashes, lowercased drive letter
+   *  (TASK-130). See {@link gitStylePath}. */
+  gitStylePaths?: boolean;
   onArgs?: (args: string[]) => void;
+}
+
+/**
+ * Render a native absolute path the way `git worktree list --porcelain` actually prints it on
+ * Windows: FORWARD slashes, and a drive letter whose case need not match the one `path.resolve`
+ * produced. `path.join`/`path.resolve` give us `C:\…\.worktrees\task-7-x`; git gives us
+ * `c:/…/.worktrees/task-7-x`. Feeding the latter into the handler while the target arg resolves to
+ * the former reproduces the exact false negative that made request_merge claim a registered
+ * worktree "is not a linked worktree of this repository".
+ *
+ * On POSIX both transforms are no-ops (no backslashes, no drive letter), so the same test body is
+ * valid on Linux CI — it exercises the real regression on Windows and stays a true statement about
+ * git's output everywhere (AC #4).
+ */
+function gitStylePath(abs: string): string {
+  return abs.replace(/\\/g, '/').replace(/^([a-zA-Z]):/, (_m, d: string) => `${d.toLowerCase()}:`);
 }
 
 /**
@@ -126,11 +223,12 @@ function targetGitExec(primaryRoot: string, worktreeAbs: string, opts: ExecOpts 
       return { stdout: opts.relativeGitDir ? '.git' : path.join(primaryRoot, '.git'), stderr: '' };
     if (args[0] === 'worktree' && args[1] === 'list') {
       const branchLine = opts.detachedTarget ? 'detached' : 'branch refs/heads/task-7-x';
+      const render = opts.gitStylePaths ? gitStylePath : (p: string) => p;
       const targetStanza = opts.omitTargetFromList
         ? ''
-        : `\nworktree ${worktreeAbs}\nHEAD 2222222222222222222222222222222222222222\n${branchLine}\n`;
+        : `\nworktree ${render(worktreeAbs)}\nHEAD 2222222222222222222222222222222222222222\n${branchLine}\n`;
       return {
-        stdout: `worktree ${primaryRoot}\nHEAD 1111111111111111111111111111111111111111\nbranch refs/heads/main\n${targetStanza}`,
+        stdout: `worktree ${render(primaryRoot)}\nHEAD 1111111111111111111111111111111111111111\nbranch refs/heads/main\n${targetStanza}`,
         stderr: '',
       };
     }
@@ -261,6 +359,71 @@ describe('requestMergeHandler — explicit worktree target (root-override, DRAFT
     expect(r.status).toBe('merged');
     expect(board.statuses.at(-1)).toBe('Done');
   });
+
+  // TASK-130 — AC #1. The wild-type Windows false negative, driven end-to-end through
+  // resolveWorktreeTarget: `git worktree list --porcelain` prints forward slashes with a
+  // lowercased drive letter, while path.resolve() builds the target as `C:\…\.worktrees\…`.
+  // Gate 2 compares those two, and before the isSamePath normalization it rejected a registered
+  // worktree as "not a linked worktree of this repository" — derailing the TASK-80/TASK-81 closes
+  // into live MCP debugging. On POSIX gitStylePath() is a no-op, so these run green on Linux CI.
+  it('matches a git-style forward-slash worktree list against the backslash-resolved target (bare branch name)', async () => {
+    const primaryRoot = path.join(tmpDir, 'primary');
+    const worktreeAbs = path.join(primaryRoot, '.worktrees', 'task-7-x');
+    fs.mkdirSync(worktreeAbs, { recursive: true });
+    const board = recordingBoard();
+
+    const r = await requestMergeHandler(
+      makeHandlerDeps(primaryRoot, {
+        gitExec: targetGitExec(primaryRoot, worktreeAbs, { gitStylePaths: true }),
+        board,
+        fsDeps: autoMergeFsDeps(primaryRoot),
+      }),
+      { taskId: 'TASK-7', worktree: 'task-7-x' }
+    );
+
+    // Without the separator/case normalization this is `aborted: not a linked worktree`.
+    expect(r.status).toBe('merged');
+    expect(board.statuses.at(-1)).toBe('Done');
+  });
+
+  it('matches a git-style forward-slash worktree list against a repo-root-relative target path', async () => {
+    const primaryRoot = path.join(tmpDir, 'primary');
+    const worktreeAbs = path.join(primaryRoot, '.worktrees', 'task-7-x');
+    fs.mkdirSync(worktreeAbs, { recursive: true });
+
+    const r = await requestMergeHandler(
+      makeHandlerDeps(primaryRoot, {
+        gitExec: targetGitExec(primaryRoot, worktreeAbs, { gitStylePaths: true }),
+        board: recordingBoard(),
+        fsDeps: autoMergeFsDeps(primaryRoot),
+      }),
+      { taskId: 'TASK-7', worktree: '.worktrees/task-7-x' }
+    );
+    expect(r.status).toBe('merged');
+  });
+
+  // A BACKSLASH-separated `worktree` arg is only a path on Windows — on POSIX a backslash is a
+  // legal filename character, so `.worktrees\task-7-x` there names one oddly-spelled file and must
+  // NOT resolve to the worktree. Hence this one assertion is genuinely Windows-only (it runs for
+  // real on the windows-latest CI leg and is skipped, never failed, on Linux — AC #4).
+  it.runIf(process.platform === 'win32')(
+    'accepts a backslash-separated worktree arg against git-style forward-slash output (Windows)',
+    async () => {
+      const primaryRoot = path.join(tmpDir, 'primary');
+      const worktreeAbs = path.join(primaryRoot, '.worktrees', 'task-7-x');
+      fs.mkdirSync(worktreeAbs, { recursive: true });
+
+      const r = await requestMergeHandler(
+        makeHandlerDeps(primaryRoot, {
+          gitExec: targetGitExec(primaryRoot, worktreeAbs, { gitStylePaths: true }),
+          board: recordingBoard(),
+          fsDeps: autoMergeFsDeps(primaryRoot),
+        }),
+        { taskId: 'TASK-7', worktree: '.worktrees\\task-7-x' }
+      );
+      expect(r.status).toBe('merged');
+    }
+  );
 
   it('bare primary-tree call (no worktree arg) still aborts with the isPrimaryTree message', async () => {
     const primaryRoot = path.join(tmpDir, 'primary');
