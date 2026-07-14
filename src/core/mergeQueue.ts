@@ -4,8 +4,38 @@ import * as path from 'path';
 /** Integration mode chosen at submission; drives gate, action, and status name. */
 export type MergeMode = 'manual-review' | 'auto-merge' | 'auto-pr';
 
-/** One task's place in the shared right-of-way queue. */
+/**
+ * The prefix that namespaces a **task-less** queue key (TASK-127). A dev
+ * worktree with no board task (a multi-phase `tech-tree-p5` branch, say) still
+ * queues for the merge queue's right-of-way; it just does so under
+ * `branch:<name>` instead of a task ID. Board task IDs are `<PREFIX>-<N>`, so
+ * the two key spaces cannot collide, and every board lookup (which asks for a
+ * task's own ID) simply never matches a branch key.
+ */
+export const BRANCH_MERGE_KEY_PREFIX = 'branch:';
+
+/** The queue key for a task-less merge of `branch`. */
+export function branchMergeKey(branch: string): string {
+  return `${BRANCH_MERGE_KEY_PREFIX}${branch}`;
+}
+
+/** True when `key` identifies a task-less branch merge rather than a board task. */
+export function isBranchMergeKey(key: string): boolean {
+  return key.startsWith(BRANCH_MERGE_KEY_PREFIX);
+}
+
+/** The branch a task-less key names, or null when `key` is a task ID. */
+export function branchFromMergeKey(key: string): string | null {
+  return isBranchMergeKey(key) ? key.slice(BRANCH_MERGE_KEY_PREFIX.length) : null;
+}
+
+/** One merge's place in the shared right-of-way queue. */
 export interface QueueEntry {
+  /**
+   * The queue key: a board task ID (`TASK-7`), or `branch:<name>` for a
+   * task-less dev-worktree merge (TASK-127). Named `taskId` because it is the
+   * persisted schema; treat it as the key, not as proof a task exists.
+   */
   taskId: string;
   branch: string;
   /** Repo-root-relative worktree path, e.g. `.worktrees/task-7-login`. */

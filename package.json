@@ -356,6 +356,10 @@
         "title": "Taskwright: Send Back Merge"
       },
       {
+        "command": "taskwright.reviewBranchMerge",
+        "title": "Taskwright: Review Branch Merge (no task)"
+      },
+      {
         "command": "taskwright.categorizeWithClaude",
         "title": "Taskwright: Categorize with Claude (copy prompt)",
         "icon": "$(sparkle)"

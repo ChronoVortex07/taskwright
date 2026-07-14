@@ -4,6 +4,7 @@ import {
   removeEntry,
   headEntry,
   markEntryActive,
+  isBranchMergeKey,
   isHeadStale,
   positionOf,
   recordVerifiedHead,
@@ -307,6 +308,19 @@ export interface BoardOps {
 }
 
 /**
+ * The BoardOps of a **task-less** merge (TASK-127): there is no task, so there
+ * is nothing to park in an intermediate status, nothing to mark Done, and no
+ * claim to release. Making the no-op a first-class BoardOps keeps the merge
+ * pipeline itself branch-free — the task-less path differs only in what it hands
+ * `requestMerge`, not in what `requestMerge` does.
+ */
+export const NOOP_BOARD_OPS: BoardOps = {
+  setStatus: async () => {},
+  release: async () => {},
+  resetTaskFile: async () => {},
+};
+
+/**
  * A liveness update emitted during `request_merge`'s long phases (TASK-88), so
  * MCP clients that reset tool timeouts on progress stay alive and the human
  * sees what the merge is doing. Purely observational — dropping every event
@@ -350,6 +364,14 @@ export interface RequestMergeOptions {
    * parked), the resume returns `sent_back` instead of silently re-submitting.
    */
   ticket?: string;
+  /**
+   * Whether a successful merge tears down the source worktree and its branch
+   * (TASK-127). Default **true** — a task's worktree exists only for that task,
+   * so closing it is the whole point. A task-less dev worktree is the opposite:
+   * the session goes on working in it after phase 1 lands, so the task-less path
+   * passes `false` unless the caller opts into cleanup.
+   */
+  removeWorktreeOnSuccess?: boolean;
 }
 
 export interface FinishDeps {
@@ -577,7 +599,23 @@ export async function requestMerge(
   taskId: string,
   opts?: RequestMergeOptions
 ): Promise<RequestMergeResult> {
-  const { exec, run, queue, board, config, root, primaryRoot, branch, worktreeRel } = deps;
+  const { exec, run, queue, config, root, primaryRoot, branch, worktreeRel } = deps;
+
+  // TASK-127 — the two things a TASK-LESS merge (`branch:<name>` key) must differ
+  // in, decided ONCE, from the key itself:
+  //
+  //  1. no board mutation. There is no task to park, mark Done, or release, so the
+  //     board ops are neutralized here rather than at each call site — a caller that
+  //     hands us a real board along with a branch key still cannot touch the board.
+  //  2. cleanup is opt-in, not opt-out. A task's worktree exists only for that task;
+  //     a dev worktree outlives the phase it just merged, and the session keeps
+  //     working in it.
+  //
+  // Everything below this point is identical for both — same rebase, same verify,
+  // same queue, same ff-merge, same abort codes.
+  const taskless = isBranchMergeKey(taskId);
+  const board = taskless ? NOOP_BOARD_OPS : deps.board;
+  const cleanup = opts?.removeWorktreeOnSuccess ?? !taskless;
 
   // Resume detection (TASK-88): a previous call may have returned 'pending',
   // leaving our entry queued. A presented ticket with NO surviving entry means
@@ -746,7 +784,7 @@ export async function requestMerge(
       }
       await board.setStatus(taskId, 'Done');
       await board.release(taskId);
-      await removeWorktree(exec, primaryRoot, worktreeRel); // keep the branch for the PR
+      if (cleanup) await removeWorktree(exec, primaryRoot, worktreeRel); // keep the branch for the PR
       return { status: 'pr_opened', taskId, url: pr.url ?? '' };
     }
 
@@ -762,8 +800,10 @@ export async function requestMerge(
     }
     await board.setStatus(taskId, 'Done');
     await board.release(taskId);
-    await removeWorktree(exec, primaryRoot, worktreeRel);
-    await deleteBranch(exec, primaryRoot, branch);
+    if (cleanup) {
+      await removeWorktree(exec, primaryRoot, worktreeRel);
+      await deleteBranch(exec, primaryRoot, branch);
+    }
     return { status: 'merged', taskId, branch };
   } finally {
     // 7. Dequeue — unblocks the next head. Safe/no-op if already removed.

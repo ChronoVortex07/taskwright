@@ -44,6 +44,7 @@ import {
   demoteTaskHandler,
   createSubtaskHandler,
   requestMergeHandler,
+  requestBranchMergeHandler,
   startTaskHandler,
   pushBoardHandler,
   pullBoardHandler,
@@ -535,6 +536,65 @@ async function main(): Promise<void> {
                 });
             };
       return runTool(() => requestMergeHandler(deps, args, onProgress));
+    }
+  );
+
+  server.registerTool(
+    'request_branch_merge',
+    {
+      title: 'Request branch merge (no task)',
+      description:
+        "Close a dev worktree that has NO board task through the same merge queue (TASK-127). This is the sanctioned path for multi-phase / ad-hoc branch work (a `tech-tree-p5` dev branch, an orchestrator's own scratch worktree) that never went through claim -> execute -> request_merge: instead of a manual `git merge --ff-only` in the repo root — which skips verify, skips the queue's right-of-way, and trips the merge-without-review guardrail — call this. It runs the IDENTICAL pipeline as request_merge (rebase onto the base branch, verify commands under the shared verify slot, the shared FIFO merge queue, the manual-review approval gate, then a fast-forward merge) and returns the same abort codes (verify_failed / verify_timeout / dirty_worktree / dirty_primary / rebase_conflict / wrong_root). The two differences follow from having no task: NOTHING on the board is touched (no Done, no claim release), and your worktree and branch SURVIVE the merge so you can keep working in them — pass removeWorktree:true only when you are done with the worktree for good. Call it from inside the dev worktree, or name it with `worktree` from a primary-rooted session. Never merge from the repo root yourself.",
+      inputSchema: {
+        worktree: z
+          .string()
+          .optional()
+          .describe(
+            'The dev worktree to merge: a branch name or a repo-root-relative .worktrees/<branch> path (must be a clean, non-detached linked worktree under .worktrees/). Omit ONLY when this session is itself rooted inside that worktree; a primary-rooted session with no target aborts with wrong_root.'
+          ),
+        removeWorktree: z
+          .boolean()
+          .optional()
+          .describe(
+            'Tear the worktree down (and delete its branch) after a successful merge. Default false — a dev worktree normally outlives the phase it just merged, and the session keeps working in it.'
+          ),
+        verifyTimeoutMinutes: z
+          .number()
+          .optional()
+          .describe(
+            'Optional per-call verify timeout in minutes. Overrides the repo default; clamped to the repo-level max when one is configured. Raise it only for a genuine `verify_timeout` — a `verify_failed` means the command went RED, and a bigger timeout cannot fix that.'
+          ),
+        waitMinutes: z
+          .number()
+          .optional()
+          .describe(
+            'Optional cap on the queue/approval wait, in minutes (0 = check once). On expiry returns { status: "pending", queuePosition, ticket } with the queue entry KEPT; call request_branch_merge again with the same worktree (+ the ticket) to resume. Omit for the fully-blocking default.'
+          ),
+        ticket: z
+          .string()
+          .optional()
+          .describe(
+            'The ticket a previous { status: "pending" } return handed back, so a resume detects a reviewer’s Send back that happened while you were parked.'
+          ),
+      },
+    },
+    async (args, extra) => {
+      const progressToken = extra._meta?.progressToken;
+      let sequence = 0;
+      const onProgress =
+        progressToken === undefined
+          ? undefined
+          : (p: MergeProgress): void => {
+              void extra
+                .sendNotification({
+                  method: 'notifications/progress',
+                  params: { progressToken, progress: ++sequence, message: p.message },
+                })
+                .catch(() => {
+                  // liveness only — a dropped notification must never break the merge
+                });
+            };
+      return runTool(() => requestBranchMergeHandler(deps, args, onProgress));
     }
   );
 

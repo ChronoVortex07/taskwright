@@ -3,6 +3,8 @@ import {
   mergeQueuePath,
   approveEntry,
   removeEntry,
+  isBranchMergeKey,
+  branchFromMergeKey,
   nodeQueueFs,
   type QueueFsDeps,
 } from '../core/mergeQueue';
@@ -30,6 +32,44 @@ export function sendBackInQueue(
   fsDeps: QueueFsDeps = nodeQueueFs
 ): void {
   storeFor(commonDir, fsDeps).mutate((q) => removeEntry(q, taskId));
+}
+
+/**
+ * A task-less (branch) merge waiting in the queue — TASK-127.
+ *
+ * Task merges are reviewed from their board card; a branch merge has no card, so
+ * the manual-review gate would otherwise be ungrantable and the dev session would
+ * block forever. These are what the "Review Branch Merge" command lists.
+ */
+export interface PendingBranchMerge {
+  /** The queue key (`branch:<name>`) — what approve/send-back is keyed by. */
+  key: string;
+  branch: string;
+  /** Repo-root-relative worktree path. */
+  worktree: string;
+  submittedAt: string;
+  approved: boolean;
+  /** 1-based place in the shared FIFO (task merges included). */
+  position: number;
+}
+
+/** Every task-less merge currently in the queue, in queue order. */
+export function pendingBranchMerges(
+  commonDir: string,
+  fsDeps: QueueFsDeps = nodeQueueFs
+): PendingBranchMerge[] {
+  return storeFor(commonDir, fsDeps)
+    .read()
+    .entries.map((entry, index) => ({ entry, position: index + 1 }))
+    .filter(({ entry }) => isBranchMergeKey(entry.taskId))
+    .map(({ entry, position }) => ({
+      key: entry.taskId,
+      branch: branchFromMergeKey(entry.taskId) ?? entry.branch,
+      worktree: entry.worktree,
+      submittedAt: entry.submittedAt,
+      approved: entry.approved,
+      position,
+    }));
 }
 
 /**

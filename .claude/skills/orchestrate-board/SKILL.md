@@ -1,7 +1,7 @@
 ---
 name: orchestrate-board
 description: Autonomously run the full Taskwright cycle for MANY ready tasks — either self-driven sequentially, or by dispatching parallel in-session subagents (one per independent ready task, each bootstrapping its own worktree and running /execute-task to Done). Use when the user says /orchestrate-board, or asks you to "work through the board", "clear the ready tasks", "run all the ready work", or "drive the board autonomously". Not for a single task (use /execute-task) or authoring new work (use /create-task). Subscription-safe: in-session subagents via the Task tool, never `claude -p`.
-allowed-tools: mcp__taskwright__next_ready_tasks, mcp__taskwright__start_task, mcp__taskwright__claim_task, mcp__taskwright__release_task, mcp__taskwright__get_board, mcp__taskwright__get_active_task, mcp__taskwright__request_merge, Task, Skill(execute-task), Bash, Read, Grep, Glob
+allowed-tools: mcp__taskwright__next_ready_tasks, mcp__taskwright__start_task, mcp__taskwright__claim_task, mcp__taskwright__release_task, mcp__taskwright__get_board, mcp__taskwright__get_active_task, mcp__taskwright__request_merge, mcp__taskwright__request_branch_merge, Task, Skill(execute-task), Bash, Read, Grep, Glob
 ---
 
 # Orchestrate board (Taskwright autonomous run)
@@ -56,6 +56,15 @@ plus local Bash/Read/Grep/Glob.
   worktree with `start_task` must close with **`request_merge { taskId, worktree }`** — a bare
   `request_merge` aborts with `wrong_root` (a misuse, **not** a cancellation: never report it as one,
   and never drop the work over it).
+- **Your own branch work goes through the queue too — `request_branch_merge`.** An orchestration run
+  often carries side work with no board task: a dev/scratch worktree of your own, a multi-phase branch,
+  a fixup you spun up outside the board. **Never** land it with `git merge` / `git merge --ff-only` in
+  the repository root: that skips verify, skips the queue's right-of-way against the workers you are
+  running, and trips the merge-without-review guardrail (the block → explain → ask → override loop that
+  cost ~4 turns every time). Call **`request_branch_merge { worktree }`** — the same rebase → verify →
+  queue → ff-merge pipeline and the same abort codes as a task merge, with no board writes, and the
+  worktree/branch left in place unless you pass `removeWorktree: true`. Ordering against the workers'
+  merges is automatic: task merges and branch merges share ONE FIFO.
 
 ## Establish mode and budget (once, up front)
 

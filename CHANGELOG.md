@@ -6,6 +6,32 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`request_branch_merge` — a sanctioned merge path for work with no board task.** Multi-phase dev
+  sessions in ad-hoc worktrees (a `tech-tree-p5` branch, an orchestrator's own scratch worktree)
+  never fit claim → execute → `request_merge`, because that tool requires a task ID. So they fell
+  back to a manual `git merge --ff-only` in the repo root — which skips the verify gate, skips the
+  merge queue's right-of-way against every other agent working the repo, and then trips the
+  merge-without-review guardrail, costing ~4 turns of block → explain → ask → override every single
+  time.
+
+  The new MCP tool runs the **identical** pipeline as `request_merge` — rebase onto the base branch,
+  verify under the shared verify slot, the same FIFO merge queue (task merges and branch merges are
+  ordered against each other in one queue), the same manual-review approval gate, then the
+  fast-forward merge — and returns the same abort codes (`verify_failed`, `verify_timeout`,
+  `dirty_worktree`, `dirty_primary`, `rebase_conflict`, `wrong_root`). Only what the absence of a
+  task implies differs: **nothing on the board is touched** (no Done flip, no claim release), and the
+  worktree and its branch **survive the merge** so the session keeps working in them —
+  `removeWorktree: true` opts into teardown. Both invariants are enforced in the merge core from the
+  queue key (`branch:<name>`) itself, not by callers remembering to ask for them.
+
+  Because a task-less entry has no board card, the manual-review gate is granted from a new
+  **"Taskwright: Review Branch Merge (no task)"** command (approve / send back), and every
+  agent-facing surface (AGENTS.md, CLAUDE.md, the `execute-task` and `orchestrate-board` skills, the
+  injected convention, the MCP instructions) now names this path where it forbids merging in the repo
+  root — a contract test fails the build if one of them forbids without offering the alternative.
+
 ### Fixed
 
 - **Concurrent merges no longer flake each other's verify suites.** The merge queue serialized the

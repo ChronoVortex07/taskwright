@@ -57,6 +57,21 @@ external CLI. At the start of a task session:
    `wrong_root` — a **misuse, not a cancellation**. Re-issue it with the target; never abandon
    finished work over it.
 
+**No board task? Close with `request_branch_merge`.** Some work has no task — a multi-phase dev
+branch, an orchestrator's own scratch worktree, a spike. That is exactly the case that used to end in
+a manual `git merge --ff-only` in the repo root, which skips verify, skips the queue's right-of-way,
+and trips the merge-without-review guardrail. **Never do that.** Call
+`request_branch_merge { worktree }` instead (a branch name, or the repo-root-relative
+`.worktrees/<branch>` path; omit it only if this session is itself rooted in that worktree — a
+primary-rooted bare call aborts with the same `wrong_root`). It runs the **identical** pipeline as
+`request_merge` — rebase, verify under the shared verify slot, the same FIFO merge queue, the same
+manual-review approval gate ("Taskwright: Review Branch Merge" on the human's side), then the
+fast-forward merge — and returns the same abort codes. Being task-less changes exactly two things:
+**nothing on the board is touched** (no Done, no claim release), and **your worktree and branch
+survive the merge** so you can keep working in them; pass `removeWorktree: true` only when you are
+finished with the worktree for good. A merge with a task is still `request_merge`'s job — this tool
+is the sanctioned path for work the board never knew about, not a way to skip the board.
+
 Generated task files stay byte-for-byte compatible with Backlog.md, so the board remains
 readable by the upstream tools if they are installed.
 

@@ -132,6 +132,13 @@ All features below are complete. Design docs live in `docs/superpowers/specs/`.
 - **Resumable** — `request_merge { waitMinutes }` returns `{ status: "pending", queuePosition,
 ticket }` on expiry; resume with the same taskId + ticket. Queue-head re-verify skipped when base
   didn't move.
+- **Task-less merges (`request_branch_merge`)** — work with no board task (a multi-phase dev branch,
+  a scratch worktree) closes through the SAME queue instead of a manual `git merge --ff-only` in the
+  repo root — never merge there. Queue key is `branch:<name>` (one FIFO with task merges; task IDs
+  can't collide with it), the board is neutralized in `requestMerge` **from the key**, not by the
+  caller, and worktree/branch teardown is opt-in (`removeWorktree`) because a dev worktree outlives
+  the phase it merged. Same gates, same abort codes, same manual-review gate — granted from the
+  "Taskwright: Review Branch Merge" command, since a task-less entry has no board card to approve.
 - **Verify doctor** — classifies repo type, flags provably unrunnable commands; never rewrites
   silently.
 - **Durable merge-config** — only explicitly-set settings republished; agent fixes survive restarts.

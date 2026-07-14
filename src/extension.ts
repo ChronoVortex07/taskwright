@@ -8,10 +8,7 @@ import { TreeNavigatorProvider } from './providers/TreeNavigatorProvider';
 import { BacklogParser } from './core/BacklogParser';
 import { BacklogWriter } from './core/BacklogWriter';
 import { TreeFieldService } from './core/TreeFieldService';
-import {
-  runDraftIdMigrationLocked,
-  formatMigrationMessage,
-} from './core/draftIdMigration';
+import { runDraftIdMigrationLocked, formatMigrationMessage } from './core/draftIdMigration';
 import { FileWatcher } from './core/FileWatcher';
 import { BacklogCli } from './core/BacklogCli';
 import { createDebouncedHandler } from './core/debounce';
@@ -35,7 +32,13 @@ import { writeCancellationMarker } from './core/cancellationMarker';
 import { removeWorktree } from './core/finishTask';
 import { dispatchBranchName } from './core/dispatchPrompt';
 import { worktreePathFor, type GitExecFn } from './core/WorktreeService';
-import { approveMergeInQueue, sendBackMerge } from './providers/mergeActions';
+import {
+  approveMergeInQueue,
+  sendBackInQueue,
+  sendBackMerge,
+  pendingBranchMerges,
+  type PendingBranchMerge,
+} from './providers/mergeActions';
 import { categorizeWithClaude } from './providers/intakeActions';
 import { attachPlanForTask, detachPlanForTask } from './providers/planActions';
 import { writeActiveTask, clearActiveTask } from './core/activeTask';
@@ -2230,6 +2233,64 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage(`Sent ${taskId} back to In Progress.`);
       } catch (error) {
         vscode.window.showErrorMessage(`Failed to send back: ${error}`);
+      }
+    }),
+    // TASK-127: task-LESS merges (a dev worktree with no board task) queue under a
+    // `branch:<name>` key, so they have no board card to approve from. Without this
+    // command the manual-review gate would be ungrantable and the dev session would
+    // wait forever — the very dead end that pushed such sessions back to a manual
+    // merge in the repo root.
+    vscode.commands.registerCommand('taskwright.reviewBranchMerge', async () => {
+      if (!workspaceRootPath) return;
+      const commonDir = await resolveCommonDir(workspaceRootPath);
+      if (!commonDir) {
+        vscode.window.showErrorMessage('Not a git repository — no merge queue to review.');
+        return;
+      }
+      const pending = pendingBranchMerges(commonDir);
+      if (pending.length === 0) {
+        vscode.window.showInformationMessage(
+          'No task-less branch merges are waiting in the merge queue.'
+        );
+        return;
+      }
+      const items: (vscode.QuickPickItem & { entry: PendingBranchMerge })[] = pending.map(
+        (entry) => ({
+          label: entry.branch,
+          description: `queue position ${entry.position}${entry.approved ? ' · approved' : ''}`,
+          detail: entry.worktree,
+          entry,
+        })
+      );
+      const picked = await vscode.window.showQuickPick(items, {
+        title: 'Branch merges awaiting review',
+        placeHolder: 'Pick a branch merge',
+      });
+      if (!picked) return;
+      const action = await vscode.window.showQuickPick(
+        [
+          { label: 'Approve', detail: 'Let the waiting session merge this branch.' },
+          { label: 'Send back', detail: 'Drop it from the queue; the session keeps the branch.' },
+        ],
+        { title: `${picked.entry.branch} — merge queue`, placeHolder: 'Choose an action' }
+      );
+      if (!action) return;
+      try {
+        if (action.label === 'Approve') {
+          approveMergeInQueue(commonDir, picked.entry.key);
+          vscode.window.showInformationMessage(
+            `Approved ${picked.entry.branch} — the waiting session will merge it.`
+          );
+        } else {
+          // No board write: a task-less entry has no task to reset to In Progress.
+          sendBackInQueue(commonDir, picked.entry.key);
+          vscode.window.showInformationMessage(
+            `Sent ${picked.entry.branch} back — its session's request_branch_merge returns sent_back.`
+          );
+        }
+        refreshAllViews();
+      } catch (error) {
+        vscode.window.showErrorMessage(`Failed to update the merge queue: ${error}`);
       }
     })
   );

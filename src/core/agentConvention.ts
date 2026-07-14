@@ -36,14 +36,16 @@ export function injectConvention(existingClaudeMd: string): string {
  */
 export const TASKWRIGHT_AGENTS_CONVENTION = `## Taskwright
 
-This project is managed with [Taskwright](https://github.com/ChronoVortex07/taskwright), an agentic task board on a git-native Backlog.md backbone. Task and project management runs through the **Taskwright MCP server** — registered per agent (\`.mcp.json\` for Claude Code, \`~/.codex/config.toml\` for Codex), not an external CLI. At the **start of a task session**:
+This project is managed with [Taskwright](https://github.com/ChronoVortex07/taskwright). Task and project management runs through the **Taskwright MCP server** — registered per agent (\`.mcp.json\` for Claude Code, \`~/.codex/config.toml\` for Codex), not an external CLI. At the **start of a task session**:
 
 1. Call the \`taskwright\` MCP tool **\`get_active_task\`** to load your assigned task and its full context (description, acceptance criteria, plan). Work from that — do not infer the task from the file tree.
-2. Call **\`claim_task\`** with your task ID to mark it in progress so parallel sessions in other worktrees don't collide (advisory).
-3. Do the work inside your worktree — a plain git worktree under \`.worktrees/\`. Reach it by launching there, or with \`cd\` / \`git -C\`; **never** a harness worktree-switch tool (e.g. Claude Code's \`EnterWorktree\`), which only manages its own \`.claude/worktrees/\` and will fail. Record progress with **\`edit_task\`**.
+2. Call **\`claim_task\`** with your task ID to mark it in progress so parallel sessions don't collide (advisory).
+3. Do the work inside your worktree — a plain git worktree under \`.worktrees/\`. Reach it by launching there, or with \`cd\` / \`git -C\`; **never** a harness worktree-switch tool (e.g. Claude Code's \`EnterWorktree\`), which manages only \`.claude/worktrees/\` and fails here. Record progress with **\`edit_task\`**.
 4. Close with **\`request_merge\`** — it rebases, verifies, merges to the base branch, and marks the task Done. If you bootstrapped the worktree yourself with \`start_task\`, the MCP is still rooted in the primary tree (a \`cd\` does not move it), so close with \`request_merge { taskId, worktree }\`; a bare call aborts with \`wrong_root\`.
 
-If \`get_active_task\` reports none is set, ask which task to work on **only when the user asked you to work on a board task without naming one**. For a standalone request — a code review, a question, an ad-hoc change — just do what was asked; you don't need an active task.
+In a worktree with **no board task** (a dev/scratch branch)? Close with **\`request_branch_merge { worktree }\`** — same queue and verify, no board writes. Never merge in the repo root.
+
+If \`get_active_task\` reports none is set, ask which task to work on **only when the user asked you to work on a board task without naming one**. For a standalone request (a code review, a question, an ad-hoc change) just do what was asked — no active task needed.
 
 The full workflows are **progressively disclosed as native skills** under \`.agents/skills/\` (\`create-task\`, \`execute-task\`, \`index-codebase\`, \`orchestrate-board\`) — invoke a skill by name to load its detailed instructions on demand instead of inlining them here.`;
 

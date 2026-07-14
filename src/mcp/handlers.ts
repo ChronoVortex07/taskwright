@@ -37,12 +37,18 @@ import {
 import { laneOf, MISC_LANE, BUGS_LANE, BACKBURNER_BAND, type TreeLayout } from '../core/treeLayout';
 import {
   MergeQueueStore,
+  branchMergeKey,
   mergeQueuePath,
   nodeQueueFs,
   positionOf,
   type QueueFsDeps,
 } from '../core/mergeQueue';
-import { DEFAULT_VERIFY_TIMEOUT_MS, mergeConfigPath, readMergeConfig } from '../core/mergeConfig';
+import {
+  DEFAULT_VERIFY_TIMEOUT_MS,
+  mergeConfigPath,
+  readMergeConfig,
+  type MergeConfig,
+} from '../core/mergeConfig';
 import { readSyncConfig, syncConfigPath, type SyncMode } from '../core/syncConfig';
 import { boardHomeFor, boardWorktreePathFor, type BoardHome } from '../core/boardRoot';
 import { runBoardAutoSync } from '../core/autoSync';
@@ -56,9 +62,13 @@ import type { BoardGitExec } from '../core/boardRef';
 import {
   requestMerge,
   isWorktreeClean,
+  resolveBaseBranch,
+  NOOP_BOARD_OPS,
   type BoardOps,
+  type FinishDeps,
   type GitExecFn,
   type RunFn,
+  type MergeAbortCode,
   type RequestMergeResult,
   type MergeProgress,
 } from '../core/finishTask';
@@ -432,25 +442,57 @@ async function resolveWorktreeTarget(
   };
 }
 
+/** Args every merge tool shares — the target, and the two wait/verify knobs. */
+interface CommonMergeArgs {
+  worktree?: string;
+  verifyTimeoutMinutes?: number;
+  waitMinutes?: number;
+  ticket?: string;
+}
+
 /**
- * `request_merge`: submit the active task for integration and block until it is
- * merged / a PR is opened / it is sent back — the single closing call an agent
- * makes from inside its worktree. TASK-88: `waitMinutes` bounds the queue wait
- * (expiry returns `{ status: 'pending' }` with a resume ticket, keeping the
- * queue entry), and `onProgress` receives liveness updates during verify and
- * the queue wait for the transport to forward as MCP progress notifications.
+ * Everything both merge tools need once the target is resolved and the shared
+ * config/queue/slot are bound. Building it ONCE is what keeps `request_merge` and
+ * `request_branch_merge` (TASK-127) on literally the same pipeline: same target
+ * gates, same abort codes, same queue, same verify slot. The two tools differ
+ * only in the queue key they submit and the board they hand over.
  */
-export async function requestMergeHandler(
+interface MergeRuntime {
+  facts: GitFacts;
+  /** The tree we rebase/verify/merge/clean. */
+  root: string;
+  branch: string;
+  worktreeRel: string;
+  base: string;
+  config: MergeConfig;
+  queue: MergeQueueStore;
+  verifySlot: VerifySlot;
+  exec: GitExecFn;
+  run: RunFn;
+  now: () => Date;
+  sleep: (ms: number) => Promise<void>;
+  waitMinutes?: number;
+  /** git-auto board home, when one exists (undefined ⇒ nothing to sync). */
+  home?: BoardHome;
+  /** Best-effort board sync at a merge boundary; never affects the merge result. */
+  boundarySync: () => Promise<void>;
+}
+
+type MergeAbort = Extract<RequestMergeResult, { status: 'aborted' }>;
+
+/**
+ * Resolve the merge target + shared runtime for either merge tool, or abort.
+ *
+ * `toolName` only shapes the `wrong_root` advice: the two tools land in the same
+ * misuse (a primary-rooted session with no `worktree` target), and each caller
+ * must be pointed back at ITS OWN tool, not the other one.
+ */
+async function prepareMerge(
   deps: McpHandlerDeps,
-  args: {
-    taskId: string;
-    worktree?: string;
-    verifyTimeoutMinutes?: number;
-    waitMinutes?: number;
-    ticket?: string;
-  },
+  args: CommonMergeArgs,
+  toolName: 'request_merge' | 'request_branch_merge',
   onProgress?: (progress: MergeProgress) => void
-): Promise<RequestMergeResult> {
+): Promise<{ ok: true; rt: MergeRuntime } | { ok: false; abort: MergeAbort }> {
   const exec = deps.gitExec ?? defaultGitExec;
   const run = deps.shellRun ?? defaultShellRun;
   const facts = await gitFacts(exec, deps.root);
@@ -470,7 +512,7 @@ export async function requestMergeHandler(
     // <primaryRoot>/.worktrees/, so root != primaryRoot by construction.
     const resolved = await resolveWorktreeTarget(exec, deps.root, facts.primaryRoot, args.worktree);
     if (!resolved.ok) {
-      return { status: 'aborted', reason: resolved.reason };
+      return { ok: false, abort: { status: 'aborted', reason: resolved.reason } };
     }
     root = resolved.target.root;
     branch = resolved.target.branch;
@@ -483,17 +525,26 @@ export async function requestMergeHandler(
       // launch; an in-session `cd` moves Bash, not the MCP), so it lands on this
       // branch and must retry with an explicit `worktree` target. Callers used to
       // read this abort as "worktree vanished ⇒ cancelled" and drop finished work.
+      const advice =
+        toolName === 'request_merge'
+          ? 'If you bootstrapped this task with start_task, close with request_merge { taskId, worktree } (the repo-root-relative path start_task returned) — an in-session cd does not re-root the MCP server. Otherwise call it from inside your .worktrees/<branch>.'
+          : 'Name the dev worktree you want merged: request_branch_merge { worktree } (a branch name, or the repo-root-relative .worktrees/<branch> path) — an in-session cd does not re-root the MCP server. Otherwise call it from inside that worktree.';
       return {
-        status: 'aborted',
-        code: 'wrong_root',
-        reason:
-          'request_merge was called from the primary tree with no `worktree` target. If you bootstrapped this task with start_task, close with request_merge { taskId, worktree } (the repo-root-relative path start_task returned) — an in-session cd does not re-root the MCP server. Otherwise call it from inside your .worktrees/<branch>.',
+        ok: false,
+        abort: {
+          status: 'aborted',
+          code: 'wrong_root',
+          reason: `${toolName} was called from the primary tree with no \`worktree\` target. ${advice}`,
+        },
       };
     }
     if (!facts.branch) {
       return {
-        status: 'aborted',
-        reason: 'Your worktree has a detached HEAD; check out your task branch first.',
+        ok: false,
+        abort: {
+          status: 'aborted',
+          reason: 'Your worktree has a detached HEAD; check out your task branch first.',
+        },
       };
     }
     root = deps.root;
@@ -530,7 +581,6 @@ export async function requestMergeHandler(
     syncCfg.mode === 'git-auto' && fs.existsSync(homeCandidate.backlogPath)
       ? homeCandidate
       : undefined;
-  const board = deps.board ?? makePrimaryBoard(facts.primaryRoot, exec, home);
 
   const boundarySync = async (): Promise<void> => {
     if (!home) return;
@@ -545,7 +595,6 @@ export async function requestMergeHandler(
       console.error('[taskwright-mcp] merge-boundary board sync failed:', err);
     }
   };
-  await boundarySync();
 
   // TASK-88: a non-negative finite waitMinutes bounds the queue wait (0 = check
   // once); anything else keeps the fully-blocking default.
@@ -574,31 +623,184 @@ export async function requestMergeHandler(
       leaseMs: verifySlotLeaseMs(config.verifyTimeoutMs, config.verifyCommands.length),
     });
 
-  const result = await requestMerge(
-    {
+  void onProgress; // forwarded by the callers, not needed to build the runtime
+
+  return {
+    ok: true,
+    rt: {
+      facts,
       root,
-      primaryRoot: facts.primaryRoot,
       branch,
       worktreeRel,
+      base: await resolveBaseBranch(exec, root),
       config,
       queue: queueStoreFor(facts.commonDir, fsDeps),
-      board,
+      verifySlot,
       exec,
       run,
-      verifySlot,
       now,
       sleep,
-      onProgress,
+      ...(waitMinutes !== undefined ? { waitMinutes } : {}),
+      ...(home ? { home } : {}),
+      boundarySync,
     },
+  };
+}
+
+/** The FinishDeps a MergeRuntime yields, once a board is chosen for it. */
+function finishDepsFor(
+  rt: MergeRuntime,
+  board: BoardOps,
+  onProgress?: (progress: MergeProgress) => void
+): FinishDeps {
+  return {
+    root: rt.root,
+    primaryRoot: rt.facts.primaryRoot,
+    branch: rt.branch,
+    worktreeRel: rt.worktreeRel,
+    config: rt.config,
+    queue: rt.queue,
+    board,
+    exec: rt.exec,
+    run: rt.run,
+    verifySlot: rt.verifySlot,
+    now: rt.now,
+    sleep: rt.sleep,
+    onProgress,
+  };
+}
+
+/**
+ * `request_merge`: submit the active task for integration and block until it is
+ * merged / a PR is opened / it is sent back — the single closing call an agent
+ * makes from inside its worktree. TASK-88: `waitMinutes` bounds the queue wait
+ * (expiry returns `{ status: 'pending' }` with a resume ticket, keeping the
+ * queue entry), and `onProgress` receives liveness updates during verify and
+ * the queue wait for the transport to forward as MCP progress notifications.
+ */
+export async function requestMergeHandler(
+  deps: McpHandlerDeps,
+  args: {
+    taskId: string;
+    worktree?: string;
+    verifyTimeoutMinutes?: number;
+    waitMinutes?: number;
+    ticket?: string;
+  },
+  onProgress?: (progress: MergeProgress) => void
+): Promise<RequestMergeResult> {
+  const prepared = await prepareMerge(deps, args, 'request_merge', onProgress);
+  if (!prepared.ok) return prepared.abort;
+  const rt = prepared.rt;
+
+  const board = deps.board ?? makePrimaryBoard(rt.facts.primaryRoot, rt.exec, rt.home);
+
+  await rt.boundarySync();
+
+  const result = await requestMerge(
+    finishDepsFor(rt, board, onProgress),
     args.taskId,
-    waitMinutes !== undefined || args.ticket !== undefined
-      ? { waitMinutes, ticket: args.ticket }
+    rt.waitMinutes !== undefined || args.ticket !== undefined
+      ? { waitMinutes: rt.waitMinutes, ticket: args.ticket }
       : undefined
   );
 
   // Publish the Done flip (and anything else the merge wrote) to the remote.
-  await boundarySync();
+  await rt.boundarySync();
   return result;
+}
+
+/**
+ * The outcome of a task-less merge. Deliberately branch-shaped, not task-shaped:
+ * there is no task ID to report and nothing on the board changed. `code` is the
+ * SAME {@link MergeAbortCode} union the task path uses (TASK-127 AC3) — an
+ * orchestrator branches on one set of codes, whichever tool it called.
+ */
+export type BranchMergeResult =
+  | { status: 'merged'; branch: string; worktree: string; worktreeRemoved: boolean }
+  | { status: 'pr_opened'; branch: string; url: string }
+  | { status: 'sent_back'; branch: string; reason: string }
+  | { status: 'aborted'; reason: string; detail?: string; code?: MergeAbortCode }
+  | {
+      status: 'pending';
+      branch: string;
+      queuePosition: number;
+      ticket: string;
+      message: string;
+    };
+
+/**
+ * `request_branch_merge` (TASK-127): close a dev worktree that has **no board
+ * task** through the same merge queue.
+ *
+ * Why it exists: multi-phase dev sessions (a `tech-tree-p5` branch, an
+ * orchestrator's own scratch worktree) never fit claim → execute → request_merge,
+ * so they fell back to a manual `git merge --ff-only` in the repo root — which
+ * bypasses verify, bypasses the queue's right-of-way, and trips the
+ * merge-without-review guardrail. This gives that work the queue instead.
+ *
+ * It is the task path with the board unplugged: same worktree gates, same
+ * rebase → verify → queue → (manual-review gate) → ff-merge, same abort codes.
+ * The only behavioral differences are the two the absence of a task implies —
+ * no board writes, and the worktree/branch SURVIVE the merge unless
+ * `removeWorktree` opts into teardown (the session usually keeps working in it).
+ */
+export async function requestBranchMergeHandler(
+  deps: McpHandlerDeps,
+  args: CommonMergeArgs & { removeWorktree?: boolean },
+  onProgress?: (progress: MergeProgress) => void
+): Promise<BranchMergeResult> {
+  const prepared = await prepareMerge(deps, args, 'request_branch_merge', onProgress);
+  if (!prepared.ok) return prepared.abort;
+  const rt = prepared.rt;
+
+  // A worktree cannot normally have the base branch checked out (git refuses the
+  // same branch in two trees), but a detached primary makes it possible — and
+  // "fast-forward main onto main" would be a confusing no-op merge, not a close.
+  if (rt.branch === rt.base) {
+    return {
+      status: 'aborted',
+      reason: `"${rt.branch}" IS the base branch; there is nothing to merge into it. Check out a topic branch in the worktree first.`,
+    };
+  }
+
+  const removeWorktree = args.removeWorktree === true;
+  const result = await requestMerge(
+    // NOOP_BOARD_OPS is belt-and-braces: requestMerge already neutralizes the
+    // board for a `branch:` key. Passing it makes the intent legible at the call
+    // site — this merge has no board side.
+    finishDepsFor(rt, NOOP_BOARD_OPS, onProgress),
+    branchMergeKey(rt.branch),
+    {
+      removeWorktreeOnSuccess: removeWorktree,
+      ...(rt.waitMinutes !== undefined ? { waitMinutes: rt.waitMinutes } : {}),
+      ...(args.ticket !== undefined ? { ticket: args.ticket } : {}),
+    }
+  );
+
+  switch (result.status) {
+    case 'merged':
+      return {
+        status: 'merged',
+        branch: rt.branch,
+        worktree: rt.worktreeRel,
+        worktreeRemoved: removeWorktree,
+      };
+    case 'pr_opened':
+      return { status: 'pr_opened', branch: rt.branch, url: result.url };
+    case 'sent_back':
+      return { status: 'sent_back', branch: rt.branch, reason: result.reason };
+    case 'pending':
+      return {
+        status: 'pending',
+        branch: rt.branch,
+        queuePosition: result.queuePosition,
+        ticket: result.ticket,
+        message: result.message,
+      };
+    default:
+      return result;
+  }
 }
 
 /**

@@ -1,7 +1,7 @@
 ---
 name: execute-task
 description: Execute a single Taskwright task end-to-end in its isolated worktree — pick the right execution strategy, do the work, record progress, and close through the merge queue. Use when the user says /execute-task, or asks you to "execute", "work on", "do the task", or "run this task". Works from ANY session: a dispatched worktree session, or a primary-rooted session that bootstraps its own worktree via start_task. Subscription-safe: runs in-session, never spawns `claude -p`.
-allowed-tools: mcp__taskwright__get_active_task, mcp__taskwright__start_task, mcp__taskwright__claim_task, mcp__taskwright__edit_task, mcp__taskwright__attach_plan, mcp__taskwright__request_merge, mcp__taskwright__release_task, mcp__taskwright__get_board, Skill(superpowers:executing-plans), Skill(superpowers:subagent-driven-development), Skill(superpowers:test-driven-development), Skill(superpowers:writing-plans), Bash, Read, Grep, Glob
+allowed-tools: mcp__taskwright__get_active_task, mcp__taskwright__start_task, mcp__taskwright__claim_task, mcp__taskwright__edit_task, mcp__taskwright__attach_plan, mcp__taskwright__request_merge, mcp__taskwright__request_branch_merge, mcp__taskwright__release_task, mcp__taskwright__get_board, Skill(superpowers:executing-plans), Skill(superpowers:subagent-driven-development), Skill(superpowers:test-driven-development), Skill(superpowers:writing-plans), Bash, Read, Grep, Glob
 ---
 
 # Execute task (Taskwright)
@@ -139,6 +139,15 @@ agent. The sub-skills it invokes (`superpowers:executing-plans`, `superpowers:su
      back while you were parked.
      Never treat `pending` as an error, and never fall back to merging from the repo root because of it.
 
+   **Side work with no task? `request_branch_merge`, never a manual merge.** If a branch you need to
+   land has no board task — a dev/scratch worktree you spun up, a multi-phase branch that predates the
+   board — do **not** `git merge` it in the repository root (that skips verify, skips the queue's
+   right-of-way, and trips the merge-without-review guardrail). Call
+   **`request_branch_merge { worktree }`**: the identical pipeline (rebase → verify → the same merge
+   queue → manual-review gate → ff-merge) with the same abort codes, but no board writes, and your
+   worktree and branch survive the merge unless you pass `removeWorktree: true`. Your own task still
+   closes with `request_merge` — this is for the work the board never knew about.
+
 ## Cancellation contract
 
 A dispatch can be cancelled from the board while you work. Cancellation is **task/worktree-scoped**,
@@ -168,4 +177,5 @@ yourself — the extension owns teardown.
   close with `request_merge { taskId, worktree }`.
 - Strategy precedence is plan > independent-subtasks > TDD.
 - Check for cancellation before `request_merge`, every time.
-- Close through the merge queue from the worktree; never commit/merge from the repo root.
+- Close through the merge queue from the worktree; never commit/merge from the repo root. A branch
+  with no board task closes the same way, through `request_branch_merge { worktree }`.
