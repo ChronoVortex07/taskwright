@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-07-14 05:26'
-updated_date: '2026-07-14 16:49'
+updated_date: '2026-07-15 00:42'
 labels:
   - friction
   - ux
@@ -19,6 +19,7 @@ category: Core Board
 claimed_by: '@agent/.worktrees/task-131-milestone-completion-collapse-a-finished-milestone-s-section-on-the-board-reversibly'
 worktree: .worktrees/task-131-milestone-completion-collapse-a-finished-milestone-s-section-on-the-board-reversibly
 claimed_at: '2026-07-15 08:31'
+plan: docs/superpowers/specs/2026-07-15-milestone-completion-collapse-design.md
 ---
 
 ## Description
@@ -61,5 +62,13 @@ The real need is **space**, not archival. A finished milestone's band keeps cons
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Reframed 2026-07-15 from the user's design brief, replacing the original per-task "Completed action + undo" scope. Context: TASK-133 dewired `complete_task` because per-task archival removed finished work from the board's records entirely. `BacklogWriter.completeTask()` and `completeTaskHandler` are still intact but unregistered — if the conclusion here is that no per-task Completed status should exist, that machinery should be deleted rather than re-wired.
+Design decisions (DoD item 1 — the three open questions), full detail in the attached plan docs/superpowers/specs/2026-07-15-milestone-completion-collapse-design.md:
+
+1. Flag location: a boolean `completed: true` in milestone frontmatter (backlog/milestones/m-N.md). Added to Milestone type + RawMilestoneFrontmatter + parseMilestoneFile; serialized via the same matter.stringify path with `completed` slotted after `title` in FRONTMATTER_FIELD_ORDER and OMITTED when false/unset (omit rule extended to treat boolean false as empty), so existing milestone files stay byte-identical and only `completed: true` is ever written.
+
+2. Shared vs local: the `completed` flag is SHARED/committed (frontmatter, in git) — the deliberate "milestone finished" statement that collapses the band by default for everyone. Expand/collapse is a LOCAL per-user override persisted in extension globalState (backlog.expandedMilestones), mirroring the kanban collapsedMilestones precedent. Effective collapse = completedMilestones \ locallyExpanded. Un-complete (shared) permanently expands. Marking complete clears any stale local expand entry.
+
+3. Per-task Completed status: NO — retired for good. Milestone carries the flag; tasks stay Done. No new task status, no per-task complete action (dewired in TASK-133, stays dewired).
+
+Implementation is phased A–E (data layer / MCP guard / geometry / webview wiring / acceptance+proof), TDD, commit per phase — see attached plan.
 <!-- SECTION:NOTES:END -->
