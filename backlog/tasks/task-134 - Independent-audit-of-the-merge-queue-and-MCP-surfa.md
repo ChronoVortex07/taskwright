@@ -4,7 +4,7 @@ title: Independent audit of the merge-queue and MCP-surface wave (c76f7a2..3f97a
 status: In Progress
 assignee: []
 created_date: '2026-07-14 16:51'
-updated_date: '2026-07-14 16:51'
+updated_date: '2026-07-15 01:24'
 labels: []
 milestone: Workflow Friction Hardening
 dependencies: []
@@ -17,7 +17,7 @@ references:
   - dbba301
   - 3f97a3d
 priority: medium
-category: 'Worktrees & Merge'
+category: Worktrees & Merge
 claimed_by: '@agent/.worktrees/task-134-independent-audit-of-the-merge-queue-and-mcp-surface-wave-c76f7a2-3f97a3d'
 worktree: .worktrees/task-134-independent-audit-of-the-merge-queue-and-mcp-surface-wave-c76f7a2-3f97a3d
 claimed_at: '2026-07-15 09:24'
@@ -37,14 +37,14 @@ The Workflow Friction Hardening wave landed seven commits on main in one orchest
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 An independent, non-Claude reviewer has audited the full `c76f7a2..3f97a3d` range against the five targets in the implementation plan.
-- [ ] #2 Every reported defect is triaged: either fixed (in this task or a new one, referenced by ID), or explicitly dismissed with a written reason. No finding is left silently unactioned.
-- [ ] #3 If the audit comes back clean, that is recorded in the final summary along with which reviewer ran it — a clean audit is only worth anything if we know it wasn't blind.
+- [x] #1 An independent, non-Claude reviewer has audited the full `c76f7a2..3f97a3d` range against the five targets in the implementation plan.
+- [x] #2 Every reported defect is triaged: either fixed (in this task or a new one, referenced by ID), or explicitly dismissed with a written reason. No finding is left silently unactioned.
+- [x] #3 If the audit comes back clean, that is recorded in the final summary along with which reviewer ran it — a clean audit is only worth anything if we know it wasn't blind.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 The reviewer actually read the files — confirm the sandbox/tooling was working, since the known failure mode here is a reviewer that silently reads nothing and reports success.
+- [x] #1 The reviewer actually read the files — confirm the sandbox/tooling was working, since the known failure mode here is a reviewer that silently reads nothing and reports success.
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -60,3 +60,20 @@ Audit targets, in priority order (this is the brief the refused dispatch carried
 
 Report concrete defects with file:line and a failure scenario. Skip style and formatting nits.
 <!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Independent audit run by **codex-terra (GPT-5.6, non-Claude)** over `c76f7a2..3f97a3d`, read-only via `ch worker --profile codex-terra --review-base c76f7a2 --review-commit 3f97a3d`. **Confirmed non-blind (DoD):** the reviewer named the files it read (`verifySlot.ts`, `handlers.ts`, `sessionTasks.ts`, `mergeQueue.ts`, `finishTask.ts`, `server.ts`, `TasksController.ts`, `types.ts`) and cited real line ranges; the orchestrating session grounding-checked every finding against the actual code.
+
+**6 defects found (5 P1, 1 P2), all real** — triaged into follow-up drafts (referenced by ID; nothing left unactioned, AC2):
+- TASK-135 — verify-slot lock protocol, 4 findings: non-atomic publish (177-179), unguarded stale-steal (184-190), unpersisted lease (215-220), swallowed non-contention create errors (177-182). All can reintroduce verify overlap or wedge merges.
+- TASK-136 — request_branch_merge misroutes slash-containing branch names as paths (handlers.ts:434-437).
+- TASK-137 — get_active_task session-ledger fallback keyed only by deps.root leaks tasks across sessions sharing a root (handlers.ts:1119-1122).
+
+**Clean (AC3), reviewer named above:** isSamePath flavor fix (TASK-130), complete_task dewire (TASK-133 — no reachable caller), request_branch_merge board-neutralisation invariant (TASK-127 — correctly derived in the merge core).
+
+Full report committed at docs/audits/2026-07-15-workflow-friction-hardening-audit.md. The findings are latent (narrow timing windows / multi-session preconditions), so they do not block shipping the wave, but the follow-ups should be visible in the release notes.
+
+Note: the intended reviewer codex-sol was refused (missing Codex Windows sandbox helper → blind reads); codex-terra was the accepted independent substitute and, unlike codex-sol, ran non-blind.
+<!-- SECTION:FINAL_SUMMARY:END -->
