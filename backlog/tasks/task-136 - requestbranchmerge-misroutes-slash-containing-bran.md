@@ -7,14 +7,14 @@ type: bug
 status: To Do
 assignee: []
 created_date: '2026-07-15 01:20'
-updated_date: '2026-07-15 01:20'
+updated_date: '2026-07-15 01:32'
 labels: []
 milestone: Workflow Friction Hardening
 dependencies: []
 references:
   - docs/audits/2026-07-15-workflow-friction-hardening-audit.md
 priority: medium
-category: 'Worktrees & Merge'
+category: Worktrees & Merge
 caused_by: TASK-127
 ---
 
