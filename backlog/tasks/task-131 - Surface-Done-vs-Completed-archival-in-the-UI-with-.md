@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-07-14 05:26'
-updated_date: '2026-07-15 00:42'
+updated_date: '2026-07-15 00:58'
 labels:
   - friction
   - ux
@@ -62,13 +62,19 @@ The real need is **space**, not archival. A finished milestone's band keeps cons
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Design decisions (DoD item 1 — the three open questions), full detail in the attached plan docs/superpowers/specs/2026-07-15-milestone-completion-collapse-design.md:
+Design decisions (DoD item 1) — full detail in attached plan docs/superpowers/specs/2026-07-15-milestone-completion-collapse-design.md:
+1. Flag = committed `completed: true` in milestone frontmatter; serialized after `title`, omitted when false/unset (existing milestone files stay byte-identical).
+2. `completed` is shared/committed (collapses band by default for everyone); expand/collapse is a LOCAL per-user override in globalState (backlog.expandedMilestones). Effective collapse = completedMilestones \ locallyExpanded. Un-complete permanently expands.
+3. No per-task Completed status — retired for good; tasks stay Done, milestone carries the flag.
 
-1. Flag location: a boolean `completed: true` in milestone frontmatter (backlog/milestones/m-N.md). Added to Milestone type + RawMilestoneFrontmatter + parseMilestoneFile; serialized via the same matter.stringify path with `completed` slotted after `title` in FRONTMATTER_FIELD_ORDER and OMITTED when false/unset (omit rule extended to treat boolean false as empty), so existing milestone files stay byte-identical and only `completed: true` is ever written.
+PROGRESS (phased, TDD, commit per phase; worktree branch task-131-...):
+- Phase A DONE (commit 8f270ce): Milestone.completed + parser read + BacklogWriter.setMilestoneCompleted + byte-compat serialization. Tests green (BacklogWriter.otherEntities, BacklogParser.aggregation).
+- Phase B DONE (commit 634c161): set_milestone_complete MCP tool + all-Done guard (AC1) + list_milestones surfaces `completed` + server registration. Tests green (mcpWriteHandlers).
+- Phase C DONE (commit 8d02e73): deriveGeometry collapsedBands param + COLLAPSED_BAND_WIDTH strip + BandRange.collapsed + omit collapsed-band boxes (edges drop) + reclaim lane rows; Backburner never collapsed; empty set is a no-op. Tests green (treeGeometry, 28).
 
-2. Shared vs local: the `completed` flag is SHARED/committed (frontmatter, in git) — the deliberate "milestone finished" statement that collapses the band by default for everyone. Expand/collapse is a LOCAL per-user override persisted in extension globalState (backlog.expandedMilestones), mirroring the kanban collapsedMilestones precedent. Effective collapse = completedMilestones \ locallyExpanded. Un-complete (shared) permanently expands. Marking complete clears any stale local expand entry.
+REMAINING (specified in the plan):
+- Phase D — webview wiring: types.ts WebviewMessage setMilestoneComplete/setMilestoneBandExpanded + ExtensionMessage milestoneBandExpandedChanged (+ completed rides milestonesUpdated); TasksController globalState backlog.expandedMilestones load/save + 2 message handlers (complete reuses the core all-Done guard) + push completed/expanded to webview; TechTreeCanvas derive collapsedBands (completed \ expanded), pass to deriveGeometry, fold collapsed-band nodes into the PRIMITIVE hiddenIds (acyclicity), render a .tree-band-collapsed strip, post messages; AgeBandHeader/MilestonePopover controls (complete disabled unless all Done). Run the Svelte MCP autofixer on changed components.
+- Phase E — AC4 fingerprint test (task files unchanged across complete/expand/uncomplete), AC6 Backburner-invariant regression with a collapsed band, full gate (bun run test && lint && typecheck), visual-proof skill, then request_merge { taskId: TASK-131, worktree }.
 
-3. Per-task Completed status: NO — retired for good. Milestone carries the flag; tasks stay Done. No new task status, no per-task complete action (dewired in TASK-133, stays dewired).
-
-Implementation is phased A–E (data layer / MCP guard / geometry / webview wiring / acceptance+proof), TDD, commit per phase — see attached plan.
+Resume: cd into the worktree, `bun install` if needed, continue at Phase D. NOT yet merged — ACs 2/3/7 + DoD2 unmet until D+E land.
 <!-- SECTION:NOTES:END -->
