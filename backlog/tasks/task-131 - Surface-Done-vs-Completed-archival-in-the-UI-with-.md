@@ -16,9 +16,6 @@ references:
   - .taskwright/docs/friction-report-2026-07-14.md
 priority: medium
 category: Core Board
-claimed_by: '@agent/.worktrees/task-131-milestone-completion-collapse-a-finished-milestone-s-section-on-the-board-reversibly'
-worktree: .worktrees/task-131-milestone-completion-collapse-a-finished-milestone-s-section-on-the-board-reversibly
-claimed_at: '2026-07-15 08:31'
 plan: docs/superpowers/specs/2026-07-15-milestone-completion-collapse-design.md
 ---
 
