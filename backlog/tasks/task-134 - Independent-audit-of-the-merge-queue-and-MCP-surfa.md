@@ -1,10 +1,10 @@
 ---
 id: TASK-134
 title: Independent audit of the merge-queue and MCP-surface wave (c76f7a2..3f97a3d)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-14 16:51'
-updated_date: '2026-07-15 01:24'
+updated_date: '2026-07-15 01:26'
 labels: []
 milestone: Workflow Friction Hardening
 dependencies: []
@@ -18,9 +18,6 @@ references:
   - 3f97a3d
 priority: medium
 category: Worktrees & Merge
-claimed_by: '@agent/.worktrees/task-134-independent-audit-of-the-merge-queue-and-mcp-surface-wave-c76f7a2-3f97a3d'
-worktree: .worktrees/task-134-independent-audit-of-the-merge-queue-and-mcp-surface-wave-c76f7a2-3f97a3d
-claimed_at: '2026-07-15 09:24'
 ---
 
 ## Description
