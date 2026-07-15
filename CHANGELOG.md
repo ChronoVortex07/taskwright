@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-07-15
+
+The **stable task IDs + workflow friction hardening** release. Drafts never change their ID — every
+reference (another task's `dependencies`, a spec, a handoff) stays valid for the life of the task.
+The merge queue gets a cross-process verify slot so concurrent suites can't oversubscribe the CPU,
+`request_branch_merge` gives task-less branches the same sanctioned merge path as board tasks, the
+verify doctor is proactive (it asks at board init instead of staying silent until a merge aborts),
+and several workflow rough edges are smoothed: the pre-commit hook works on Windows without
+`--no-verify`, `get_active_task` has a session fallback so self-bootstrapping sessions see their
+own task, and `complete_task` is dewired so finished work can't vanish off the board.
+
 ### Added
 
 - **`request_branch_merge` — a sanctioned merge path for work with no board task.** Multi-phase dev
@@ -56,6 +67,89 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   board sees a mis-wired merge gate _before_ spending a task on it — and the extension's doctor
   offers the one-click fix. Suppressed only by an explicit human decline.
 
+- **End-to-end acceptance test** (`stableTaskIds.integration.test.ts`): proves the invariant rather
+  than its parts — a reference written against a draft, structurally **and in prose**, survives
+  promotion on a fresh board AND on a migrated legacy one. The prose case is the point: no remap can
+  rewrite free text, so prose written against a legacy id before the migration is unrecoverable
+  (asserted, deliberately) — which is why the fix is "never change an id", not "remap harder".
+- **`idSpaceContract.test.ts`** — fails the build if any agent-facing surface (the `create_task`
+  `draft` flag, `promote_draft`/`promote_drafts`/`demote_task`, `archive_task`/`restore_task`, the
+  create-task and index-codebase skills, CLAUDE.md, AGENTS.md) promises the legacy id shape outside an
+  explicit legacy/migration note, since that makes agents write draft-flavored ids into specs and
+  handoffs.
+
+- **`start_task` and `claim_task` now return the task's full context — and `get_active_task`
+  has a session fallback so self-bootstrapping sessions can see their own work.** A session that
+  creates its own worktree with `start_task` was the one session that could not see its active
+  task: `start_task` writes the marker inside the new worktree, but the calling MCP server stays
+  rooted in the primary tree (it binds at launch; `cd` does not move it). In a
+  `/orchestrate-board` run, 9 of 11 self-bootstrapping subagents called `get_active_task` right
+  after their own `start_task`/`claim_task`, got `{"active": false}`, and went hunting for
+  the board on disk — which in `git-auto` mode lives outside the repo root entirely.
+
+  `start_task` and `claim_task` now return the full `task` summary — description, ACs, DoD,
+  plan + progress, tree fields, board `filePath` — in the same shape `get_active_task` returns,
+  so a self-bootstrapping caller never needs to ask again. `claim_task` hydrates after the claim
+  write, so the echoed status reflects the post-claim "In Progress". Separately, a new local,
+  git-ignored session ledger (`src/core/sessionTasks.ts`) tracks every task this session started
+  or claimed, giving `get_active_task` a fallback when the marker file isn't reachable from this
+  server root. The ledger resolves marker → session → none, reports `source` so callers know
+  which path answered, and returns candidates (not a guess) when more than one live entry exists
+  (one orchestrator session shares one MCP server and root across all in-session subagents, and
+  MCP calls carry no working directory, so "most recent" would hand N−1 subagents someone else's
+  task). The marker still wins, so externally-dispatched sessions are unchanged. Agent-facing text
+  now says the context arrives with `start_task`/`claim_task` and forbids a filesystem hunt;
+  `taskContextContract.test.ts` fails the build otherwise.
+
+### Changed
+
+- **`taskwright.mergeVerifyTimeoutMinutes` default raised 10 → 20.** Measured on this repo:
+  `bun run test` takes 21s unloaded and 57s with three suites running concurrently. 10 minutes was
+  not provably too small, but the margin under heavy load was only ~2-3× and the failure is
+  asymmetric — a premature kill costs an agent a full retry cycle, a late kill only delays aborting a
+  genuinely hung command.
+- **Vitest's per-test `testTimeout` raised 5s → 20s.** This, not the harness cap, is the timeout the
+  load-induced flakes actually hit: a git-subprocess test that takes ~1s alone can exceed 5s on an
+  oversubscribed machine, turning the suite red.
+- **`verify_failed` and `verify_timeout` are now unmistakable in prose**, not just in the abort code:
+  a red suite says it exited non-zero, that a bare retry will fail the same way, and (when the slot
+  serialized it) that no other merge was competing with it; a killed suite says it was _killed_ for
+  exceeding the clock and names the setting to raise. Agents were reading the former as the latter.
+
+- **Drafts mint real `TASK-N` IDs from the shared counter.** There is **one ID space** across
+  `tasks/`, `drafts/`, `completed/`, and `archive/` — the `drafts/` folder (never the ID) is the sole
+  draftness marker. `promoteDraft` and `demoteTask` are **pure file moves**: the ID and status are
+  preserved, and nothing that referenced the draft dangles. `getNextTaskId` scans every folder, and
+  `allocateAndWrite` locks a single `backlog/.locks/` namespace — per-directory locks would let a
+  concurrent `create_task` and draft-create both claim the same number (the old TASK-48 clobber,
+  re-armed by the shared counter).
+- **Legacy `DRAFT-N` boards migrate automatically and idempotently** at activation and MCP startup
+  (`src/core/draftIdMigration.ts`, plus a `legacy-draft-ids` board-doctor finding). The migration
+  re-IDs drafts in place — it never promotes — and remaps every reference through the shared
+  `src/core/idRemap.ts` (which also closes the `parent_task_id` / `subtasks` / `references[]` gaps
+  `promoteDrafts`' old remap missed). `remapIds` scans every folder an id can occupy —
+  `tasks`/`drafts`/`completed`/both `archive` subfolders — because a completed task's dependency list
+  and an archived task's references are restorable records (archiving is a soft delete).
+- **Archive/restore routes by source folder.** `archive_task` moves a draft → `archive/drafts/` and a
+  task → `archive/tasks/`; `restore_task` returns it to the folder it came from. This deletes the
+  last id-prefix branch in the codebase.
+
+- **`complete_task` is dewired: finished work can no longer be archived off the board.**
+  `complete_task` moved a task file into `backlog/completed/`, taking it out of the board's
+  records entirely. `request_merge` already marks a merged task Done and leaves it in `tasks/`,
+  where it stays visible — so completion was fully served without it, and the only thing
+  `complete_task` actually did was make finished work vanish, one tool call (or one click) away
+  from any agent or human. The agent instructions even had to carry a "do not call
+  `complete_task`" warning to defend against a tool Taskwright itself exposed.
+
+  The tool is unregistered from the MCP server (a call now fails as an unknown tool), the
+  controller message case is removed, and the webview message variant is deleted — no silent path
+  into `backlog/completed/` remains. The underlying machinery (`BacklogWriter.completeTask()`
+  and `completeTaskHandler`, with all their tests including the P1 bug/caused_by rule) is kept
+  intact so re-wiring is a re-registration once milestone-completion semantics settle. The MCP
+  instructions no longer spend their truncation budget warning about an uncallable tool, and the
+  dewire contract is pinned by `completeTaskDewired.test.ts`.
+
 ### Fixed
 
 - **Concurrent merges no longer flake each other's verify suites.** The merge queue serialized the
@@ -76,61 +170,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   unchanged (measured: 3 concurrent suites take 57s each = 57s wall; serialized, 21s each = 63s
   wall), because vitest already uses every core.
 
-### Changed
-
-- **`taskwright.mergeVerifyTimeoutMinutes` default raised 10 → 20.** Measured on this repo:
-  `bun run test` takes 21s unloaded and 57s with three suites running concurrently. 10 minutes was
-  not provably too small, but the margin under heavy load was only ~2-3× and the failure is
-  asymmetric — a premature kill costs an agent a full retry cycle, a late kill only delays aborting a
-  genuinely hung command.
-- **Vitest's per-test `testTimeout` raised 5s → 20s.** This, not the harness cap, is the timeout the
-  load-induced flakes actually hit: a git-subprocess test that takes ~1s alone can exceed 5s on an
-  oversubscribed machine, turning the suite red.
-- **`verify_failed` and `verify_timeout` are now unmistakable in prose**, not just in the abort code:
-  a red suite says it exited non-zero, that a bare retry will fail the same way, and (when the slot
-  serialized it) that no other merge was competing with it; a killed suite says it was _killed_ for
-  exceeding the clock and names the setting to raise. Agents were reading the former as the latter.
-
-## [1.9.0] — 2026-07-13
-
-The **stable task IDs** release: a draft never changes its ID, so anything that references a draft
-— another task's `dependencies`, a spec, a handoff — stays valid for the life of the task.
-
-### Changed
-
-- **Drafts mint real `TASK-N` IDs from the shared counter.** There is **one ID space** across
-  `tasks/`, `drafts/`, `completed/`, and `archive/` — the `drafts/` folder (never the ID) is the sole
-  draftness marker. `promoteDraft` and `demoteTask` are **pure file moves**: the ID and status are
-  preserved, and nothing that referenced the draft dangles. `getNextTaskId` scans every folder, and
-  `allocateAndWrite` locks a single `backlog/.locks/` namespace — per-directory locks would let a
-  concurrent `create_task` and draft-create both claim the same number (the old TASK-48 clobber,
-  re-armed by the shared counter).
-- **Legacy `DRAFT-N` boards migrate automatically and idempotently** at activation and MCP startup
-  (`src/core/draftIdMigration.ts`, plus a `legacy-draft-ids` board-doctor finding). The migration
-  re-IDs drafts in place — it never promotes — and remaps every reference through the shared
-  `src/core/idRemap.ts` (which also closes the `parent_task_id` / `subtasks` / `references[]` gaps
-  `promoteDrafts`' old remap missed). `remapIds` scans every folder an id can occupy —
-  `tasks`/`drafts`/`completed`/both `archive` subfolders — because a completed task's dependency list
-  and an archived task's references are restorable records (archiving is a soft delete).
-- **Archive/restore routes by source folder.** `archive_task` moves a draft → `archive/drafts/` and a
-  task → `archive/tasks/`; `restore_task` returns it to the folder it came from. This deletes the
-  last id-prefix branch in the codebase.
-
-### Added
-
-- **End-to-end acceptance test** (`stableTaskIds.integration.test.ts`): proves the invariant rather
-  than its parts — a reference written against a draft, structurally **and in prose**, survives
-  promotion on a fresh board AND on a migrated legacy one. The prose case is the point: no remap can
-  rewrite free text, so prose written against a legacy id before the migration is unrecoverable
-  (asserted, deliberately) — which is why the fix is "never change an id", not "remap harder".
-- **`idSpaceContract.test.ts`** — fails the build if any agent-facing surface (the `create_task`
-  `draft` flag, `promote_draft`/`promote_drafts`/`demote_task`, `archive_task`/`restore_task`, the
-  create-task and index-codebase skills, CLAUDE.md, AGENTS.md) promises the legacy id shape outside an
-  explicit legacy/migration note, since that makes agents write draft-flavored ids into specs and
-  handoffs.
-
-### Fixed
-
 - **Playwright no longer silently reuses another worktree's Vite fixture server.** The primary
   checkout serves on 5173; each `.worktrees/<branch>` now derives its own stable port from its path
   (`scripts/lib/fixtureServer.ts`), and the global setup aborts loudly if the server on the expected
@@ -138,6 +177,54 @@ The **stable task IDs** release: a draft never changes its ID, so anything that 
 - **Stale `findRequestNonce` no longer reopens the find bar on tree remount.** A nonce bumped by a
   prior `/` keystroke could survive into the next mount and reopen the bar. The nonce is now cleared
   after the canvas acknowledges it, and the initial mount never answers a non-zero nonce.
+
+- **The pre-commit hook no longer flips the whole tree's line endings on Windows, and the
+  `--no-verify` folklore is retired.** The lint-staged pre-commit hook once flipped every file
+  CRLF→LF on Windows, so every doc and memory note told agents to commit with `--no-verify` —
+  folklore that also skipped the lint the hook exists to run. The structural fix already lived in
+  `.gitattributes` (`* text=auto eol=lf`): `eol=lf` overrides `core.autocrlf`, so every
+  checkout materializes LF regardless of the developer's git config.
+  `core.autocrlf=false`/`core.eol=lf` are only local config and never travel with a clone, so
+  `.gitattributes` is the only defense that does. Prettier's `endOfLine` is now `lf`
+  (was `auto`, which merely preserved whatever was on disk and could never heal a stray CRLF).
+  The invariant is pinned by `precommitEol.test.ts` — clone a fixture with the hostile
+  `core.autocrlf=true`, run real lint-staged against real configs, commit, and assert every
+  file the commit did not stage is byte-identical. The `--no-verify` CRLF guidance is stripped
+  from 15 plan docs and `HANDOFF.md`, with a contract test so it cannot come back.
+
+- **`isSamePath` now selects its path flavor from its `winLike` flag, fixing cross-platform
+  path comparison.** The function resolved both paths with the ambient `path.resolve`, so its
+  `winLike` flag switched only the case rule, not the path flavor. On Linux CI
+  `winLike=true` did not treat a backslash as a separator; on Windows `winLike=false` still
+  split on backslashes. Each platform could therefore only test its own rule — making a
+  cross-platform regression test for the Windows separator bug impossible to write. Fixed by
+  selecting the flavor from the flag (`path.win32` / `path.posix`). Production behavior is
+  byte-identical on both real platforms; both rule sets are now assertable from either. Also
+  adds merge-path regression tests (`requestMergeResumeIntegration.test.ts`) covering the
+  pending/ticket resume protocol end-to-end against a real repo.
+
+### Known issues
+
+An independent audit of this wave (TASK-134, by a non-Claude model against the shipped code,
+grounding-checked) found latent defects now tracked as follow-ups. These have narrow timing
+windows or multi-session preconditions and are not regressions — they pre-date this wave:
+
+- **TASK-135 — verify-slot lock protocol:** the slot's lock file is published non-atomically (a
+  multi-write ceremony under a rename — a crash mid-ceremony can leave a partial record that the
+  next holder misreads), stale-lease stealing is unguarded against a concurrent stealer, the lease
+  is not persisted (a holder that crashes and quickly restarts its MCP server reclaims under a
+  stale lease before the crash is detectable), and non-contention errors (permission-denied,
+  disk-full) are swallowed as "slot held" instead of surfaced.
+- **TASK-136 — `request_branch_merge` slash-branch target misroute:** a target like
+  `feature/docs` (a branch name containing a slash) is misparsed as a worktree path and routed
+  to the wrong merge path.
+- **TASK-137 — `get_active_task` cross-session ledger leak:** the session ledger is process-wide
+  and survives an MCP server reload, so in the narrow window between a crash and the next
+  activation a restarted session can inherit another session's tasks.
+
+> **TASK-131 (milestone-completion / band collapse) is not in this release.** Its merge core
+> landed on a branch but the feature is parked mid-implementation (the webview phase is pending),
+> so it must not be described as shipped.
 
 ## [1.8.1] — 2026-07-13
 
@@ -792,4 +879,5 @@ Replaced the v1 live-CAS engine (which kept N copies of the board and a poll loo
 - Kanban board with drag-and-drop, task list, detail editor, Markdown/Mermaid rendering, frontmatter autocomplete.
 - `BacklogParser` / `BacklogWriter` for reading and writing Backlog.md task files.
 
+[1.9.0]: https://github.com/ChronoVortex07/taskwright/releases/tag/v1.9.0
 [1.0.0]: https://github.com/ChronoVortex07/taskwright/releases/tag/v1.0.0
