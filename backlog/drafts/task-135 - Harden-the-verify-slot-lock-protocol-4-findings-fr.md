@@ -12,7 +12,7 @@ dependencies: []
 references:
   - docs/audits/2026-07-15-workflow-friction-hardening-audit.md
 priority: high
-category: 'Worktrees & Merge'
+category: Worktrees & Merge
 caused_by: TASK-126
 ---
 
@@ -27,8 +27,10 @@ Independent audit TASK-134 (reviewer: codex-terra / GPT-5.6) found four defects 
 
 3. [P1] Unpersisted lease (verifySlot.ts:215-220). `isStale` uses the WAITER's `opts.leaseMs`, but the holder record `{owner,pid,acquiredAt}` stores no lease. A default-timeout waiter (~22 min) steals a holder legitimately running with `verifyTimeoutMinutes: 60`. Fix: persist the holder's lease in the record and judge staleness against THAT.
 
-4. [P2] Non-contention create errors swallowed (verifySlot.ts:177-182). The `catch {}` treats every `createExclusive` failure as EEXIST. If `.git/taskwright` is unwritable / disk full / FD limit, readHolder returns null and remove() no-ops, so acquire spins forever and wedges every merge in verification with no wait progress. Fix: distinguish EEXIST from other errno and surface a real, actionable failure.</description>
-<parameter name="acceptanceCriteria">[{"text": "Lock publish is atomic (temp+rename or equivalent): a concurrent reader can never observe a partially-written lock and mis-steal it. Regression test reproduces the overlap window."}, {"text": "Stale/torn-lock deletion is conditional on the current file still matching the inspected record (compare-and-delete); two concurrent stale-stealers cannot both end up verifying."}, {"text": "The holder's lease is persisted in the lock record and staleness is judged against the holder's lease, not the waiter's, so mixed verifyTimeoutMinutes callers never steal a live holder."}, {"text": "createExclusive distinguishes EEXIST (contention) from other errors (unwritable dir / full disk / FD limit) and surfaces an actionable failure instead of spinning forever."}, {"text": "Each fix has a regression test that reproduces genuine overlap/failure (not a sequential stand-in)."}]
+4. [P2] Non-contention create errors swallowed (verifySlot.ts:177-182). The `catch {}` treats every `createExclusive` failure as EEXIST. If `.git/taskwright` is unwritable / disk full / FD limit, readHolder returns null and remove() no-ops, so acquire spins forever and wedges every merge in verification. Fix: distinguish EEXIST from other errno and surface a real, actionable failure.
+
+Reference: docs/audits/2026-07-15-workflow-friction-hardening-audit.md</description>
+<parameter name="acceptanceCriteria">[{"text": "Lock publish is atomic (temp+rename or equivalent): a concurrent reader can never observe a partially-written lock and mis-steal it, proven by a regression test that reproduces the overlap window."}, {"text": "Stale/torn-lock deletion is conditional on the current file still matching the inspected record (compare-and-delete); two concurrent stale-stealers cannot both end up verifying."}, {"text": "The holder's lease is persisted in the lock record and staleness is judged against the holder's lease, not the waiter's, so mixed verifyTimeoutMinutes callers never steal a live holder."}, {"text": "createExclusive distinguishes EEXIST (contention) from other errors and surfaces an actionable failure instead of spinning forever."}, {"text": "Each fix has a regression test reproducing genuine overlap/failure (not a sequential stand-in)."}]
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
