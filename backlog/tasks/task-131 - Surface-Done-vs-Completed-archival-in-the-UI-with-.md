@@ -3,7 +3,7 @@ id: TASK-131
 title: >-
   Milestone completion — collapse a finished milestone's section on the board,
   reversibly
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-07-14 05:26'
 updated_date: '2026-07-14 16:49'
@@ -16,6 +16,9 @@ references:
   - .taskwright/docs/friction-report-2026-07-14.md
 priority: medium
 category: Core Board
+claimed_by: '@agent/.worktrees/task-131-milestone-completion-collapse-a-finished-milestone-s-section-on-the-board-reversibly'
+worktree: .worktrees/task-131-milestone-completion-collapse-a-finished-milestone-s-section-on-the-board-reversibly
+claimed_at: '2026-07-15 08:31'
 ---
 
 ## Description
